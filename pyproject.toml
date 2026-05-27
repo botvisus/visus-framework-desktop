@@ -68,6 +68,8 @@ namespaces = true
 line-length = 88
 target-version = "py38"
 src = ["src", "tests"]
+# Demo/playground scripts bootstrap sys.path and are not part of the shipped library.
+extend-exclude = ["examples", "manual_tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
