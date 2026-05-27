@@ -10,7 +10,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def limpar_texto(texto, filter_type="both"):
+def clean_text(texto, filter_type="both"):
     """
     Remove caracteres do texto conforme o filtro desejado.
     
@@ -116,7 +116,7 @@ def validate_text_input(text, filter_type="both"):
     if not text:
         raise ValueError("Texto não pode ser vazio")
     
-    cleaned_text = limpar_texto(text, filter_type)
+    cleaned_text = clean_text(text, filter_type)
     
     if not cleaned_text:
         raise ValueError(f"Texto '{text}' não contém caracteres válidos para filtro '{filter_type}'")
@@ -162,3 +162,7 @@ def extract_letters_from_text(text):
         return []
     
     return re.findall(r'[A-Za-zÀ-ÖØ-öø-ÿ]+', text)
+
+
+# Backward-compatibility alias (previous Portuguese name)
+limpar_texto = clean_text

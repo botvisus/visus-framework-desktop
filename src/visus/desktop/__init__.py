@@ -1,5 +1,5 @@
-"""
-Bot Vision Suite - Advanced GUI Automation with OCR
+r"""
+Visus Desktop - Advanced GUI Automation with OCR
 
 Uma biblioteca Python avançada para automação de interface gráfica que combina
 reconhecimento óptico de caracteres (OCR) otimizado com detecção de imagens
@@ -21,7 +21,7 @@ para executar tarefas automatizadas em aplicações desktop.
     
     >>> from bot_vision import BotVision
     >>> 
-    >>> bot = BotVision()
+    >>> bot = VisusBot()
     >>> 
     >>> # OPÇÃO 1: Auto-inicia sessão quando backtrack=True
     >>> success1 = bot.click_image('button1.png', backtrack=True)
@@ -103,7 +103,7 @@ para executar tarefas automatizadas em aplicações desktop.
     >>> execute_tasks(tasks)
     >>> 
     >>> # Execução avançada com controle
-    >>> bot = BotVision()
+    >>> bot = VisusBot()
     >>> resultados = bot.execute_tasks(tasks)
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -112,7 +112,7 @@ para executar tarefas automatizadas em aplicações desktop.
 
 📸 BUSCA E CLIQUE EM IMAGENS (DETALHES COMPLETOS):
     
-    >>> bot = BotVision()
+    >>> bot = VisusBot()
     >>> 
     >>> # Buscar imagem básica
     >>> location = bot.find_image('button.png', 
@@ -334,7 +334,7 @@ para executar tarefas automatizadas em aplicações desktop.
     ...     "screenshot_delay": 0.1              # Delay para captura de tela
     ... }
     >>> 
-    >>> bot = BotVision(config=config)
+    >>> bot = VisusBot(config=config)
     >>> 
     >>> # PARÂMETROS DE CONFIGURAÇÃO EXPLICADOS:
     >>> # confidence_threshold: Precisão mínima para reconhecer texto
@@ -438,32 +438,32 @@ from .core.overlay import VisualOverlay, show_overlay
 from .core.relative_image import RelativeImageDetector  # NOVA FUNCIONALIDADE
 from .core.keyboard_commands import KeyboardCommander  # NOVA FUNCIONALIDADE
 from .utils.config import BotVisionConfig, get_default_config
-from .utils.text_filters import limpar_texto, matches_filter
+from .utils.text_filters import clean_text, limpar_texto, matches_filter
 from .exceptions import *
 
 # Versão da biblioteca
-__version__ = "1.3.0"
-__author__ = "Automation Suite Developer"
-__email__ = "developer@automation-suite.com"
+__version__ = "0.1.0"
+__author__ = "Matheus Pereira"
+__email__ = "matheuszwilkdev@gmail.com"
 __license__ = "MIT"
 
 # Configuração de logging padrão
 logger = logging.getLogger(__name__)
 
-class BotVision:
+class VisusBot:
     """
-    Classe principal do Bot Vision Suite.
+    Classe principal do Visus Desktop.
     
     Fornece uma interface de alto nível para automação GUI com OCR avançado.
     
     Examples:
         Uso básico:
-        >>> bot = BotVision()
+        >>> bot = VisusBot()
         >>> bot.execute_tasks(tasks)
         
         Com configuração customizada:
         >>> config = {"confidence_threshold": 80.0}
-        >>> bot = BotVision(config=config)
+        >>> bot = VisusBot(config=config)
         >>> bot.execute_tasks(tasks)
     """
     
@@ -563,7 +563,7 @@ class BotVision:
             width (int, optional): Largura da linha do overlay (1-10 recomendado)
             
         Examples:
-            >>> bot = BotVision()
+            >>> bot = VisusBot()
             >>> bot.configure_overlay(enabled=True, color="blue", duration=2000)
             >>> bot.configure_overlay(color="green", width=6)
             
@@ -640,7 +640,7 @@ class BotVision:
             duration (int): Duração de cada cor em milissegundos
             
         Examples:
-            >>> bot = BotVision()
+            >>> bot = VisusBot()
             >>> bot.test_overlay_colors()  # Mostra cada cor por 1.5 segundos
         """
         from .core.overlay import VisualOverlay
@@ -1854,6 +1854,10 @@ class BotVision:
         
         return results
 
+# Backward-compatibility alias (marca anterior: bot-vision-suite / import bot_vision)
+BotVision = VisusBot
+
+
 # NOVAS FUNÇÕES DE CONVENIÊNCIA COM BACKTRACK INDIVIDUAL
 
 def start_individual_session(config=None):
@@ -1866,7 +1870,7 @@ def start_individual_session(config=None):
     Returns:
         BotVision: Instância configurada para backtrack individual
     """
-    bot = BotVision(config)
+    bot = VisusBot(config)
     bot.start_task_session()
     return bot
 
@@ -1889,7 +1893,7 @@ def run_individual_tasks_with_backtrack(task_functions, config=None):
         ... ]
         >>> success, total, bot = run_individual_tasks_with_backtrack(tasks)
     """
-    bot = BotVision(config)
+    bot = VisusBot(config)
     bot.start_task_session()
     
     results = []
@@ -1950,7 +1954,7 @@ def execute_tasks(tasks, config=None):
         for i, task_list in enumerate(tasks):
             if isinstance(task_list, list):
                 logger.info(f"--- Iniciando conjunto de tarefas {i+1}/{len(tasks)} ({len(task_list)} tarefas) ---")
-                bot = BotVision(config)
+                bot = VisusBot(config)
                 results = bot.execute_tasks(task_list)
                 all_results.append(results)
                 logger.info(f"--- Finalizado conjunto de tarefas {i+1}/{len(tasks)} ---")
@@ -1961,7 +1965,7 @@ def execute_tasks(tasks, config=None):
         return all_results
     else:
         # Lista simples de tarefas
-        bot = BotVision(config)
+        bot = VisusBot(config)
         return bot.execute_tasks(tasks)
 
 
@@ -2024,7 +2028,7 @@ def find_relative_image(anchor_image, target_image, max_distance=200, confidence
     Examples:
         >>> location = find_relative_image('anchor.png', 'target.png')
     """
-    bot = BotVision()
+    bot = VisusBot()
     return bot.find_relative_image(anchor_image, target_image, max_distance, confidence, target_region,
                                   wait_until_found, wait_until_disappears, wait_timeout)
 
@@ -2073,7 +2077,7 @@ def click_relative_image(anchor_image, target_image, max_distance=200, confidenc
             wait_until_disappears (bool): Aguarda imagem desaparecer
             wait_timeout (int, optional): Timeout específico (sobrescreve global)
     """
-    bot = BotVision()
+    bot = VisusBot()
     return bot.click_relative_image(anchor_image, target_image, max_distance, confidence,
                                    target_region, delay, mouse_button, backtrack, 3,
                                    wait_until_found, wait_until_disappears, wait_timeout)
@@ -2107,7 +2111,7 @@ def click_coordinates(x, y, delay=0, mouse_button="left", backtrack=False):
         >>> # Apenas move o mouse para a posição (sem clicar)
         >>> success = click_coordinates(100, 200, mouse_button="move_to", delay=0.5)
     """
-    bot = BotVision()
+    bot = VisusBot()
     return bot.click_coordinates(x, y, delay, mouse_button, backtrack)
 
 
@@ -2128,7 +2132,7 @@ def type_text_standalone(text, interval=0.05, delay=0, backtrack=False):
         >>> success = type_text_standalone('Hello World!', backtrack=True)
         >>> success = type_text_standalone('{ctrl}a{del}New text', backtrack=True)
     """
-    bot = BotVision()
+    bot = VisusBot()
     return bot.type_text(text, interval, delay, backtrack)
 
 
@@ -2148,7 +2152,7 @@ def keyboard_command_standalone(command, delay=0, backtrack=False):
         >>> success = keyboard_command_standalone('Ctrl+S', delay=1, backtrack=True)
         >>> success = keyboard_command_standalone('F7', backtrack=True)
     """
-    bot = BotVision()
+    bot = VisusBot()
     return bot.keyboard_command(command, delay, backtrack)
 
 
@@ -2163,7 +2167,7 @@ def get_available_keyboard_commands():
         >>> commands = get_available_keyboard_commands()
         >>> print(f"Total de comandos: {len(commands)}")
     """
-    bot = BotVision()
+    bot = VisusBot()
     return bot.get_available_keyboard_commands()
 
 
@@ -2209,7 +2213,7 @@ def extract_text_from_region_standalone(region=None, filter_type="both", confide
         ...     filter_type="numbers"
         ... )
     """
-    bot = BotVision(config=config)
+    bot = VisusBot(config=config)
     return bot.extract_text_from_region(
         region=region,
         filter_type=filter_type,
@@ -2255,9 +2259,10 @@ def run_automation(tasks, default_confidence=0.9, default_margin=50):
     else:
         logging.error(f"The imported 'tasks' is not a list. Type: {type(tasks)}. Cannot execute.")
 
-# Lista de símbolos exportados
-__all__ = [
-    # Classe principal
+# NOTE: legacy export list — superseded by the canonical __all__ at end of module.
+# (kept temporarily as dead code; removed during the English-translation pass)
+_LEGACY_EXPORTS = [
+    # Main class
     "BotVision",
     
     # Funções principais de execução
@@ -2327,7 +2332,7 @@ def _setup_library():
         
         # Tenta configurar a biblioteca com configuração padrão
         config = get_default_config()
-        logger.debug(f"Bot Vision Suite v{__version__} inicializada")
+        logger.debug(f"visus.desktop v{__version__} inicializada")
         
     except Exception as e:
         logger.warning(f"Aviso na inicialização da biblioteca: {e}")
@@ -2357,7 +2362,7 @@ def find_text(text, region=None, filter_type="both", confidence_threshold=75.0,
     Returns:
         tuple: Coordenadas encontradas ou None
     """
-    bot = BotVision(config)
+    bot = VisusBot(config)
     return bot.find_text(text, region, filter_type, confidence_threshold, occurrence, max_attempts,
                         wait_until_found=wait_until_found, wait_until_disappears=wait_until_disappears,
                         wait_timeout=wait_timeout)
@@ -2393,7 +2398,7 @@ def click_text(text, region=None, filter_type="both", delay=0, mouse_button="lef
     Returns:
         bool: True se encontrou e clicou, False caso contrário
     """
-    bot = BotVision(config)
+    bot = VisusBot(config)
     return bot.click_text(text, region, filter_type, delay, mouse_button, occurrence,
                          False, max_attempts, sendtext, confidence_threshold, show_overlay,
                          wait_until_found, wait_until_disappears, wait_timeout)
@@ -2420,7 +2425,7 @@ def find_image(image_path, region=None, confidence=0.9, max_attempts=3,
     Returns:
         tuple: Coordenadas da imagem ou None
     """
-    bot = BotVision(config)
+    bot = VisusBot(config)
     return bot.find_image(image_path, region, confidence, max_attempts, False, specific,
                          wait_until_found, wait_until_disappears, wait_timeout, scales)
 
@@ -2453,7 +2458,7 @@ def click_image(image_path, region=None, confidence=0.9, delay=0, mouse_button="
     Returns:
         bool: True se encontrou e clicou, False caso contrário
     """
-    bot = BotVision(config)
+    bot = VisusBot(config)
     return bot.click_image(image_path, region, confidence, delay, mouse_button,
                           max_attempts, False, specific, sendtext, show_overlay,
                           wait_until_found, wait_until_disappears, wait_timeout)
@@ -2473,7 +2478,7 @@ def click_at(location, mouse_button="left", delay=0, show_overlay=True, config=N
     Returns:
         bool: True se clicou com sucesso
     """
-    bot = BotVision(config)
+    bot = VisusBot(config)
     return bot.click_at(location, mouse_button, delay, show_overlay)
 
 
@@ -2488,14 +2493,15 @@ def type_text(text, config=None):
     Returns:
         bool: True se digitou com sucesso
     """
-    bot = BotVision(config)
+    bot = VisusBot(config)
     return bot.type_text(text)
 
 
-# EXPORTAÇÕES PRINCIPAIS
+# PUBLIC EXPORTS
 __all__ = [
-    # Classe principal
-    "BotVision",
+    # Main class
+    "VisusBot",
+    "BotVision",  # backward-compatibility alias
     
     # Funções de execução de tarefas
     "execute_tasks",
@@ -2542,6 +2548,7 @@ __all__ = [
     # Utilitários
     "BotVisionConfig",
     "get_default_config",
+    "clean_text",
     "limpar_texto",
     "matches_filter",
     
@@ -2557,7 +2564,9 @@ __all__ = [
     "TextNotFoundError",
     "TaskExecutionError",
     "ImageProcessingError",
-    "OCRError",
+    "OCRProcessingError",
+    "TesseractNotFoundError",
+    "InvalidRegionError",
     "ConfigurationError",
     
     # Informações da biblioteca

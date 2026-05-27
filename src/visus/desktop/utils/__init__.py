@@ -5,6 +5,7 @@ Este módulo contém utilitários para o Bot Vision Suite.
 """
 
 from .text_filters import (
+    clean_text,
     limpar_texto,
     matches_filter,
     validate_text_input,
@@ -20,6 +21,7 @@ from .config import (
 
 __all__ = [
     # Text filters
+    "clean_text",
     "limpar_texto",
     "matches_filter", 
     "validate_text_input",
