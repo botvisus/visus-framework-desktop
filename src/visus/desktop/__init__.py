@@ -430,14 +430,20 @@ to run automated tasks on desktop applications.
 import logging
 import time
 
+from .core.capabilities import CapabilitiesMixin
+from .core.image_map import ImageMap
 from .core.image_processing import ImageProcessor, preprocess_image_for_ocr
 from .core.keyboard_commands import KeyboardCommander  # NEW FEATURE
+from .core.mouse_extra import drag, move_random, scroll, triple_click
 from .core.ocr_engine import OCREngine, OCRResult, find_text_with_multiple_preprocessing
 from .core.overlay import VisualOverlay, show_overlay
+from .core.process import find_process, is_process_running, kill_process, launch
 from .core.relative_image import RelativeImageDetector  # NEW FEATURE
+from .core.screen import capture_screen, get_display_size, save_screenshot
 
 # Import the main classes
 from .core.task_executor import TaskExecutor, TaskResult
+from .core.window import close_window, focus_window, maximize_window, minimize_window
 from .exceptions import (
     BotVisionError,
     ConfigurationError,
@@ -449,7 +455,10 @@ from .exceptions import (
     TesseractNotFoundError,
     TextNotFoundError,
 )
+from .utils.clipboard import copy as copy_to_clipboard
+from .utils.clipboard import get_clipboard, paste
 from .utils.config import BotVisionConfig, get_default_config
+from .utils.files import wait_for_file, wait_for_file_stable
 from .utils.text_filters import clean_text, limpar_texto, matches_filter
 
 # Library version
@@ -462,7 +471,7 @@ __license__ = "MIT"
 logger = logging.getLogger(__name__)
 
 
-class VisusBot:
+class VisusBot(CapabilitiesMixin):
     """
     Main class of Visus Desktop.
 
@@ -1393,6 +1402,8 @@ class VisusBot:
         """
         import time
 
+        image_path = self.image_map.resolve(image_path)
+
         if scales is None:
             scales = [1.0, 0.95, 1.05] if not specific else [1.0]
 
@@ -1536,6 +1547,8 @@ class VisusBot:
         # Use the global configuration if not specified
         if show_overlay is None:
             show_overlay = self.config.show_overlay
+
+        image_path = self.image_map.resolve(image_path)
 
         # If backtrack is True, use the individual backtrack system
         if backtrack:
@@ -2943,6 +2956,28 @@ __all__ = [
     "find_text_with_multiple_preprocessing",
     "show_overlay",
     "locate_image_with_retry",
+    # Files / clipboard / screen / process / window / image map / mouse (BotCity parity)
+    "wait_for_file",
+    "wait_for_file_stable",
+    "copy_to_clipboard",
+    "paste",
+    "get_clipboard",
+    "capture_screen",
+    "save_screenshot",
+    "get_display_size",
+    "launch",
+    "find_process",
+    "is_process_running",
+    "kill_process",
+    "focus_window",
+    "maximize_window",
+    "minimize_window",
+    "close_window",
+    "scroll",
+    "drag",
+    "triple_click",
+    "move_random",
+    "ImageMap",
     # Exceptions
     "BotVisionError",
     "ImageNotFoundError",
