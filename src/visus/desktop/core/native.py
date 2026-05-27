@@ -18,8 +18,11 @@ is actually called.
 from __future__ import annotations
 
 import enum
+import sys
 import time
 from typing import Any
+
+from ..exceptions import NotSupportedOnThisOS
 
 
 class Backend(str, enum.Enum):
@@ -89,6 +92,12 @@ def connect_to_app(
         NativeError: If no connection could be established within ``timeout``
             seconds. The last underlying exception is chained as the cause.
     """
+    if sys.platform != "win32":
+        raise NotSupportedOnThisOS(
+            "Native (accessibility) automation is only available on Windows for now "
+            "(a Linux backend via AT-SPI is planned)."
+        )
+
     from pywinauto.application import Application
 
     backend_value = _backend_value(backend)

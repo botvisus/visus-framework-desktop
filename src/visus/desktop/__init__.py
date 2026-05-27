@@ -453,6 +453,7 @@ from .exceptions import (
     ImageNotFoundError,
     ImageProcessingError,
     InvalidRegionError,
+    NotSupportedOnThisOS,
     OCRProcessingError,
     TaskExecutionError,
     TesseractNotFoundError,
@@ -2995,6 +2996,7 @@ __all__ = [
     "TesseractNotFoundError",
     "InvalidRegionError",
     "ConfigurationError",
+    "NotSupportedOnThisOS",
     # Library information
     "__version__",
     "__author__",

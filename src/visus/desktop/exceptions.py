@@ -57,3 +57,14 @@ class ImageProcessingError(BotVisionError):
     """Raised when there is an error during image processing."""
 
     pass
+
+
+class NotSupportedOnThisOS(BotVisionError):
+    """Raised when a feature is not available on the current operating system.
+
+    Some capabilities (native UIA automation, Win32 window management) are
+    Windows-only for now. They raise this instead of a low-level ImportError so
+    callers get a clear, actionable message and can branch per platform.
+    """
+
+    pass
