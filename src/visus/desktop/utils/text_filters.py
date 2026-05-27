@@ -1,30 +1,30 @@
 """
-Bot Vision Suite - Text Filters
+Visus Desktop - Text Filters
 
-Este módulo contém funções para limpeza e filtragem de texto extraído via OCR.
+This module contains functions for cleaning and filtering text extracted via OCR.
 """
 
-import re
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
 
 def clean_text(texto, filter_type="both"):
     """
-    Remove caracteres do texto conforme o filtro desejado.
-    
+    Remove characters from the text according to the desired filter.
+
     Args:
-        texto (str): Texto a ser limpo
-        filter_type (str): Tipo de filtro a ser aplicado:
-            - "numbers": remove tudo, exceto dígitos
-            - "letters": remove tudo, exceto letras (incluindo acentuadas)
-            - "both": remove todos os caracteres que não sejam letras ou dígitos
-            - outro: remove apenas caracteres especiais do início e fim
-    
+        texto (str): Text to be cleaned
+        filter_type (str): Type of filter to apply:
+            - "numbers": removes everything except digits
+            - "letters": removes everything except letters (including accented ones)
+            - "both": removes all characters that are not letters or digits
+            - other: removes only special characters from the start and end
+
     Returns:
-        str: Texto limpo conforme o filtro especificado
-    
+        str: Text cleaned according to the specified filter
+
     Examples:
         >>> limpar_texto("  123abc!  ", "numbers")
         "123"
@@ -34,40 +34,40 @@ def clean_text(texto, filter_type="both"):
         "123abc"
     """
     if not isinstance(texto, str):
-        logger.warning(f"Entrada não é string: {type(texto)}")
+        logger.warning(f"Input is not a string: {type(texto)}")
         return ""
-    
+
     texto = texto.strip()
-    
+
     if filter_type == "numbers":
         texto = re.sub(r"[^\d]", "", texto)
     elif filter_type == "letters":
         texto = re.sub(r"[^A-Za-zÀ-ÖØ-öø-ÿ]", "", texto)
     elif filter_type == "both":
-        # Permite letras e números
+        # Allow letters and numbers
         texto = re.sub(r"[^A-Za-zÀ-ÖØ-öø-ÿ0-9]", "", texto)
     else:
-        # Remove apenas caracteres especiais do início e fim
-        texto = re.sub(r'^[\W_]+|[\W_]+$', '', texto)
-    
+        # Remove only special characters from the start and end
+        texto = re.sub(r"^[\W_]+|[\W_]+$", "", texto)
+
     return texto
 
 
 def matches_filter(word, filter_type):
     """
-    Verifica se a palavra corresponde ao filtro desejado.
-    
+    Check whether the word matches the desired filter.
+
     Args:
-        word (str): Palavra a ser verificada
-        filter_type (str): Tipo de filtro:
-            - "numbers": apenas dígitos entre 1 e 31
-            - "letters": apenas letras (incluindo acentuadas)
-            - "both": apenas letras e números
-            - outro: retorna True
-    
+        word (str): Word to be checked
+        filter_type (str): Type of filter:
+            - "numbers": only digits between 1 and 31
+            - "letters": only letters (including accented ones)
+            - "both": only letters and numbers
+            - other: returns True
+
     Returns:
-        bool: True se a palavra corresponde ao filtro, False caso contrário
-    
+        bool: True if the word matches the filter, False otherwise
+
     Examples:
         >>> matches_filter("123", "numbers")
         True
@@ -75,14 +75,14 @@ def matches_filter(word, filter_type):
         True
         >>> matches_filter("abc123", "both")
         True
-        >>> matches_filter("32", "numbers")  # Fora do range 1-31
+        >>> matches_filter("32", "numbers")  # Outside the 1-31 range
         False
     """
     if not isinstance(word, str):
         return False
-    
+
     filter_type = filter_type.lower()
-    
+
     if filter_type == "numbers":
         if not re.fullmatch(r"\d+", word):
             return False
@@ -95,73 +95,75 @@ def matches_filter(word, filter_type):
         return re.fullmatch(r"[A-Za-zÀ-ÖØ-öø-ÿ]+", word) is not None
     elif filter_type == "both":
         return re.fullmatch(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9]+", word) is not None
-    
+
     return True
 
 
 def validate_text_input(text, filter_type="both"):
     """
-    Valida e limpa um texto de entrada.
-    
+    Validate and clean an input text.
+
     Args:
-        text (str): Texto a ser validado
-        filter_type (str): Tipo de filtro a ser aplicado
-    
+        text (str): Text to be validated
+        filter_type (str): Type of filter to apply
+
     Returns:
-        str: Texto validado e limpo
-    
+        str: Validated and cleaned text
+
     Raises:
-        ValueError: Se o texto for inválido após limpeza
+        ValueError: If the text is invalid after cleaning
     """
     if not text:
-        raise ValueError("Texto não pode ser vazio")
-    
+        raise ValueError("Text cannot be empty")
+
     cleaned_text = clean_text(text, filter_type)
-    
+
     if not cleaned_text:
-        raise ValueError(f"Texto '{text}' não contém caracteres válidos para filtro '{filter_type}'")
-    
+        raise ValueError(
+            f"Text '{text}' does not contain valid characters for filter '{filter_type}'"
+        )
+
     return cleaned_text
 
 
 def extract_numbers_from_text(text):
     """
-    Extrai todos os números de um texto.
-    
+    Extract all numbers from a text.
+
     Args:
-        text (str): Texto de origem
-    
+        text (str): Source text
+
     Returns:
-        list: Lista de números encontrados como strings
-    
+        list: List of numbers found as strings
+
     Examples:
-        >>> extract_numbers_from_text("Página 5 de 10 itens")
+        >>> extract_numbers_from_text("Page 5 of 10 items")
         ["5", "10"]
     """
     if not isinstance(text, str):
         return []
-    
-    return re.findall(r'\d+', text)
+
+    return re.findall(r"\d+", text)
 
 
 def extract_letters_from_text(text):
     """
-    Extrai todas as sequências de letras de um texto.
-    
+    Extract all letter sequences from a text.
+
     Args:
-        text (str): Texto de origem
-    
+        text (str): Source text
+
     Returns:
-        list: Lista de sequências de letras encontradas
-    
+        list: List of letter sequences found
+
     Examples:
         >>> extract_letters_from_text("Item123abc456def")
         ["Item", "abc", "def"]
     """
     if not isinstance(text, str):
         return []
-    
-    return re.findall(r'[A-Za-zÀ-ÖØ-öø-ÿ]+', text)
+
+    return re.findall(r"[A-Za-zÀ-ÖØ-öø-ÿ]+", text)
 
 
 # Backward-compatibility alias (previous Portuguese name)

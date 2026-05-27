@@ -1,50 +1,59 @@
 """
-Bot Vision Suite - Custom Exceptions
+Visus Desktop - Custom Exceptions
 
-Este módulo define todas as exceções customizadas usadas pela biblioteca.
+This module defines all the custom exceptions used by the library.
 """
 
 
 class BotVisionError(Exception):
-    """Exceção base para todos os erros do Bot Vision Suite."""
+    """Base exception for all Visus Desktop errors."""
+
     pass
 
 
 class TesseractNotFoundError(BotVisionError):
-    """Levantada quando o Tesseract OCR não é encontrado no sistema."""
+    """Raised when Tesseract OCR is not found on the system."""
+
     pass
 
 
 class ImageNotFoundError(BotVisionError):
-    """Levantada quando uma imagem não é encontrada na tela."""
+    """Raised when an image is not found on the screen."""
+
     pass
 
 
 class TextNotFoundError(BotVisionError):
-    """Levantada quando um texto não é encontrado na região especificada."""
+    """Raised when a text is not found in the specified region."""
+
     pass
 
 
 class InvalidRegionError(BotVisionError):
-    """Levantada quando uma região inválida é especificada."""
+    """Raised when an invalid region is specified."""
+
     pass
 
 
 class TaskExecutionError(BotVisionError):
-    """Levantada quando há erro na execução de uma task."""
+    """Raised when there is an error executing a task."""
+
     pass
 
 
 class ConfigurationError(BotVisionError):
-    """Levantada quando há erro na configuração da biblioteca."""
+    """Raised when there is an error in the library configuration."""
+
     pass
 
 
 class OCRProcessingError(BotVisionError):
-    """Levantada quando há erro no processamento OCR."""
+    """Raised when there is an error during OCR processing."""
+
     pass
 
 
 class ImageProcessingError(BotVisionError):
-    """Levantada quando há erro no processamento de imagem."""
+    """Raised when there is an error during image processing."""
+
     pass

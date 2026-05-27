@@ -1,12 +1,13 @@
 """
 Test configuration and fixtures for the visus.desktop test suite.
 """
+
 import tempfile
+from unittest.mock import patch
 
 import numpy as np
 import pytest
 from PIL import Image
-from unittest.mock import patch
 
 # Re-export the Tesseract detection helper so tests can import it from either
 # ``tests`` or this conftest.
@@ -24,7 +25,7 @@ def temp_dir():
 def sample_image():
     """Create a sample image for testing."""
     # Create a simple white image with black text
-    img = Image.new('RGB', (200, 100), color='white')
+    img = Image.new("RGB", (200, 100), color="white")
     # Note: In real tests, you might want to draw actual text
     return np.array(img)
 
@@ -32,7 +33,7 @@ def sample_image():
 @pytest.fixture
 def mock_tesseract():
     """Mock Tesseract for testing without requiring installation."""
-    with patch('pytesseract.image_to_string') as mock:
+    with patch("pytesseract.image_to_string") as mock:
         mock.return_value = "Sample text from image"
         yield mock
 
@@ -40,19 +41,14 @@ def mock_tesseract():
 @pytest.fixture
 def mock_pyautogui():
     """Mock pyautogui for testing without GUI interactions."""
-    with patch('pyautogui.screenshot') as mock_screenshot, \
-         patch('pyautogui.click') as mock_click, \
-         patch('pyautogui.moveTo') as mock_move:
-        
+    with patch("pyautogui.screenshot") as mock_screenshot, patch(
+        "pyautogui.click"
+    ) as mock_click, patch("pyautogui.moveTo") as mock_move:
         # Create a mock screenshot
-        mock_img = Image.new('RGB', (1920, 1080), color='white')
+        mock_img = Image.new("RGB", (1920, 1080), color="white")
         mock_screenshot.return_value = mock_img
-        
-        yield {
-            'screenshot': mock_screenshot,
-            'click': mock_click,
-            'moveTo': mock_move
-        }
+
+        yield {"screenshot": mock_screenshot, "click": mock_click, "moveTo": mock_move}
 
 
 @pytest.fixture
@@ -62,12 +58,8 @@ def sample_task():
         "task_name": "test_task",
         "description": "A test task",
         "steps": [
-            {
-                "action": "find_text",
-                "text": "test_text",
-                "region": [0, 0, 100, 100]
-            }
-        ]
+            {"action": "find_text", "text": "test_text", "region": [0, 0, 100, 100]}
+        ],
     }
 
 
@@ -79,12 +71,8 @@ def sample_tasks():
             "task_name": "task1",
             "description": "First test task",
             "steps": [
-                {
-                    "action": "find_text",
-                    "text": "button1",
-                    "region": [0, 0, 200, 200]
-                }
-            ]
+                {"action": "find_text", "text": "button1", "region": [0, 0, 200, 200]}
+            ],
         },
         {
             "task_name": "task2",
@@ -93,8 +81,8 @@ def sample_tasks():
                 {
                     "action": "click_text",
                     "text": "submit",
-                    "region": [100, 100, 300, 300]
+                    "region": [100, 100, 300, 300],
                 }
-            ]
-        }
+            ],
+        },
     ]

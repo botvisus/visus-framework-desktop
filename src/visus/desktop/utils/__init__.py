@@ -1,34 +1,29 @@
 """
-Bot Vision Suite - Utilities
+Visus Desktop - Utilities
 
-Este módulo contém utilitários para o Bot Vision Suite.
+This module contains utilities for Visus Desktop.
 """
 
+from .config import BotVisionConfig, create_config_from_file, get_default_config
 from .text_filters import (
     clean_text,
+    extract_letters_from_text,
+    extract_numbers_from_text,
     limpar_texto,
     matches_filter,
     validate_text_input,
-    extract_numbers_from_text,
-    extract_letters_from_text
-)
-
-from .config import (
-    BotVisionConfig,
-    create_config_from_file,
-    get_default_config
 )
 
 __all__ = [
     # Text filters
     "clean_text",
     "limpar_texto",
-    "matches_filter", 
+    "matches_filter",
     "validate_text_input",
     "extract_numbers_from_text",
     "extract_letters_from_text",
     # Config
     "BotVisionConfig",
     "create_config_from_file",
-    "get_default_config"
+    "get_default_config",
 ]

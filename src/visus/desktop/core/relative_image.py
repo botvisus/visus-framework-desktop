@@ -1,13 +1,15 @@
 """
-Bot Vision Suite - Relative Image Detection
+Visus Desktop - Relative Image Detection
 
-Este módulo implementa a detecção de imagens relativas (âncora + target),
-permitindo localizar uma imagem target próxima a uma imagem âncora.
+This module implements relative image detection (anchor + target),
+allowing a target image near an anchor image to be located.
 """
 
 import logging
+from typing import List, Optional, Tuple
+
 import pyautogui
-from typing import Optional, Tuple, List
+
 from ..exceptions import ImageNotFoundError
 
 logger = logging.getLogger(__name__)
@@ -15,169 +17,216 @@ logger = logging.getLogger(__name__)
 
 class RelativeImageDetector:
     """
-    Detector de imagens relativas.
-    
-    Permite localizar uma imagem target próxima a uma imagem âncora,
-    útil quando há múltiplas ocorrências da imagem target na tela.
+    Relative image detector.
+
+    Allows locating a target image near an anchor image,
+    useful when there are multiple occurrences of the target image on the screen.
     """
-    
+
     def __init__(self):
-        """Inicializa o detector de imagens relativas."""
+        """Initializes the relative image detector."""
         pass
-    
-    def locate_relative_image(self, anchor_image_path: str, target_image_path: str, 
-                            confidence: float = 0.9, max_distance: int = 200, 
-                            target_region: Optional[Tuple[int, int, int, int]] = None) -> Optional[Tuple]:
+
+    def locate_relative_image(
+        self,
+        anchor_image_path: str,
+        target_image_path: str,
+        confidence: float = 0.9,
+        max_distance: int = 200,
+        target_region: Optional[Tuple[int, int, int, int]] = None,
+    ) -> Optional[Tuple]:
         """
-        Localiza uma imagem target próxima a uma imagem anchor.
-        
+        Locates a target image near an anchor image.
+
         Args:
-            anchor_image_path: Caminho para a imagem âncora (única na tela)
-            target_image_path: Caminho para a imagem alvo (pode ter múltiplas)
-            confidence: Nível de confiança para detecção (0.0-1.0)
-            max_distance: Distância máxima em pixels da âncora ao target
-            target_region: Região específica para buscar a target image (x, y, width, height)
-        
+            anchor_image_path: Path to the anchor image (unique on the screen)
+            target_image_path: Path to the target image (may have multiple)
+            confidence: Confidence level for detection (0.0-1.0)
+            max_distance: Maximum distance in pixels from the anchor to the target
+            target_region: Specific region to search for the target image (x, y, width, height)
+
         Returns:
-            Localização da imagem target mais próxima da anchor ou None
-            
+            Location of the target image closest to the anchor, or None
+
         Raises:
-            ImageNotFoundError: Se a imagem âncora não for encontrada
+            ImageNotFoundError: If the anchor image is not found
         """
         try:
-            # Primeiro, localiza a imagem âncora (sempre na tela inteira)
-            logger.info(f"Procurando imagem âncora: {anchor_image_path}")
-            anchor_location = pyautogui.locateOnScreen(anchor_image_path, confidence=confidence)
-            
+            # First, locate the anchor image (always on the whole screen)
+            logger.info(f"Searching for anchor image: {anchor_image_path}")
+            anchor_location = pyautogui.locateOnScreen(
+                anchor_image_path, confidence=confidence
+            )
+
             if not anchor_location:
-                raise ImageNotFoundError(f"Imagem âncora não encontrada: {anchor_image_path}")
-            
-            logger.info(f"Imagem âncora encontrada em: {anchor_location}")
+                raise ImageNotFoundError(f"Anchor image not found: {anchor_image_path}")
+
+            logger.info(f"Anchor image found at: {anchor_location}")
             anchor_center = pyautogui.center(anchor_location)
-            
-            # Agora procura todas as ocorrências da imagem target
-            logger.info(f"Procurando imagem target: {target_image_path}")
-            
-            # Se target_region foi especificada, busca apenas nessa região
+
+            # Now search for all occurrences of the target image
+            logger.info(f"Searching for target image: {target_image_path}")
+
+            # If target_region was specified, search only in that region
             if target_region:
-                logger.info(f"Buscando target na região específica: {target_region}")
-                target_locations = list(pyautogui.locateAllOnScreen(
-                    target_image_path, region=target_region, confidence=confidence))
+                logger.info(f"Searching for target in specific region: {target_region}")
+                target_locations = list(
+                    pyautogui.locateAllOnScreen(
+                        target_image_path, region=target_region, confidence=confidence
+                    )
+                )
             else:
-                # Busca na tela inteira
-                target_locations = list(pyautogui.locateAllOnScreen(
-                    target_image_path, confidence=confidence))
-            
+                # Search the whole screen
+                target_locations = list(
+                    pyautogui.locateAllOnScreen(
+                        target_image_path, confidence=confidence
+                    )
+                )
+
             if not target_locations:
-                region_info = f"na região {target_region}" if target_region else "na tela inteira"
-                logger.warning(f"Imagem target não encontrada {region_info}: {target_image_path}")
+                region_info = (
+                    f"in region {target_region}"
+                    if target_region
+                    else "on the whole screen"
+                )
+                logger.warning(
+                    f"Target image not found {region_info}: {target_image_path}"
+                )
                 return None
-            
-            logger.info(f"Encontradas {len(target_locations)} ocorrências da imagem target")
-            
-            # Calcula a distância de cada target à âncora e encontra o mais próximo
+
+            logger.info(
+                f"Found {len(target_locations)} occurrences of the target image"
+            )
+
+            # Compute the distance from each target to the anchor and find the closest one
             closest_target = None
-            min_distance = float('inf')
-            
+            min_distance = float("inf")
+
             for target_location in target_locations:
                 target_center = pyautogui.center(target_location)
-                
-                # Calcula distância euclidiana
-                distance = ((target_center.x - anchor_center.x) ** 2 + 
-                           (target_center.y - anchor_center.y) ** 2) ** 0.5
-                
-                logger.info(f"Target em {target_location} está a {distance:.1f}px da âncora")
-                
-                # Verifica se está dentro da distância máxima e é o mais próximo
+
+                # Compute Euclidean distance
+                distance = (
+                    (target_center.x - anchor_center.x) ** 2
+                    + (target_center.y - anchor_center.y) ** 2
+                ) ** 0.5
+
+                logger.info(
+                    f"Target at {target_location} is {distance:.1f}px from the anchor"
+                )
+
+                # Check whether it is within the maximum distance and is the closest
                 if distance <= max_distance and distance < min_distance:
                     min_distance = distance
                     closest_target = target_location
-            
+
             if closest_target:
-                logger.info(f"Target mais próximo selecionado: {closest_target} "
-                           f"(distância: {min_distance:.1f}px)")
+                logger.info(
+                    f"Closest target selected: {closest_target} "
+                    f"(distance: {min_distance:.1f}px)"
+                )
                 return closest_target
             else:
-                logger.warning(f"Nenhuma imagem target encontrada dentro de "
-                              f"{max_distance}px da âncora")
+                logger.warning(
+                    f"No target image found within {max_distance}px of the anchor"
+                )
                 return None
-                
+
         except Exception as e:
-            logger.error(f"Erro ao localizar imagem relativa: {e}")
-            raise ImageNotFoundError(f"Erro na detecção de imagem relativa: {e}")
-    
-    def locate_image_with_retry(self, image_path: str, region: Optional[Tuple] = None, 
-                              confidence: float = 0.9, max_attempts: int = 3, 
-                              scales: Optional[List[float]] = None) -> Optional[Tuple]:
+            logger.error(f"Error locating relative image: {e}")
+            raise ImageNotFoundError(f"Error in relative image detection: {e}") from e
+
+    def locate_image_with_retry(
+        self,
+        image_path: str,
+        region: Optional[Tuple] = None,
+        confidence: float = 0.9,
+        max_attempts: int = 3,
+        scales: Optional[List[float]] = None,
+    ) -> Optional[Tuple]:
         """
-        Tenta localizar uma imagem com diferentes escalas e níveis de confiança.
-        
+        Attempts to locate an image with different scales and confidence levels.
+
         Args:
-            image_path: Caminho para a imagem
-            region: Região para buscar (x, y, width, height)
-            confidence: Nível de confiança inicial
-            max_attempts: Número máximo de tentativas
-            scales: Lista de escalas a testar (None para usar padrão)
-            
+            image_path: Path to the image
+            region: Region to search in (x, y, width, height)
+            confidence: Initial confidence level
+            max_attempts: Maximum number of attempts
+            scales: List of scales to test (None to use the default)
+
         Returns:
-            Localização da imagem ou None se não encontrada
+            Location of the image, or None if not found
         """
         import os
+
         from PIL import Image
-        
+
         if scales is None:
-            scales = [1.0, 0.95, 1.05]  # Tenta com escala original e ±5%
-        
+            scales = [1.0, 0.95, 1.05]  # Try with the original scale and ±5%
+
         for attempt in range(max_attempts):
-            # Tenta localizar com diferentes escalas
+            # Try to locate with different scales
             for scale in scales:
                 try:
                     if scale != 1.0:
-                        # Carrega e redimensiona a imagem de referência
+                        # Load and resize the reference image
                         ref_img = Image.open(image_path)
                         new_width = int(ref_img.width * scale)
                         new_height = int(ref_img.height * scale)
                         scaled_img = ref_img.resize((new_width, new_height))
-                        
-                        # Salva temporariamente para usar com pyautogui
+
+                        # Save temporarily to use with pyautogui
                         temp_path = f"temp_scaled_{scale}.png"
                         scaled_img.save(temp_path)
-                        
+
                         if region:
-                            location = pyautogui.locateOnScreen(temp_path, region=region, confidence=confidence)
+                            location = pyautogui.locateOnScreen(
+                                temp_path, region=region, confidence=confidence
+                            )
                         else:
-                            location = pyautogui.locateOnScreen(temp_path, confidence=confidence)
-                        
-                        os.remove(temp_path)  # Limpa arquivo temporário
+                            location = pyautogui.locateOnScreen(
+                                temp_path, confidence=confidence
+                            )
+
+                        os.remove(temp_path)  # Clean up the temporary file
                     else:
                         if region:
-                            location = pyautogui.locateOnScreen(image_path, region=region, confidence=confidence)
+                            location = pyautogui.locateOnScreen(
+                                image_path, region=region, confidence=confidence
+                            )
                         else:
-                            location = pyautogui.locateOnScreen(image_path, confidence=confidence)
-                    
+                            location = pyautogui.locateOnScreen(
+                                image_path, confidence=confidence
+                            )
+
                     if location:
                         return location
                 except Exception as e:
-                    logger.debug(f"Erro ao buscar imagem com escala {scale}: {e}")
+                    logger.debug(f"Error searching for image with scale {scale}: {e}")
                     continue
-            
-            # Se a escala não funcionou, tente reduzir a confiança
+
+            # If the scale did not work, try reducing the confidence
             adjusted_confidence = max(0.7, confidence - 0.05 * (attempt + 1))
-            logger.debug(f"Ajustando confiança para {adjusted_confidence}")
-            
+            logger.debug(f"Adjusting confidence to {adjusted_confidence}")
+
             try:
                 if region:
-                    location = pyautogui.locateOnScreen(image_path, region=region, confidence=adjusted_confidence)
+                    location = pyautogui.locateOnScreen(
+                        image_path, region=region, confidence=adjusted_confidence
+                    )
                 else:
-                    location = pyautogui.locateOnScreen(image_path, confidence=adjusted_confidence)
-                
+                    location = pyautogui.locateOnScreen(
+                        image_path, confidence=adjusted_confidence
+                    )
+
                 if location:
                     return location
             except Exception as e:
-                logger.debug(f"Erro ao buscar imagem com confiança ajustada: {e}")
-            
-            # Pequena pausa entre tentativas
+                logger.debug(f"Error searching for image with adjusted confidence: {e}")
+
+            # Small pause between attempts
             import time
+
             time.sleep(0.5)
-        
+
         return None

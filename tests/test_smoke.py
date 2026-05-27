@@ -5,15 +5,12 @@ These checks are pure import / identity assertions and require neither a real
 screen nor Tesseract, except for the few that build a ``VisusBot``/config (which
 detect Tesseract in their constructor and are therefore guarded).
 """
-import shutil
 
 import pytest
 
 import visus.desktop as vd
-from visus.desktop import exceptions as exc
-
 from tests import tesseract_available
-
+from visus.desktop import exceptions as exc
 
 # Skip marker for anything that instantiates BotVisionConfig / VisusBot,
 # because the config constructor raises TesseractNotFoundError otherwise.

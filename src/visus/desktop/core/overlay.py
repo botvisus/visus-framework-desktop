@@ -1,14 +1,14 @@
 """
-Bot Vision Suite - Visual Overlay
+Visus Desktop - Visual Overlay
 
-Este módulo gerencia a exibição de overlays visuais para destacar regiões na tela.
+This module manages the display of visual overlays to highlight regions on the screen.
 """
 
-import tkinter as tk
-import threading
 import logging
 import os
 import sys
+import threading
+import tkinter as tk
 from typing import Tuple
 
 logger = logging.getLogger(__name__)
@@ -16,506 +16,543 @@ logger = logging.getLogger(__name__)
 
 class VisualOverlay:
     """
-    Classe para criar overlays visuais na tela.
-    
-    Permite destacar regiões específicas da tela com retângulos coloridos,
-    útil para debug e feedback visual durante a automação.
+    Class to create visual overlays on the screen.
+
+    Allows highlighting specific regions of the screen with colored rectangles,
+    useful for debugging and visual feedback during automation.
     """
-    
+
     def __init__(self, color: str = "red", width: int = 4, duration: int = 1000):
         """
-        Inicializa o overlay.
-        
+        Initializes the overlay.
+
         Args:
-            color (str): Cor do overlay (red, blue, green, etc.)
-            width (int): Largura da linha do retângulo
-            duration (int): Duração em milissegundos
+            color (str): Overlay color (red, blue, green, etc.)
+            width (int): Width of the rectangle line
+            duration (int): Duration in milliseconds
         """
         self.color = color
         self.width = width
         self.duration = duration
         self._root = None
         self._tkinter_available = self._check_tkinter_availability()
-    
+
     def _check_tkinter_availability(self) -> bool:
         """
-        Verifica se o Tkinter está disponível e funcionando.
-        
+        Checks whether Tkinter is available and working.
+
         Returns:
-            bool: True se Tkinter estiver funcionando
+            bool: True if Tkinter is working
         """
         try:
-            # Teste simples de criação de janela
+            # Simple window creation test
             test_root = tk.Tk()
-            test_root.withdraw()  # Esconde a janela
+            test_root.withdraw()  # Hide the window
             test_root.destroy()
             return True
         except Exception as e:
-            logger.debug(f"Tkinter não disponível: {e}")
+            logger.debug(f"Tkinter not available: {e}")
             return False
-    
+
     def _fix_tkinter_environment(self) -> bool:
         """
-        Tenta corrigir problemas comuns do Tkinter de forma dinâmica.
-        
+        Attempts to fix common Tkinter problems dynamically.
+
         Returns:
-            bool: True se conseguiu corrigir
+            bool: True if it managed to fix
         """
         try:
             import glob
             import platform
-            
-            # Método 1: Detectar automaticamente TCL/TK
+
+            # Method 1: Automatically detect TCL/TK
             python_path = sys.executable
             python_dir = os.path.dirname(python_path)
-            
-            # Buscar versões do TCL dinamicamente
+
+            # Search for TCL versions dynamically
             tcl_search_patterns = []
-            
-            # Para qualquer ambiente Python (venv, conda, sistema)
+
+            # For any Python environment (venv, conda, system)
             base_dirs = [
-                python_dir,  # Diretório do executável Python
-                os.path.dirname(python_dir),  # Diretório pai
-                os.path.join(python_dir, '..'),  # Relativo
+                python_dir,  # Directory of the Python executable
+                os.path.dirname(python_dir),  # Parent directory
+                os.path.join(python_dir, ".."),  # Relative
             ]
-            
-            # Adicionar locais específicos do sistema se existirem
+
+            # Add system-specific locations if they exist
             if platform.system() == "Windows":
-                # Detectar instalações padrão do Windows
+                # Detect default Windows installations
                 program_files = [
-                    os.environ.get('PROGRAMFILES', r'C:\Program Files'),
-                    os.environ.get('PROGRAMFILES(X86)', r'C:\Program Files (x86)'),
+                    os.environ.get("PROGRAMFILES", r"C:\Program Files"),
+                    os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"),
                 ]
-                
+
                 for pf in program_files:
                     if pf and os.path.exists(pf):
-                        # Buscar qualquer versão do Python
-                        python_installs = glob.glob(os.path.join(pf, 'Python*'))
+                        # Search for any Python version
+                        python_installs = glob.glob(os.path.join(pf, "Python*"))
                         base_dirs.extend(python_installs)
-            
-            # Padrões de busca para TCL
+
+            # Search patterns for TCL
             for base_dir in base_dirs:
                 if not base_dir or not os.path.exists(base_dir):
                     continue
-                    
-                # Buscar TCL em vários locais possíveis
+
+                # Search for TCL in several possible locations
                 tcl_patterns = [
-                    os.path.join(base_dir, 'tcl*'),
-                    os.path.join(base_dir, 'lib', 'tcl*'),
-                    os.path.join(base_dir, 'Scripts', 'tcl*'),
-                    os.path.join(base_dir, 'Lib', 'tcl*'),
-                    os.path.join(base_dir, 'share', 'tcl*'),
-                    os.path.join(base_dir, 'Library', 'lib', 'tcl*'),  # Conda
+                    os.path.join(base_dir, "tcl*"),
+                    os.path.join(base_dir, "lib", "tcl*"),
+                    os.path.join(base_dir, "Scripts", "tcl*"),
+                    os.path.join(base_dir, "Lib", "tcl*"),
+                    os.path.join(base_dir, "share", "tcl*"),
+                    os.path.join(base_dir, "Library", "lib", "tcl*"),  # Conda
                 ]
-                
+
                 tcl_search_patterns.extend(tcl_patterns)
-            
-            # Buscar TCL usando os padrões
+
+            # Search for TCL using the patterns
             tcl_paths = []
             for pattern in tcl_search_patterns:
                 matches = glob.glob(pattern)
                 tcl_paths.extend([m for m in matches if os.path.isdir(m)])
-            
-            # Remover duplicatas e ordenar (versões mais recentes primeiro)
+
+            # Remove duplicates and sort (most recent versions first)
             tcl_paths = sorted(list(set(tcl_paths)), reverse=True)
-            
-            logger.debug(f"Encontrados {len(tcl_paths)} possíveis caminhos TCL")
-            
-            # Testar cada caminho TCL encontrado
+
+            logger.debug(f"Found {len(tcl_paths)} possible TCL paths")
+
+            # Test each TCL path found
             for tcl_path in tcl_paths:
                 try:
-                    os.environ['TCL_LIBRARY'] = tcl_path
-                    
-                    # Buscar TK correspondente
-                    tk_path = tcl_path.replace('tcl', 'tk')
+                    os.environ["TCL_LIBRARY"] = tcl_path
+
+                    # Search for the matching TK
+                    tk_path = tcl_path.replace("tcl", "tk")
                     if not os.path.exists(tk_path):
-                        # Tentar outros padrões para TK
+                        # Try other patterns for TK
                         tk_dir = os.path.dirname(tcl_path)
                         tk_patterns = [
-                            os.path.join(tk_dir, 'tk*'),
-                            tcl_path.replace('tcl', 'tk'),
+                            os.path.join(tk_dir, "tk*"),
+                            tcl_path.replace("tcl", "tk"),
                         ]
                         for tk_pattern in tk_patterns:
                             tk_matches = glob.glob(tk_pattern)
                             if tk_matches:
                                 tk_path = tk_matches[0]
                                 break
-                    
+
                     if os.path.exists(tk_path):
-                        os.environ['TK_LIBRARY'] = tk_path
-                    
-                    # Testa se funcionou
+                        os.environ["TK_LIBRARY"] = tk_path
+
+                    # Test whether it worked
                     if self._check_tkinter_availability():
-                        logger.info(f"✅ Tkinter corrigido - TCL: {tcl_path}")
-                        if 'TK_LIBRARY' in os.environ:
+                        logger.info(f"✅ Tkinter fixed - TCL: {tcl_path}")
+                        if "TK_LIBRARY" in os.environ:
                             logger.info(f"✅ TK: {os.environ['TK_LIBRARY']}")
                         return True
-                        
+
                 except Exception as e:
-                    logger.debug(f"Erro testando {tcl_path}: {e}")
+                    logger.debug(f"Error testing {tcl_path}: {e}")
                     continue
-            
-            logger.debug("Nenhum caminho TCL/TK funcionou")
+
+            logger.debug("No TCL/TK path worked")
             return False
-            
+
         except Exception as e:
-            logger.debug(f"Erro ao tentar corrigir Tkinter: {e}")
-            
-            # Método alternativo: tentar importar tkinter diretamente
+            logger.debug(f"Error trying to fix Tkinter: {e}")
+
+            # Alternative method: try importing tkinter directly
             try:
                 import tkinter as tk_test
+
                 test_root = tk_test.Tk()
                 test_root.withdraw()
                 test_root.destroy()
-                logger.info("✅ Tkinter funcionou sem correção de ambiente")
+                logger.info("✅ Tkinter worked without environment fix")
                 return True
             except Exception as e2:
-                logger.debug(f"Tkinter completamente indisponível: {e2}")
+                logger.debug(f"Tkinter completely unavailable: {e2}")
                 return False
-    
+
     def _create_overlay_alternative(self, region: Tuple[int, int, int, int]) -> None:
         """
-        Cria overlay usando método alternativo (Windows apenas).
-        
+        Creates an overlay using an alternative method (Windows only).
+
         Args:
-            region (tuple): (x, y, width, height) da região
+            region (tuple): (x, y, width, height) of the region
         """
         try:
             import ctypes
-            from ctypes import wintypes
             import time
-            
+
             x, y, w, h = region
-            
-            # Usar Windows API para criar overlay
+
+            # Use the Windows API to create the overlay
             user32 = ctypes.windll.user32
             gdi32 = ctypes.windll.gdi32
-            
-            # Obter DC da tela
+
+            # Get the screen DC
             screen_dc = user32.GetDC(0)
             if not screen_dc:
-                raise Exception("Não foi possível obter DC da tela")
-            
+                raise Exception("Could not get the screen DC")
+
             try:
-                # Definir cores (BGR format para Windows)
+                # Define colors (BGR format for Windows)
                 colors = {
-                    'red': 0x0000FF,     # BGR: Blue=0, Green=0, Red=255
-                    'blue': 0xFF0000,    # BGR: Blue=255, Green=0, Red=0  
-                    'green': 0x00FF00,   # BGR: Blue=0, Green=255, Red=0
-                    'yellow': 0x00FFFF,  # BGR: Blue=0, Green=255, Red=255
-                    'purple': 0xFF0080,  # BGR: Blue=255, Green=0, Red=128 (roxo)
-                    'orange': 0x0080FF,  # BGR: Blue=0, Green=128, Red=255 (laranja)
-                    'cyan': 0xFFFF00,    # BGR: Blue=255, Green=255, Red=0
-                    'magenta': 0xFF00FF, # BGR: Blue=255, Green=0, Red=255
-                    'white': 0xFFFFFF,   # BGR: Blue=255, Green=255, Red=255
-                    'black': 0x000000,   # BGR: Blue=0, Green=0, Red=0
+                    "red": 0x0000FF,  # BGR: Blue=0, Green=0, Red=255
+                    "blue": 0xFF0000,  # BGR: Blue=255, Green=0, Red=0
+                    "green": 0x00FF00,  # BGR: Blue=0, Green=255, Red=0
+                    "yellow": 0x00FFFF,  # BGR: Blue=0, Green=255, Red=255
+                    "purple": 0xFF0080,  # BGR: Blue=255, Green=0, Red=128 (purple)
+                    "orange": 0x0080FF,  # BGR: Blue=0, Green=128, Red=255 (orange)
+                    "cyan": 0xFFFF00,  # BGR: Blue=255, Green=255, Red=0
+                    "magenta": 0xFF00FF,  # BGR: Blue=255, Green=0, Red=255
+                    "white": 0xFFFFFF,  # BGR: Blue=255, Green=255, Red=255
+                    "black": 0x000000,  # BGR: Blue=0, Green=0, Red=0
                 }
-                
-                pen_color = colors.get(self.color.lower(), colors['red'])
-                
-                # Criar pen mais grosso para melhor visibilidade
+
+                pen_color = colors.get(self.color.lower(), colors["red"])
+
+                # Create a thicker pen for better visibility
                 pen_width = max(4, self.width)
                 pen = gdi32.CreatePen(0, pen_width, pen_color)
                 if not pen:
-                    raise Exception("Não foi possível criar pen")
-                    
+                    raise Exception("Could not create pen")
+
                 old_pen = gdi32.SelectObject(screen_dc, pen)
-                
-                # Método simples: desenhar múltiplas linhas para formar um retângulo grosso
+
+                # Simple method: draw multiple lines to form a thick rectangle
                 for i in range(pen_width):
-                    # Linha superior
-                    gdi32.MoveToEx(screen_dc, ctypes.c_int(x), ctypes.c_int(y + i), None)
+                    # Top line
+                    gdi32.MoveToEx(
+                        screen_dc, ctypes.c_int(x), ctypes.c_int(y + i), None
+                    )
                     gdi32.LineTo(screen_dc, ctypes.c_int(x + w), ctypes.c_int(y + i))
-                    
-                    # Linha inferior
-                    gdi32.MoveToEx(screen_dc, ctypes.c_int(x), ctypes.c_int(y + h - i), None)
-                    gdi32.LineTo(screen_dc, ctypes.c_int(x + w), ctypes.c_int(y + h - i))
-                    
-                    # Linha esquerda
-                    gdi32.MoveToEx(screen_dc, ctypes.c_int(x + i), ctypes.c_int(y), None)
+
+                    # Bottom line
+                    gdi32.MoveToEx(
+                        screen_dc, ctypes.c_int(x), ctypes.c_int(y + h - i), None
+                    )
+                    gdi32.LineTo(
+                        screen_dc, ctypes.c_int(x + w), ctypes.c_int(y + h - i)
+                    )
+
+                    # Left line
+                    gdi32.MoveToEx(
+                        screen_dc, ctypes.c_int(x + i), ctypes.c_int(y), None
+                    )
                     gdi32.LineTo(screen_dc, ctypes.c_int(x + i), ctypes.c_int(y + h))
-                    
-                    # Linha direita
-                    gdi32.MoveToEx(screen_dc, ctypes.c_int(x + w - i), ctypes.c_int(y), None)
-                    gdi32.LineTo(screen_dc, ctypes.c_int(x + w - i), ctypes.c_int(y + h))
-                
-                # Forçar atualização imediata
+
+                    # Right line
+                    gdi32.MoveToEx(
+                        screen_dc, ctypes.c_int(x + w - i), ctypes.c_int(y), None
+                    )
+                    gdi32.LineTo(
+                        screen_dc, ctypes.c_int(x + w - i), ctypes.c_int(y + h)
+                    )
+
+                # Force an immediate refresh
                 gdi32.GdiFlush()
-                
-                # Aguardar duração
+
+                # Wait for the duration
                 time.sleep(self.duration / 1000.0)
-                
-                logger.info(f"✅ Overlay visual exibido na região: x={x}, y={y}, largura={w}, altura={h}")
-                
+
+                logger.info(
+                    f"✅ Visual overlay displayed in region: x={x}, y={y}, width={w}, height={h}"
+                )
+
             finally:
-                # Limpar recursos
+                # Clean up resources
                 if old_pen:
                     gdi32.SelectObject(screen_dc, old_pen)
                 if pen:
                     gdi32.DeleteObject(pen)
                 user32.ReleaseDC(0, screen_dc)
-                
-                # Forçar repaint da tela para remover o overlay
+
+                # Force a screen repaint to remove the overlay
                 user32.InvalidateRect(0, None, True)
                 user32.UpdateWindow(0)
-            
-            logger.info(f"✅ Overlay alternativo (Windows API) criado na região: x={x}, y={y}, w={w}, h={h}")
-            
+
+            logger.info(
+                f"✅ Alternative overlay (Windows API) created in region: x={x}, y={y}, w={w}, h={h}"
+            )
+
         except Exception as e:
-            logger.warning(f"Overlay alternativo falhou: {e}")
-            # Implementação de fallback usando print com coordenadas
+            logger.warning(f"Alternative overlay failed: {e}")
+            # Fallback implementation using print with coordinates
             center_x = x + w // 2
             center_y = y + h // 2
-            logger.info(f"🎯 REGIÃO DESTACADA: Posição({x}, {y}) Tamanho({w}x{h}) Centro({center_x}, {center_y})")
-            logger.info(f"📍 Local do clique seria aproximadamente: ({center_x}, {center_y})")
-    
+            logger.info(
+                f"🎯 HIGHLIGHTED REGION: Position({x}, {y}) Size({w}x{h}) Center({center_x}, {center_y})"
+            )
+            logger.info(
+                f"📍 Click location would be approximately: ({center_x}, {center_y})"
+            )
+
     def show(self, region: Tuple[int, int, int, int], blocking: bool = False) -> None:
         """
-        Exibe o overlay na região especificada.
-        
+        Displays the overlay on the specified region.
+
         Args:
-            region (tuple): (x, y, width, height) da região a destacar
-            blocking (bool): Se True, bloqueia até o overlay desaparecer
+            region (tuple): (x, y, width, height) of the region to highlight
+            blocking (bool): If True, blocks until the overlay disappears
         """
         if blocking:
             self._create_overlay_with_fallback(region)
         else:
-            thread = threading.Thread(target=self._create_overlay_with_fallback, args=(region,))
+            thread = threading.Thread(
+                target=self._create_overlay_with_fallback, args=(region,)
+            )
             thread.daemon = True
             thread.start()
-    
+
     def _create_overlay_with_fallback(self, region: Tuple[int, int, int, int]) -> None:
         """
-        Cria overlay com múltiplos métodos de fallback.
-        
+        Creates an overlay with multiple fallback methods.
+
         Args:
-            region (tuple): (x, y, width, height) da região
+            region (tuple): (x, y, width, height) of the region
         """
-        # Método 1: Tentar Tkinter direto
+        # Method 1: Try Tkinter directly
         if self._tkinter_available:
             if self._create_overlay_tkinter(region):
                 return
-        
-        # Método 2: Tentar corrigir Tkinter e usar
+
+        # Method 2: Try to fix Tkinter and use it
         if self._fix_tkinter_environment():
             if self._create_overlay_tkinter(region):
                 return
-        
-        # Método 3: Overlay alternativo (Windows)
-        if os.name == 'nt':
+
+        # Method 3: Alternative overlay (Windows)
+        if os.name == "nt":
             self._create_overlay_alternative(region)
             return
-        
-        # Método 4: Log apenas
+
+        # Method 4: Log only
         x, y, w, h = region
-        logger.info(f"💡 Overlay visual na região: x={x}, y={y}, width={w}, height={h}")
-    
+        logger.info(f"💡 Visual overlay in region: x={x}, y={y}, width={w}, height={h}")
+
     def _create_overlay_tkinter(self, region: Tuple[int, int, int, int]) -> bool:
         """
-        Cria overlay usando Tkinter.
-        
+        Creates an overlay using Tkinter.
+
         Args:
-            region (tuple): (x, y, width, height) da região
-            
+            region (tuple): (x, y, width, height) of the region
+
         Returns:
-            bool: True se criou com sucesso
+            bool: True if created successfully
         """
         try:
             x, y, w, h = region
-            
-            # Cria janela transparente
+
+            # Create transparent window
             root = tk.Tk()
-            root.withdraw()  # Esconde temporariamente
+            root.withdraw()  # Hide temporarily
             root.overrideredirect(True)
             root.attributes("-topmost", True)
-            
-            # Configurações específicas do Windows para transparência
-            if os.name == 'nt':
+
+            # Windows-specific settings for transparency
+            if os.name == "nt":
                 try:
-                    # Tenta fazer a janela semi-transparente
-                    root.attributes('-alpha', 0.7)
-                    root.config(bg='black')
-                    root.attributes('-transparentcolor', 'black')
+                    # Try to make the window semi-transparent
+                    root.attributes("-alpha", 0.7)
+                    root.config(bg="black")
+                    root.attributes("-transparentcolor", "black")
                 except Exception as e:
-                    logger.debug(f"Transparência não disponível: {e}")
-                    root.config(bg='gray10')
+                    logger.debug(f"Transparency not available: {e}")
+                    root.config(bg="gray10")
             else:
-                root.config(bg='black')
-            
-            # Define tamanho da tela
+                root.config(bg="black")
+
+            # Set the screen size
             screen_width = root.winfo_screenwidth()
             screen_height = root.winfo_screenheight()
             root.geometry(f"{screen_width}x{screen_height}+0+0")
-            
-            # Cria canvas que cobre toda a tela
+
+            # Create a canvas that covers the whole screen
             canvas = tk.Canvas(
-                root, 
-                width=screen_width, 
-                height=screen_height, 
-                bg='black' if os.name == 'nt' else 'gray10',
+                root,
+                width=screen_width,
+                height=screen_height,
+                bg="black" if os.name == "nt" else "gray10",
                 highlightthickness=0,
-                bd=0
+                bd=0,
             )
-            canvas.pack(fill='both', expand=True)
-            
-            # Define cores mais visíveis
+            canvas.pack(fill="both", expand=True)
+
+            # Define more visible colors
             colors = {
-                'red': '#FF0000',
-                'blue': '#0080FF', 
-                'green': '#00FF00',
-                'yellow': '#FFFF00',
-                'magenta': '#FF00FF',
-                'cyan': '#00FFFF',
-                'white': '#FFFFFF',
-                'purple': '#800080',
-                'orange': '#FF8000',
-                'black': '#000000'
+                "red": "#FF0000",
+                "blue": "#0080FF",
+                "green": "#00FF00",
+                "yellow": "#FFFF00",
+                "magenta": "#FF00FF",
+                "cyan": "#00FFFF",
+                "white": "#FFFFFF",
+                "purple": "#800080",
+                "orange": "#FF8000",
+                "black": "#000000",
             }
-            
-            overlay_color = colors.get(self.color.lower(), colors['red'])
+
+            overlay_color = colors.get(self.color.lower(), colors["red"])
             line_width = max(3, self.width)
-            
-            # Desenha o retângulo destacando a região
+
+            # Draw the rectangle highlighting the region
             canvas.create_rectangle(
-                x, y, x + w, y + h, 
-                outline=overlay_color, 
+                x,
+                y,
+                x + w,
+                y + h,
+                outline=overlay_color,
                 width=line_width,
-                fill=''  # Sem preenchimento
+                fill="",  # No fill
             )
-            
-            # Adiciona um ponto no centro para indicar onde será clicado
+
+            # Add a point at the center to indicate where it will be clicked
             center_x = x + w // 2
             center_y = y + h // 2
-            
-            # Desenha uma cruz no centro
-            cross_size = min(10, w//4, h//4)
+
+            # Draw a cross at the center
+            cross_size = min(10, w // 4, h // 4)
             canvas.create_line(
-                center_x - cross_size, center_y,
-                center_x + cross_size, center_y,
-                fill=overlay_color, width=line_width
+                center_x - cross_size,
+                center_y,
+                center_x + cross_size,
+                center_y,
+                fill=overlay_color,
+                width=line_width,
             )
             canvas.create_line(
-                center_x, center_y - cross_size,
-                center_x, center_y + cross_size,
-                fill=overlay_color, width=line_width
+                center_x,
+                center_y - cross_size,
+                center_x,
+                center_y + cross_size,
+                fill=overlay_color,
+                width=line_width,
             )
-            
-            # Mostra a janela
+
+            # Show the window
             root.deiconify()
             root.lift()
             root.focus_force()
-            
-            # Agenda destruição da janela
+
+            # Schedule window destruction
             root.after(self.duration, root.destroy)
-            
-            # Inicia loop principal
+
+            # Start the main loop
             root.mainloop()
-            
-            logger.info(f"✅ Overlay Tkinter criado com sucesso na região: x={x}, y={y}, w={w}, h={h}")
+
+            logger.info(
+                f"✅ Tkinter overlay created successfully in region: x={x}, y={y}, w={w}, h={h}"
+            )
             return True
-            
+
         except Exception as e:
-            logger.debug(f"Falha no overlay Tkinter: {e}")
+            logger.debug(f"Tkinter overlay failure: {e}")
             return False
-    
+
     def show_multiple(self, regions: list, blocking: bool = False) -> None:
         """
-        Exibe múltiplos overlays simultaneamente.
-        
+        Displays multiple overlays simultaneously.
+
         Args:
-            regions (list): Lista de tuplas (x, y, width, height)
-            blocking (bool): Se True, bloqueia até todos os overlays desaparecerem
+            regions (list): List of (x, y, width, height) tuples
+            blocking (bool): If True, blocks until all overlays disappear
         """
         if blocking:
             self._create_multiple_overlays(regions)
         else:
-            thread = threading.Thread(target=self._create_multiple_overlays, args=(regions,))
+            thread = threading.Thread(
+                target=self._create_multiple_overlays, args=(regions,)
+            )
             thread.daemon = True
             thread.start()
-    
+
     def _create_multiple_overlays(self, regions: list) -> None:
         """
-        Cria múltiplos overlays com fallback.
-        
+        Creates multiple overlays with fallback.
+
         Args:
-            regions (list): Lista de regiões
+            regions (list): List of regions
         """
-        # Tentar com Tkinter primeiro
+        # Try with Tkinter first
         if self._tkinter_available or self._fix_tkinter_environment():
             if self._create_multiple_overlays_tkinter(regions):
                 return
-        
-        # Fallback: overlay individual para cada região
+
+        # Fallback: individual overlay for each region
         for region in regions:
             self._create_overlay_with_fallback(region)
-    
+
     def _create_multiple_overlays_tkinter(self, regions: list) -> bool:
         """
-        Cria múltiplos overlays usando Tkinter.
-        
+        Creates multiple overlays using Tkinter.
+
         Args:
-            regions (list): Lista de regiões
-            
+            regions (list): List of regions
+
         Returns:
-            bool: True se criou com sucesso
+            bool: True if created successfully
         """
         try:
             root = tk.Tk()
             root.overrideredirect(True)
             root.attributes("-topmost", True)
-            root.config(bg='black')
-            
-            if os.name == 'nt':
+            root.config(bg="black")
+
+            if os.name == "nt":
                 try:
-                    root.attributes('-transparentcolor', 'black')
-                    root.attributes('-alpha', 0.3)
-                except:
+                    root.attributes("-transparentcolor", "black")
+                    root.attributes("-alpha", 0.3)
+                except Exception:
                     pass
-            
+
             screen_width = root.winfo_screenwidth()
             screen_height = root.winfo_screenheight()
             root.geometry(f"{screen_width}x{screen_height}+0+0")
-            
+
             canvas = tk.Canvas(
-                root, 
-                width=screen_width, 
-                height=screen_height, 
-                bg='black', 
-                highlightthickness=0
+                root,
+                width=screen_width,
+                height=screen_height,
+                bg="black",
+                highlightthickness=0,
             )
             canvas.pack()
-            
-            # Desenha todos os retângulos
+
+            # Draw all the rectangles
             for region in regions:
                 x, y, w, h = region
                 canvas.create_rectangle(
-                    x, y, x + w, y + h, 
-                    outline=self.color, 
-                    width=self.width
+                    x, y, x + w, y + h, outline=self.color, width=self.width
                 )
-            
+
             root.after(self.duration, root.destroy)
             root.mainloop()
-            
-            logger.info(f"✅ Múltiplos overlays criados: {len(regions)} regiões")
+
+            logger.info(f"✅ Multiple overlays created: {len(regions)} regions")
             return True
-            
+
         except Exception as e:
-            logger.debug(f"Falha nos múltiplos overlays Tkinter: {e}")
+            logger.debug(f"Multiple Tkinter overlays failure: {e}")
             return False
 
 
-def show_overlay(region: Tuple[int, int, int, int], duration: int = 1000, 
-                color: str = "red", width: int = 4) -> None:
+def show_overlay(
+    region: Tuple[int, int, int, int],
+    duration: int = 1000,
+    color: str = "red",
+    width: int = 4,
+) -> None:
     """
-    Função de conveniência para exibir um overlay rapidamente.
-    
+    Convenience function to quickly display an overlay.
+
     Args:
-        region (tuple): (x, y, width, height) da região a destacar
-        duration (int): Duração em milissegundos
-        color (str): Cor do overlay
-        width (int): Largura da linha
-    
+        region (tuple): (x, y, width, height) of the region to highlight
+        duration (int): Duration in milliseconds
+        color (str): Overlay color
+        width (int): Line width
+
     Examples:
         >>> show_overlay((100, 100, 200, 50), duration=2000, color="blue")
     """
@@ -523,32 +560,37 @@ def show_overlay(region: Tuple[int, int, int, int], duration: int = 1000,
     overlay.show(region, blocking=False)
 
 
-def show_overlay_blocking(region: Tuple[int, int, int, int], duration: int = 1000,
-                         color: str = "red", width: int = 4) -> None:
+def show_overlay_blocking(
+    region: Tuple[int, int, int, int],
+    duration: int = 1000,
+    color: str = "red",
+    width: int = 4,
+) -> None:
     """
-    Função de conveniência para exibir um overlay de forma bloqueante.
-    
+    Convenience function to display an overlay in a blocking manner.
+
     Args:
-        region (tuple): (x, y, width, height) da região a destacar
-        duration (int): Duração em milissegundos
-        color (str): Cor do overlay
-        width (int): Largura da linha
+        region (tuple): (x, y, width, height) of the region to highlight
+        duration (int): Duration in milliseconds
+        color (str): Overlay color
+        width (int): Line width
     """
     overlay = VisualOverlay(color=color, width=width, duration=duration)
     overlay.show(region, blocking=True)
 
 
-def show_multiple_overlays(regions: list, duration: int = 1000,
-                          color: str = "red", width: int = 4) -> None:
+def show_multiple_overlays(
+    regions: list, duration: int = 1000, color: str = "red", width: int = 4
+) -> None:
     """
-    Função de conveniência para exibir múltiplos overlays.
-    
+    Convenience function to display multiple overlays.
+
     Args:
-        regions (list): Lista de tuplas (x, y, width, height)
-        duration (int): Duração em milissegundos
-        color (str): Cor do overlay
-        width (int): Largura da linha
-    
+        regions (list): List of (x, y, width, height) tuples
+        duration (int): Duration in milliseconds
+        color (str): Overlay color
+        width (int): Line width
+
     Examples:
         >>> regions = [(100, 100, 200, 50), (300, 200, 150, 30)]
         >>> show_multiple_overlays(regions, duration=2000, color="green")

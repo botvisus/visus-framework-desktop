@@ -4,15 +4,16 @@ Tests for ``visus.desktop.utils.text_filters``.
 This module is pure Python (regex based) and imports cleanly without Tesseract
 or a display, so every test here runs unconditionally.
 """
+
 import pytest
 
 from visus.desktop.utils.text_filters import (
     clean_text,
+    extract_letters_from_text,
+    extract_numbers_from_text,
     limpar_texto,
     matches_filter,
     validate_text_input,
-    extract_numbers_from_text,
-    extract_letters_from_text,
 )
 
 

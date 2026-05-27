@@ -6,14 +6,13 @@ real screen, mouse, or Tesseract is either driven with empty input (which
 returns early) or mocked at the REAL module paths. Tesseract-dependent paths are
 guarded with a skip marker.
 """
-from unittest.mock import patch, MagicMock
+
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 import visus.desktop as vd
-
 from tests import tesseract_available
-
 
 requires_tesseract = pytest.mark.skipif(
     not tesseract_available(),
@@ -42,9 +41,16 @@ class TestOverlayHelpers:
     def test_get_available_overlay_colors(self):
         colors = vd.VisusBot.get_available_overlay_colors()
         assert colors == [
-            "red", "blue", "green", "yellow",
-            "purple", "orange", "cyan", "magenta",
-            "white", "black",
+            "red",
+            "blue",
+            "green",
+            "yellow",
+            "purple",
+            "orange",
+            "cyan",
+            "magenta",
+            "white",
+            "black",
         ]
 
     def test_show_overlay_dispatches_to_visual_overlay(self):
@@ -81,12 +87,12 @@ class TestVisusBotIntegration:
 
         # pyautogui is imported lazily inside _perform_click, so patch the real
         # module attribute rather than a name on the task_executor module.
-        with patch("pyautogui.center", return_value=fake_center), \
-                patch.object(bot.executor.virtual_mouse, "click", return_value=True) as mock_click:
-
-            results = bot.execute_tasks([
-                {"type": "click", "x": 100, "y": 200, "mouse_button": "left"}
-            ])
+        with patch("pyautogui.center", return_value=fake_center), patch.object(
+            bot.executor.virtual_mouse, "click", return_value=True
+        ) as mock_click:
+            results = bot.execute_tasks(
+                [{"type": "click", "x": 100, "y": 200, "mouse_button": "left"}]
+            )
 
             assert len(results) == 1
             assert results[0].success is True

@@ -1,56 +1,45 @@
 """
 
-Bot Vision Suite - Virtual Mouse
+Visus Desktop - Virtual Mouse
 
 
 
-Este módulo implementa funcionalidade de mouse virtual que permite
+This module implements virtual mouse functionality that allows
 
-realizar cliques sem mover o cursor físico do mouse.
+performing clicks without moving the physical mouse cursor.
 
 """
 
-
-
-import time
+import ctypes
 import logging
 import platform
-import ctypes
-from typing import Tuple, Optional
+import time
+from typing import Optional, Tuple
 
 from ..utils.config import BotVisionConfig
-
-
 
 logger = logging.getLogger(__name__)
 
 
-
-
-
 class VirtualMouse:
-
     """
 
-    Classe para controle de mouse virtual que permite cliques
+    Class for virtual mouse control that allows clicks
 
-    sem mover o cursor físico do mouse.
+    without moving the physical mouse cursor.
 
     """
-
-
 
     def __init__(self, config: Optional[BotVisionConfig] = None):
-
         """
 
-        Inicializa o mouse virtual.
+        Initializes the virtual mouse.
 
 
 
         Args:
 
-            config (BotVisionConfig, optional): Configuração da biblioteca
+            config (BotVisionConfig, optional): Library configuration
 
         """
 
@@ -62,69 +51,57 @@ class VirtualMouse:
 
         self.original_cursor_pos = None
 
-
-
-        # Detecta se mouse virtual está disponível no sistema
+        # Detect whether the virtual mouse is available on the system
 
         self.virtual_available = self._check_virtual_mouse_availability()
 
+        if not self.virtual_available and self.config.get("use_virtual_mouse", False):
+            logger.warning(
+                "WARNING: use_virtual_mouse=True but the virtual mouse is not available on the system!"
+            )
 
-
-        if not self.virtual_available and self.config.get('use_virtual_mouse', False):
-
-            logger.warning("ATENCAO: use_virtual_mouse=True mas mouse virtual nao disponivel no sistema!")
-
-            logger.warning("FALLBACK: Todos os cliques usarao mouse fisico")
-
-
+            logger.warning("FALLBACK: All clicks will use the physical mouse")
 
     def _check_virtual_mouse_availability(self) -> bool:
-
         """
 
-        Verifica se mouse virtual está disponível no sistema atual.
+        Checks whether the virtual mouse is available on the current system.
 
 
 
         Returns:
 
-            bool: True se mouse virtual está disponível
+            bool: True if the virtual mouse is available
 
         """
 
         if self.system == "windows":
-
             try:
-
-                import win32gui
-
-                import win32con
-
-                import win32api
+                import win32api  # noqa: F401  # availability probe
+                import win32con  # noqa: F401  # availability probe
+                import win32gui  # noqa: F401  # availability probe
 
                 return True
 
             except ImportError:
-
-                logger.debug("Módulos win32 não disponíveis. Mouse virtual Windows indisponível.")
+                logger.debug(
+                    "win32 modules not available. Windows virtual mouse unavailable."
+                )
 
                 return False
 
         elif self.system in ["linux", "darwin"]:
+            # For Linux/macOS, it can be implemented using Xlib or other libraries
 
-            # Para Linux/macOS, pode implementar usando Xlib ou outras bibliotecas
+            # For now, returns False to use the fallback
 
-            # Por agora, retorna False para usar fallback
-
-            logger.debug(f"Mouse virtual não implementado para {self.system}. Usando fallback.")
+            logger.debug(
+                f"Virtual mouse not implemented for {self.system}. Using fallback."
+            )
 
             return False
 
-
-
         return False
-
-
 
     def _get_windows_dpi_scale(self, hwnd: int) -> Tuple[float, float]:
         if self.system != "windows" or not hwnd:
@@ -160,7 +137,7 @@ class VirtualMouse:
                         monitor,
                         MDT_EFFECTIVE_DPI,
                         ctypes.byref(dpi_x),
-                        ctypes.byref(dpi_y)
+                        ctypes.byref(dpi_y),
                     )
                     if result == 0:
                         if dpi_x.value:
@@ -168,7 +145,7 @@ class VirtualMouse:
                         if dpi_y.value:
                             scale_y = dpi_y.value / 96.0
         except Exception as e:
-            logger.debug(f"Falha ao obter escala DPI: {e}")
+            logger.debug(f"Failed to get DPI scale: {e}")
         return scale_x, scale_y
 
     def _resolve_client_coordinates(
@@ -192,72 +169,61 @@ class VirtualMouse:
             origin_y = int(round(origin[1] * scale_y))
             return screen_x - origin_x, screen_y - origin_y, screen_x, screen_y
         except Exception as ex:
-            logger.debug(f"Fallback ScreenToClient apos erro ClientToScreen: {ex}")
+            logger.debug(f"ScreenToClient fallback after ClientToScreen error: {ex}")
             try:
                 client_x, client_y = win32gui.ScreenToClient(hwnd, logical_point)
                 client_x = int(round(client_x * scale_x))
                 client_y = int(round(client_y * scale_y))
                 return client_x, client_y, screen_x, screen_y
             except Exception as inner:
-                logger.debug(f"Falha ao converter coordenadas para cliente: {inner}")
+                logger.debug(f"Failed to convert coordinates to client: {inner}")
                 return screen_x, screen_y, screen_x, screen_y
 
     def save_cursor_position(self):
-
-        """Salva a posição atual do cursor."""
+        """Saves the current cursor position."""
 
         try:
-
             import pyautogui
 
             self.original_cursor_pos = pyautogui.position()
 
-            logger.debug(f"Posição do cursor salva: {self.original_cursor_pos}")
+            logger.debug(f"Cursor position saved: {self.original_cursor_pos}")
 
         except Exception as e:
-
-            logger.debug(f"Erro ao salvar posição do cursor: {e}")
-
-
+            logger.debug(f"Error saving cursor position: {e}")
 
     def restore_cursor_position(self):
-
-        """Restaura o cursor para posição original."""
+        """Restores the cursor to its original position."""
 
         if self.original_cursor_pos:
-
             try:
-
                 import pyautogui
 
-                pyautogui.moveTo(self.original_cursor_pos.x, self.original_cursor_pos.y, duration=0)
+                pyautogui.moveTo(
+                    self.original_cursor_pos.x, self.original_cursor_pos.y, duration=0
+                )
 
-                logger.debug(f"Cursor restaurado para: {self.original_cursor_pos}")
+                logger.debug(f"Cursor restored to: {self.original_cursor_pos}")
 
             except Exception as e:
+                logger.debug(f"Error restoring cursor position: {e}")
 
-                logger.debug(f"Erro ao restaurar posição do cursor: {e}")
-
-
-
-
-
-    def _click_virtual_windows(self, x: int, y: int, button: str = 'left') -> bool:
+    def _click_virtual_windows(self, x: int, y: int, button: str = "left") -> bool:
         """
-        Executa clique virtual no Windows usando Win32 API.
+        Performs a virtual click on Windows using the Win32 API.
 
         Args:
-            x (int): Coordenada X
-            y (int): Coordenada Y
-            button (str): Botão do mouse ('left', 'right', 'double')
+            x (int): X coordinate
+            y (int): Y coordinate
+            button (str): Mouse button ('left', 'right', 'double')
 
         Returns:
-            bool: True se clique foi executado com sucesso
+            bool: True if the click was performed successfully
         """
         try:
-            import win32gui
-            import win32con
             import win32api
+            import win32con
+            import win32gui
 
             logical_point = (int(round(x)), int(round(y)))
 
@@ -277,390 +243,363 @@ class VirtualMouse:
             )
 
             if client_x < 0 or client_y < 0:
-                logger.debug(f"Coordenadas fora da area cliente: ({client_x}, {client_y})")
+                logger.debug(
+                    f"Coordinates outside the client area: ({client_x}, {client_y})"
+                )
                 return False
 
             if scale_x != 1.0 or scale_y != 1.0:
                 logger.debug(
-                    f"Aplicando escala DPI ({scale_x:.3f}, {scale_y:.3f}) para tela ({screen_x}, {screen_y})"
+                    f"Applying DPI scale ({scale_x:.3f}, {scale_y:.3f}) for screen ({screen_x}, {screen_y})"
                 )
 
             lParam = win32api.MAKELONG(int(client_x), int(client_y))
 
-            # Garante que a janela receba a posicao atualizada antes do clique
+            # Ensure the window receives the updated position before the click
             win32gui.PostMessage(hwnd, win32con.WM_MOUSEMOVE, 0, lParam)
 
-            if button == 'left':
-                win32gui.PostMessage(hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lParam)
+            if button == "left":
+                win32gui.PostMessage(
+                    hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lParam
+                )
                 time.sleep(0.05)
                 win32gui.PostMessage(hwnd, win32con.WM_LBUTTONUP, 0, lParam)
-            elif button == 'right':
-                win32gui.PostMessage(hwnd, win32con.WM_RBUTTONDOWN, win32con.MK_RBUTTON, lParam)
+            elif button == "right":
+                win32gui.PostMessage(
+                    hwnd, win32con.WM_RBUTTONDOWN, win32con.MK_RBUTTON, lParam
+                )
                 time.sleep(0.05)
                 win32gui.PostMessage(hwnd, win32con.WM_RBUTTONUP, 0, lParam)
-            elif button == 'double':
-                win32gui.PostMessage(hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lParam)
+            elif button == "double":
+                win32gui.PostMessage(
+                    hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lParam
+                )
                 time.sleep(0.05)
                 win32gui.PostMessage(hwnd, win32con.WM_LBUTTONUP, 0, lParam)
                 time.sleep(0.05)
-                win32gui.PostMessage(hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lParam)
+                win32gui.PostMessage(
+                    hwnd, win32con.WM_LBUTTONDOWN, win32con.MK_LBUTTON, lParam
+                )
                 time.sleep(0.05)
                 win32gui.PostMessage(hwnd, win32con.WM_LBUTTONUP, 0, lParam)
 
             window_title = win32gui.GetWindowText(hwnd)
             logger.debug(
-                f"Clique virtual executado em janela: {window_title} - tela ({screen_x}, {screen_y}) -> cliente ({client_x}, {client_y})"
+                f"Virtual click performed on window: {window_title} - screen ({screen_x}, {screen_y}) -> client ({client_x}, {client_y})"
             )
             return True
 
         except Exception as e:
-            logger.debug(f"Erro no clique virtual Windows: {e}")
+            logger.debug(f"Error in Windows virtual click: {e}")
             return False
 
-    def _click_virtual_linux(self, x: int, y: int, button: str = 'left') -> bool:
-
+    def _click_virtual_linux(self, x: int, y: int, button: str = "left") -> bool:
         """
 
-        Executa clique virtual no Linux (placeholder para implementação futura).
+        Performs a virtual click on Linux (placeholder for future implementation).
 
 
 
         Args:
 
-            x (int): Coordenada X
+            x (int): X coordinate
 
-            y (int): Coordenada Y
+            y (int): Y coordinate
 
-            button (str): Botão do mouse
+            button (str): Mouse button
 
 
 
         Returns:
 
-            bool: True se clique foi executado com sucesso
+            bool: True if the click was performed successfully
 
         """
 
-        # TODO: Implementar usando Xlib ou outras bibliotecas Linux
+        # TODO: Implement using Xlib or other Linux libraries
 
-        logger.debug("Clique virtual Linux não implementado. Usando fallback.")
+        logger.debug("Linux virtual click not implemented. Using fallback.")
 
         return False
 
-
-
-    def _click_virtual_macos(self, x: int, y: int, button: str = 'left') -> bool:
-
+    def _click_virtual_macos(self, x: int, y: int, button: str = "left") -> bool:
         """
 
-        Executa clique virtual no macOS (placeholder para implementação futura).
+        Performs a virtual click on macOS (placeholder for future implementation).
 
 
 
         Args:
 
-            x (int): Coordenada X
+            x (int): X coordinate
 
-            y (int): Coordenada Y
+            y (int): Y coordinate
 
-            button (str): Botão do mouse
+            button (str): Mouse button
 
 
 
         Returns:
 
-            bool: True se clique foi executado com sucesso
+            bool: True if the click was performed successfully
 
         """
 
-        # TODO: Implementar usando Quartz ou outras bibliotecas macOS
+        # TODO: Implement using Quartz or other macOS libraries
 
-        logger.debug("Clique virtual macOS não implementado. Usando fallback.")
+        logger.debug("macOS virtual click not implemented. Using fallback.")
 
         return False
 
-
-
-    def click(self, x: int, y: int, button: str = 'left', use_virtual: Optional[bool] = None, location_info: Optional[tuple] = None) -> bool:
-
+    def click(
+        self,
+        x: int,
+        y: int,
+        button: str = "left",
+        use_virtual: Optional[bool] = None,
+        location_info: Optional[tuple] = None,
+    ) -> bool:
         """
 
-        Executa clique usando mouse virtual ou físico baseado na configuração.
+        Performs a click using the virtual or physical mouse based on the configuration.
 
 
 
         Args:
 
-            x (int): Coordenada X
+            x (int): X coordinate
 
-            y (int): Coordenada Y
+            y (int): Y coordinate
 
-            button (str): Botão do mouse ('left', 'right', 'double', 'move_to')
+            button (str): Mouse button ('left', 'right', 'double', 'move_to')
 
-            use_virtual (bool, optional): Forçar uso de mouse virtual (sobrescreve configuração)
+            use_virtual (bool, optional): Force the use of the virtual mouse (overrides the configuration)
 
-            location_info (tuple, optional): Informação da região encontrada (x, y, width, height) para recalcular centro
+            location_info (tuple, optional): Info of the found region (x, y, width, height) to recompute the center
 
 
 
         Returns:
 
-            bool: True se clique foi executado com sucesso
+            bool: True if the click was performed successfully
 
         """
 
-        # Determina se deve usar mouse virtual
+        # Determine whether the virtual mouse should be used
 
-        should_use_virtual = use_virtual if use_virtual is not None else self.config.get('use_virtual_mouse', False)
+        should_use_virtual = (
+            use_virtual
+            if use_virtual is not None
+            else self.config.get("use_virtual_mouse", False)
+        )
 
-
-
-        # Se está usando virtual mouse e tem informação da localização, recalcula centro exato
+        # If using the virtual mouse and there is location info, recompute the exact center
 
         if should_use_virtual and location_info:
-
             center_x = location_info[0] + (location_info[2] // 2)
 
             center_y = location_info[1] + (location_info[3] // 2)
 
-            logger.info(f"VIRTUAL: Recalculando centro da imagem: original({x}, {y}) -> centro_exato({center_x}, {center_y})")
+            logger.info(
+                f"VIRTUAL: Recomputing image center: original({x}, {y}) -> exact_center({center_x}, {center_y})"
+            )
 
             x, y = center_x, center_y
 
+        # If it is only a movement, no virtual click is needed
 
-
-        # Se é apenas movimento, não precisa de clique virtual
-
-        if button == 'move_to':
-
+        if button == "move_to":
             return self._move_to_physical(x, y)
 
-
-
-        # Tenta mouse virtual se disponível e configurado
+        # Try the virtual mouse if available and configured
 
         if should_use_virtual and self.virtual_available:
-
-            logger.info(f"Executando clique VIRTUAL em ({x}, {y}) com botão {button}")
-
-
+            logger.info(f"Performing VIRTUAL click at ({x}, {y}) with button {button}")
 
             if self.system == "windows":
-
                 success = self._click_virtual_windows(x, y, button)
 
                 if success:
-
-                    logger.info(f"SUCESSO: Clique virtual executado com sucesso em ({x}, {y})")
+                    logger.info(
+                        f"SUCCESS: Virtual click performed successfully at ({x}, {y})"
+                    )
 
                     return True
 
                 else:
-
-                    logger.warning(f"FALHA: Clique virtual falhou em ({x}, {y}) - fazendo fallback para mouse fisico")
+                    logger.warning(
+                        f"FAILURE: Virtual click failed at ({x}, {y}) - falling back to the physical mouse"
+                    )
 
             elif self.system == "linux":
-
                 success = self._click_virtual_linux(x, y, button)
 
                 if success:
-
-                    logger.info(f"SUCESSO: Clique virtual Linux executado com sucesso em ({x}, {y})")
+                    logger.info(
+                        f"SUCCESS: Linux virtual click performed successfully at ({x}, {y})"
+                    )
 
                     return True
 
                 else:
-
-                    logger.warning(f"FALHA: Clique virtual Linux falhou em ({x}, {y}) - fazendo fallback para mouse fisico")
+                    logger.warning(
+                        f"FAILURE: Linux virtual click failed at ({x}, {y}) - falling back to the physical mouse"
+                    )
 
             elif self.system == "darwin":
-
                 success = self._click_virtual_macos(x, y, button)
 
                 if success:
-
-                    logger.info(f"SUCESSO: Clique virtual macOS executado com sucesso em ({x}, {y})")
+                    logger.info(
+                        f"SUCCESS: macOS virtual click performed successfully at ({x}, {y})"
+                    )
 
                     return True
 
                 else:
+                    logger.warning(
+                        f"FAILURE: macOS virtual click failed at ({x}, {y}) - falling back to the physical mouse"
+                    )
 
-                    logger.warning(f"FALHA: Clique virtual macOS falhou em ({x}, {y}) - fazendo fallback para mouse fisico")
-
-
-
-        # Fallback para mouse físico
+        # Fallback to the physical mouse
 
         if should_use_virtual:
-
-            logger.warning(f"FALLBACK: use_virtual_mouse=True mas usando mouse fisico em ({x}, {y})")
+            logger.warning(
+                f"FALLBACK: use_virtual_mouse=True but using the physical mouse at ({x}, {y})"
+            )
 
         else:
-
-            logger.info(f"Executando clique FISICO em ({x}, {y}) com botao {button}")
-
-
+            logger.info(f"Performing PHYSICAL click at ({x}, {y}) with button {button}")
 
         return self._click_physical(x, y, button)
 
-
-
     def _move_to_physical(self, x: int, y: int) -> bool:
-
         """
 
-        Move o cursor para posição especificada.
+        Moves the cursor to the specified position.
 
 
 
         Args:
 
-            x (int): Coordenada X
+            x (int): X coordinate
 
-            y (int): Coordenada Y
+            y (int): Y coordinate
 
 
 
         Returns:
 
-            bool: True se movimento foi executado com sucesso
+            bool: True if the movement was performed successfully
 
         """
 
         try:
-
             import pyautogui
 
-            pyautogui.moveTo(x, y, duration=self.config.get('movement_duration', 0.1))
+            pyautogui.moveTo(x, y, duration=self.config.get("movement_duration", 0.1))
 
-            logger.debug(f"Cursor movido para ({x}, {y})")
+            logger.debug(f"Cursor moved to ({x}, {y})")
 
             return True
 
         except Exception as e:
-
-            logger.error(f"Erro ao mover cursor: {e}")
+            logger.error(f"Error moving cursor: {e}")
 
             return False
-
-
 
     def _click_physical(self, x: int, y: int, button: str) -> bool:
-
         """
 
-        Executa clique usando mouse físico com preservação de posição.
+        Performs a click using the physical mouse with position preservation.
 
 
 
         Args:
 
-            x (int): Coordenada X
+            x (int): X coordinate
 
-            y (int): Coordenada Y
+            y (int): Y coordinate
 
-            button (str): Botão do mouse
+            button (str): Mouse button
 
 
 
         Returns:
 
-            bool: True se clique foi executado com sucesso
+            bool: True if the click was performed successfully
 
         """
 
         try:
-
             import pyautogui
 
+            # Save the current position if the virtual mouse was being attempted
 
-
-            # Salva posição atual se mouse virtual estava tentado ser usado
-
-            should_preserve = self.config.get('use_virtual_mouse', False)
+            should_preserve = self.config.get("use_virtual_mouse", False)
 
             if should_preserve:
-
                 self.save_cursor_position()
 
+            # Perform the physical click
 
+            if button == "left":
+                pyautogui.click(x, y, duration=self.config.get("click_duration", 0.1))
 
-            # Executa clique físico
-
-            if button == 'left':
-
-                pyautogui.click(x, y, duration=self.config.get('click_duration', 0.1))
-
-            elif button == 'right':
-
+            elif button == "right":
                 pyautogui.rightClick(x, y)
 
-            elif button == 'double':
-
+            elif button == "double":
                 pyautogui.doubleClick(x, y)
 
-            elif button == 'move_to':
+            elif button == "move_to":
+                pyautogui.moveTo(
+                    x, y, duration=self.config.get("movement_duration", 0.1)
+                )
 
-                pyautogui.moveTo(x, y, duration=self.config.get('movement_duration', 0.1))
-
-
-
-            # Restaura posição se estava usando mouse virtual
+            # Restore the position if the virtual mouse was being used
 
             if should_preserve:
-
                 self.restore_cursor_position()
 
-
-
-            logger.debug(f"Clique físico executado em ({x}, {y}) com botão {button}")
+            logger.debug(f"Physical click performed at ({x}, {y}) with button {button}")
 
             return True
 
-
-
         except Exception as e:
-
-            logger.error(f"Erro no clique físico: {e}")
+            logger.error(f"Error in physical click: {e}")
 
             return False
 
-
-
     def is_virtual_available(self) -> bool:
-
         """
 
-        Verifica se mouse virtual está disponível.
+        Checks whether the virtual mouse is available.
 
 
 
         Returns:
 
-            bool: True se mouse virtual está disponível
+            bool: True if the virtual mouse is available
 
         """
 
         return self.virtual_available
 
-
-
     def get_cursor_position(self) -> Optional[Tuple[int, int]]:
-
         """
 
-        Obtém posição atual do cursor.
+        Gets the current cursor position.
 
 
 
         Returns:
 
-            Tuple[int, int]: Coordenadas (x, y) do cursor ou None se erro
+            Tuple[int, int]: Cursor (x, y) coordinates or None on error
 
         """
 
         try:
-
             import pyautogui
 
             pos = pyautogui.position()
@@ -668,7 +607,6 @@ class VirtualMouse:
             return (pos.x, pos.y)
 
         except Exception as e:
-
-            logger.error(f"Erro ao obter posição do cursor: {e}")
+            logger.error(f"Error getting cursor position: {e}")
 
             return None

@@ -1,48 +1,34 @@
 """
-Bot Vision Suite - Core Modules
+Visus Desktop - Core Modules
 
-Este módulo contém as classes e funções principais do Bot Vision Suite.
+This module contains the main classes and functions of Visus Desktop.
 """
 
 from .image_processing import (
     ImageProcessor,
+    get_available_methods,
     preprocess_image_for_ocr,
-    get_available_methods
 )
-
+from .keyboard_commands import KeyboardCommander
 from .ocr_engine import (
     OCREngine,
     OCRResult,
+    extract_text_from_image,
     find_text_with_multiple_preprocessing,
-    extract_text_from_image
 )
-
 from .overlay import (
     VisualOverlay,
+    show_multiple_overlays,
     show_overlay,
     show_overlay_blocking,
-    show_multiple_overlays
 )
-
-from .task_executor import (
-    TaskExecutor,
-    TaskResult,
-    execute_tasks,
-    click_images
-)
-
-from .relative_image import (
-    RelativeImageDetector
-)
-
-from .keyboard_commands import (
-    KeyboardCommander
-)
+from .relative_image import RelativeImageDetector
+from .task_executor import TaskExecutor, TaskResult, click_images, execute_tasks
 
 __all__ = [
     # Image processing
     "ImageProcessor",
-    "preprocess_image_for_ocr", 
+    "preprocess_image_for_ocr",
     "get_available_methods",
     # OCR
     "OCREngine",
@@ -52,7 +38,7 @@ __all__ = [
     # Overlay
     "VisualOverlay",
     "show_overlay",
-    "show_overlay_blocking", 
+    "show_overlay_blocking",
     "show_multiple_overlays",
     # Task executor
     "TaskExecutor",
@@ -62,5 +48,5 @@ __all__ = [
     # Relative image detection (NEW!)
     "RelativeImageDetector",
     # Keyboard commands (NEW!)
-    "KeyboardCommander"
+    "KeyboardCommander",
 ]

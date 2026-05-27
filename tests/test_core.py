@@ -5,22 +5,21 @@ Most of these exercise parts that need neither a real screen nor Tesseract
 (pure image preprocessing, data containers, command mappings). The few pieces
 that require Tesseract or a Tk display are guarded with skip markers.
 """
+
 import numpy as np
 import pytest
 from PIL import Image
 
+from tests import tesseract_available
 from visus.desktop.core.image_processing import (
     ImageProcessor,
-    preprocess_image_for_ocr,
     get_available_methods,
+    preprocess_image_for_ocr,
 )
-from visus.desktop.core.ocr_engine import OCRResult
-from visus.desktop.core.task_executor import TaskResult
 from visus.desktop.core.keyboard_commands import KeyboardCommander
+from visus.desktop.core.ocr_engine import OCRResult
 from visus.desktop.core.relative_image import RelativeImageDetector
-
-from tests import tesseract_available
-
+from visus.desktop.core.task_executor import TaskResult
 
 requires_tesseract = pytest.mark.skipif(
     not tesseract_available(),

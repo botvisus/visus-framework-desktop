@@ -3,20 +3,20 @@ Tests for ``visus.desktop.exceptions``.
 
 The exceptions module has no heavy dependencies, so these tests always run.
 """
+
 import pytest
 
 from visus.desktop.exceptions import (
     BotVisionError,
-    TesseractNotFoundError,
-    ImageNotFoundError,
-    TextNotFoundError,
-    InvalidRegionError,
-    TaskExecutionError,
     ConfigurationError,
-    OCRProcessingError,
+    ImageNotFoundError,
     ImageProcessingError,
+    InvalidRegionError,
+    OCRProcessingError,
+    TaskExecutionError,
+    TesseractNotFoundError,
+    TextNotFoundError,
 )
-
 
 ALL_EXCEPTIONS = [
     TesseractNotFoundError,

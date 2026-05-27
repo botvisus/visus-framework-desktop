@@ -5,12 +5,11 @@ The config constructor auto-detects Tesseract and raises
 ``TesseractNotFoundError`` when it is missing, so the whole module is guarded
 by the Tesseract availability check.
 """
+
 import pytest
 
-from visus.desktop.utils.config import BotVisionConfig, get_default_config
-
 from tests import tesseract_available
-
+from visus.desktop.utils.config import BotVisionConfig, get_default_config
 
 pytestmark = pytest.mark.skipif(
     not tesseract_available(),
