@@ -1,63 +1,93 @@
 """Visus Desktop - Named keyboard helpers.
 
-A self-contained mixin that mirrors BotCity's rich, named keyboard API
-(``enter``, ``tab``, ``control_c``, ``key_f1`` .. ``key_f12``, etc.). Each
-method is a thin one-liner that delegates to ``pyautogui.press`` or
-``pyautogui.hotkey``, so the names read like intentions rather than raw key
-strings.
+A mixin that mirrors BotCity's rich, named keyboard API (``enter``, ``tab``,
+``control_c``, ``key_f1`` .. ``key_f12``, etc.) without duplicating the existing
+keyboard system. Each named shortcut is a thin one-liner that delegates to
+``self.keyboard_command("<Command>")`` -- the single source of truth being the
+command map owned by
+:class:`visus.desktop.core.keyboard_commands.KeyboardCommander`. This keeps the
+method names reading like intentions while ensuring there is exactly one place
+that knows how a command maps to real keystrokes.
 
-``pyautogui`` is imported lazily inside every method. This keeps the module
-importable in headless environments (for example CI runners) where
-``pyautogui`` cannot initialize a display, and ensures importing the mixin
-never triggers any GUI side effects.
+The mixin assumes the host class provides a ``keyboard_command`` method.
+:class:`visus.desktop.VisusBot` does, so mixing this into the bot is enough.
+
+A small set of methods remain *low-level primitives* that talk to ``pyautogui``
+directly: :meth:`type_key`, :meth:`key_combo`, :meth:`hold_shift`,
+:meth:`release_shift`, :meth:`hold_ctrl` and :meth:`release_ctrl`. These are not
+present in the ``KeyboardCommander`` map (holding/releasing a modifier across
+several presses, or pressing/combining arbitrary keys, is not a fixed named
+command), so they are not duplication. They import ``pyautogui`` lazily, which
+keeps the module importable in headless environments (for example CI runners)
+where ``pyautogui`` cannot initialize a display.
 
 Example:
-    >>> import pyautogui
     >>> from visus.desktop.core.keyboard_extra import KeyboardMixin
     >>>
     >>> class Bot(KeyboardMixin):
-    ...     '''A bot that can type and trigger shortcuts.'''
+    ...     def keyboard_command(self, command, delay=0, backtrack=False):
+    ...         ...  # provided by VisusBot in real usage
     >>>
     >>> bot = Bot()
-    >>> bot.type_key("h")        # pyautogui.press("h")
-    >>> bot.enter()              # pyautogui.press("enter")
-    >>> bot.control_c()          # pyautogui.hotkey("ctrl", "c")
-    >>> bot.key_f5()             # pyautogui.press("f5")
-    >>> bot.hold_shift()         # pyautogui.keyDown("shift")
-    >>> bot.key_down()           # pyautogui.press("down")
-    >>> bot.release_shift()      # pyautogui.keyUp("shift")
+    >>> bot.enter()              # -> self.keyboard_command("Enter")
+    >>> bot.control_c()          # -> self.keyboard_command("Ctrl+C")
+    >>> bot.key_f5()             # -> self.keyboard_command("F5")
+    >>> bot.type_key("h")        # primitive: pyautogui.press("h")
+    >>> bot.hold_shift()         # primitive: pyautogui.keyDown("shift")
+    >>> bot.release_shift()      # primitive: pyautogui.keyUp("shift")
 """
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class KeyboardMixin:
-    """Mixin providing a rich, named keyboard API on top of ``pyautogui``.
+    """Mixin providing a rich, named keyboard API.
 
-    Mix this into any class to gain expressive, self-documenting keyboard
-    methods such as :meth:`enter`, :meth:`tab`, :meth:`control_c` and
-    :meth:`key_f5`. Methods either *press* a single key or fire a *hotkey*
-    combination; the modifier helpers (:meth:`hold_shift`, :meth:`hold_ctrl`
-    and their ``release_*`` counterparts) let you build custom combinations by
-    holding a modifier across several presses.
+    Mix this into any class that exposes a ``keyboard_command`` method (such as
+    :class:`visus.desktop.VisusBot`) to gain expressive, self-documenting
+    keyboard methods such as :meth:`enter`, :meth:`tab`, :meth:`control_c` and
+    :meth:`key_f5`.
 
-    All methods import ``pyautogui`` lazily, so importing this mixin has no GUI
-    side effects and works in headless environments.
+    Design:
+
+    * **Named shortcuts** (everything except the primitives below) delegate to
+      ``self.keyboard_command("<Command>")``. The ``KeyboardCommander`` command
+      map is the single source of truth for how each command is performed, so
+      these methods never duplicate that logic -- they only translate a friendly
+      method name into the canonical command string.
+    * **Primitives** (:meth:`type_key`, :meth:`key_combo`, :meth:`hold_shift`,
+      :meth:`release_shift`, :meth:`hold_ctrl`, :meth:`release_ctrl`) call
+      ``pyautogui`` directly. They are *not* part of the command map, so they
+      are not duplication; ``pyautogui`` is imported lazily inside each one.
 
     Example:
-        >>> class Bot(KeyboardMixin):
-        ...     pass
-        >>> bot = Bot()
-        >>> bot.control_a()   # select all -> pyautogui.hotkey("ctrl", "a")
-        >>> bot.control_c()   # copy       -> pyautogui.hotkey("ctrl", "c")
-        >>> bot.tab()         # next field -> pyautogui.press("tab")
+        >>> bot.control_a()   # select all -> self.keyboard_command("Ctrl+A")
+        >>> bot.control_c()   # copy       -> self.keyboard_command("Ctrl+C")
+        >>> bot.tab()         # next field -> self.keyboard_command("Tab")
     """
 
+    # ``keyboard_command`` is supplied by the host class (for example VisusBot).
+    # Declaring its shape here keeps type checkers and readers honest about the
+    # contract this mixin depends on.
+    def keyboard_command(
+        self, command: str, delay: float = 0, backtrack: bool = False
+    ) -> bool:  # pragma: no cover - provided by the host class
+        """Run a named keyboard command (provided by the host class)."""
+        raise NotImplementedError(
+            "KeyboardMixin requires the host class to provide keyboard_command()"
+        )
+
     # ------------------------------------------------------------------
-    # Generic helpers
+    # Generic primitives (talk to pyautogui directly; not in the command map)
     # ------------------------------------------------------------------
     def type_key(self, key: str) -> None:
         """Press a single key by its ``pyautogui`` name.
+
+        Low-level primitive (not a named command). Pressing an arbitrary key is
+        not part of the ``KeyboardCommander`` map, so this calls ``pyautogui``
+        directly.
 
         Args:
             key: The ``pyautogui`` key name to press (for example ``"a"``,
@@ -70,8 +100,10 @@ class KeyboardMixin:
     def key_combo(self, *keys: str) -> None:
         """Press several keys together as a hotkey combination.
 
-        The keys are pressed down in order and released in reverse order, which
-        is the standard way to express shortcuts such as ``Ctrl+Alt+Del``.
+        Low-level primitive (not a named command). Combining arbitrary keys is
+        not part of the ``KeyboardCommander`` map, so this calls ``pyautogui``
+        directly. The keys are pressed down in order and released in reverse
+        order, the standard way to express shortcuts such as ``Ctrl+Alt+Del``.
 
         Args:
             *keys: The ``pyautogui`` key names to combine (for example
@@ -82,265 +114,203 @@ class KeyboardMixin:
         pyautogui.hotkey(*keys)
 
     # ------------------------------------------------------------------
-    # Navigation and editing
+    # Navigation and editing (delegate to keyboard_command)
     # ------------------------------------------------------------------
-    def enter(self) -> None:
+    def enter(self) -> Any:
         """Press the Enter/Return key."""
-        import pyautogui
+        return self.keyboard_command("Enter")
 
-        pyautogui.press("enter")
-
-    def tab(self) -> None:
+    def tab(self) -> Any:
         """Press the Tab key (move to the next field)."""
-        import pyautogui
+        return self.keyboard_command("Tab")
 
-        pyautogui.press("tab")
-
-    def shift_tab(self) -> None:
+    def shift_tab(self) -> Any:
         """Press Shift+Tab (move to the previous field)."""
-        import pyautogui
+        return self.keyboard_command("Shift+Tab")
 
-        pyautogui.hotkey("shift", "tab")
-
-    def esc(self) -> None:
+    def esc(self) -> Any:
         """Press the Escape key."""
-        import pyautogui
+        return self.keyboard_command("Escape")
 
-        pyautogui.press("esc")
-
-    def space(self) -> None:
+    def space(self) -> Any:
         """Press the Spacebar."""
-        import pyautogui
+        return self.keyboard_command("Space")
 
-        pyautogui.press("space")
-
-    def backspace(self) -> None:
+    def backspace(self) -> Any:
         """Press the Backspace key (delete the character to the left)."""
-        import pyautogui
+        return self.keyboard_command("Backspace")
 
-        pyautogui.press("backspace")
-
-    def delete(self) -> None:
+    def delete(self) -> Any:
         """Press the Delete key (delete the character to the right)."""
-        import pyautogui
+        return self.keyboard_command("Delete")
 
-        pyautogui.press("delete")
-
-    def key_up(self) -> None:
+    def key_up(self) -> Any:
         """Press the Up arrow key."""
-        import pyautogui
+        return self.keyboard_command("Arrow Up")
 
-        pyautogui.press("up")
-
-    def key_down(self) -> None:
+    def key_down(self) -> Any:
         """Press the Down arrow key."""
-        import pyautogui
+        return self.keyboard_command("Arrow Down")
 
-        pyautogui.press("down")
-
-    def key_left(self) -> None:
+    def key_left(self) -> Any:
         """Press the Left arrow key."""
-        import pyautogui
+        return self.keyboard_command("Arrow Left")
 
-        pyautogui.press("left")
-
-    def key_right(self) -> None:
+    def key_right(self) -> Any:
         """Press the Right arrow key."""
-        import pyautogui
+        return self.keyboard_command("Arrow Right")
 
-        pyautogui.press("right")
-
-    def page_up(self) -> None:
+    def page_up(self) -> Any:
         """Press the Page Up key."""
-        import pyautogui
+        return self.keyboard_command("Page Up")
 
-        pyautogui.press("pageup")
-
-    def page_down(self) -> None:
+    def page_down(self) -> Any:
         """Press the Page Down key."""
-        import pyautogui
+        return self.keyboard_command("Page Down")
 
-        pyautogui.press("pagedown")
-
-    def home(self) -> None:
+    def home(self) -> Any:
         """Press the Home key."""
-        import pyautogui
+        return self.keyboard_command("Home")
 
-        pyautogui.press("home")
-
-    def end(self) -> None:
+    def end(self) -> Any:
         """Press the End key."""
-        import pyautogui
-
-        pyautogui.press("end")
+        return self.keyboard_command("End")
 
     # ------------------------------------------------------------------
-    # Function keys (F1 - F12)
+    # Function keys (F1 - F12) (delegate to keyboard_command)
     # ------------------------------------------------------------------
-    def key_f1(self) -> None:
+    def key_f1(self) -> Any:
         """Press the F1 key."""
-        import pyautogui
+        return self.keyboard_command("F1")
 
-        pyautogui.press("f1")
-
-    def key_f2(self) -> None:
+    def key_f2(self) -> Any:
         """Press the F2 key."""
-        import pyautogui
+        return self.keyboard_command("F2")
 
-        pyautogui.press("f2")
-
-    def key_f3(self) -> None:
+    def key_f3(self) -> Any:
         """Press the F3 key."""
-        import pyautogui
+        return self.keyboard_command("F3")
 
-        pyautogui.press("f3")
-
-    def key_f4(self) -> None:
+    def key_f4(self) -> Any:
         """Press the F4 key."""
-        import pyautogui
+        return self.keyboard_command("F4")
 
-        pyautogui.press("f4")
-
-    def key_f5(self) -> None:
+    def key_f5(self) -> Any:
         """Press the F5 key."""
-        import pyautogui
+        return self.keyboard_command("F5")
 
-        pyautogui.press("f5")
-
-    def key_f6(self) -> None:
+    def key_f6(self) -> Any:
         """Press the F6 key."""
-        import pyautogui
+        return self.keyboard_command("F6")
 
-        pyautogui.press("f6")
-
-    def key_f7(self) -> None:
+    def key_f7(self) -> Any:
         """Press the F7 key."""
-        import pyautogui
+        return self.keyboard_command("F7")
 
-        pyautogui.press("f7")
-
-    def key_f8(self) -> None:
+    def key_f8(self) -> Any:
         """Press the F8 key."""
-        import pyautogui
+        return self.keyboard_command("F8")
 
-        pyautogui.press("f8")
-
-    def key_f9(self) -> None:
+    def key_f9(self) -> Any:
         """Press the F9 key."""
-        import pyautogui
+        return self.keyboard_command("F9")
 
-        pyautogui.press("f9")
-
-    def key_f10(self) -> None:
+    def key_f10(self) -> Any:
         """Press the F10 key."""
-        import pyautogui
+        return self.keyboard_command("F10")
 
-        pyautogui.press("f10")
-
-    def key_f11(self) -> None:
+    def key_f11(self) -> Any:
         """Press the F11 key."""
-        import pyautogui
+        return self.keyboard_command("F11")
 
-        pyautogui.press("f11")
-
-    def key_f12(self) -> None:
+    def key_f12(self) -> Any:
         """Press the F12 key."""
-        import pyautogui
-
-        pyautogui.press("f12")
+        return self.keyboard_command("F12")
 
     # ------------------------------------------------------------------
-    # Shortcuts (hotkeys)
+    # Shortcuts (hotkeys) (delegate to keyboard_command)
     # ------------------------------------------------------------------
-    def control_c(self) -> None:
+    def control_c(self) -> Any:
         """Press Ctrl+C (copy)."""
-        import pyautogui
+        return self.keyboard_command("Ctrl+C")
 
-        pyautogui.hotkey("ctrl", "c")
-
-    def control_v(self) -> None:
+    def control_v(self) -> Any:
         """Press Ctrl+V (paste)."""
-        import pyautogui
+        return self.keyboard_command("Ctrl+V")
 
-        pyautogui.hotkey("ctrl", "v")
-
-    def control_x(self) -> None:
+    def control_x(self) -> Any:
         """Press Ctrl+X (cut)."""
-        import pyautogui
+        return self.keyboard_command("Ctrl+X")
 
-        pyautogui.hotkey("ctrl", "x")
-
-    def control_a(self) -> None:
+    def control_a(self) -> Any:
         """Press Ctrl+A (select all)."""
-        import pyautogui
+        return self.keyboard_command("Ctrl+A")
 
-        pyautogui.hotkey("ctrl", "a")
-
-    def control_s(self) -> None:
+    def control_s(self) -> Any:
         """Press Ctrl+S (save)."""
-        import pyautogui
+        return self.keyboard_command("Ctrl+S")
 
-        pyautogui.hotkey("ctrl", "s")
-
-    def control_z(self) -> None:
+    def control_z(self) -> Any:
         """Press Ctrl+Z (undo)."""
-        import pyautogui
+        return self.keyboard_command("Ctrl+Z")
 
-        pyautogui.hotkey("ctrl", "z")
-
-    def control_y(self) -> None:
+    def control_y(self) -> Any:
         """Press Ctrl+Y (redo)."""
-        import pyautogui
+        return self.keyboard_command("Ctrl+Y")
 
-        pyautogui.hotkey("ctrl", "y")
-
-    def control_f(self) -> None:
+    def control_f(self) -> Any:
         """Press Ctrl+F (find)."""
-        import pyautogui
+        return self.keyboard_command("Ctrl+F")
 
-        pyautogui.hotkey("ctrl", "f")
-
-    def control_p(self) -> None:
+    def control_p(self) -> Any:
         """Press Ctrl+P (print)."""
-        import pyautogui
+        return self.keyboard_command("Ctrl+P")
 
-        pyautogui.hotkey("ctrl", "p")
-
-    def alt_tab(self) -> None:
+    def alt_tab(self) -> Any:
         """Press Alt+Tab (switch windows)."""
-        import pyautogui
+        return self.keyboard_command("Alt+Tab")
 
-        pyautogui.hotkey("alt", "tab")
-
-    def alt_f4(self) -> None:
+    def alt_f4(self) -> Any:
         """Press Alt+F4 (close the active window)."""
-        import pyautogui
-
-        pyautogui.hotkey("alt", "f4")
+        return self.keyboard_command("Alt+F4")
 
     # ------------------------------------------------------------------
-    # Modifier hold / release
+    # Modifier hold / release (primitives; talk to pyautogui directly)
     # ------------------------------------------------------------------
     def hold_shift(self) -> None:
-        """Hold the Shift key down (release it later with :meth:`release_shift`)."""
+        """Hold the Shift key down (release it later with :meth:`release_shift`).
+
+        Low-level primitive: holding a modifier across presses is not a named
+        command, so this calls ``pyautogui`` directly.
+        """
         import pyautogui
 
         pyautogui.keyDown("shift")
 
     def release_shift(self) -> None:
-        """Release the Shift key previously held with :meth:`hold_shift`."""
+        """Release the Shift key previously held with :meth:`hold_shift`.
+
+        Low-level primitive that calls ``pyautogui`` directly.
+        """
         import pyautogui
 
         pyautogui.keyUp("shift")
 
     def hold_ctrl(self) -> None:
-        """Hold the Ctrl key down (release it later with :meth:`release_ctrl`)."""
+        """Hold the Ctrl key down (release it later with :meth:`release_ctrl`).
+
+        Low-level primitive: holding a modifier across presses is not a named
+        command, so this calls ``pyautogui`` directly.
+        """
         import pyautogui
 
         pyautogui.keyDown("ctrl")
 
     def release_ctrl(self) -> None:
-        """Release the Ctrl key previously held with :meth:`hold_ctrl`."""
+        """Release the Ctrl key previously held with :meth:`hold_ctrl`.
+
+        Low-level primitive that calls ``pyautogui`` directly.
+        """
         import pyautogui
 
         pyautogui.keyUp("ctrl")

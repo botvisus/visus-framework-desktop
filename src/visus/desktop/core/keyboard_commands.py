@@ -108,6 +108,7 @@ class KeyboardCommander:
             # Navigation keys
             "Enter": lambda: pyautogui.press("enter"),
             "Escape": lambda: pyautogui.press("escape"),
+            "Space": lambda: pyautogui.press("space"),
             "Delete": lambda: pyautogui.press("delete"),
             "Backspace": lambda: pyautogui.press("backspace"),
             "Home": lambda: pyautogui.press("home"),
