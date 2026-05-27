@@ -111,14 +111,7 @@ class TestExecuteTasksDispatch:
         assert kwargs["y"] == 200
 
     def test_type_text_dispatch_via_executor_helper(self, bot):
-        """The 'type_text' branch routes to keyboard_commander.type_text + skips click.
-
-        Note: ``_execute_single_task`` checks ``"text" in task`` BEFORE
-        ``task.get("type") == "type_text"``, so a real ``type_text`` task dict
-        (which always carries a ``text`` key) is intercepted by the OCR branch
-        first. We therefore exercise the typing branch directly through
-        ``_execute_type_text`` to confirm it delegates to the keyboard backend.
-        """
+        """``_execute_type_text`` delegates to keyboard_commander.type_text and skips click."""
         with patch.object(
             bot.executor.keyboard_commander, "type_text"
         ) as mock_type:
@@ -129,12 +122,12 @@ class TestExecuteTasksDispatch:
         assert outcome == "skip"
         mock_type.assert_called_once_with("hello", 0.01)
 
-    def test_type_text_task_intercepted_by_text_branch(self, bot, no_perform_action):
-        """A type_text task dict carrying 'text' is routed through the OCR path.
+    def test_type_text_task_routes_to_typing(self, bot, no_perform_action):
+        """A {'type': 'type_text', 'text': ...} task types via the keyboard backend.
 
-        This documents the source's dispatch order: the ``text`` key wins over
-        ``type == 'type_text'``. With no region the OCR lookup fails, so the task
-        is reported unsuccessful -- it never reaches keyboard typing.
+        Explicit action types take precedence over the 'text' heuristic, so the
+        task reaches ``_execute_type_text`` (keyboard typing) instead of being
+        intercepted by the OCR branch.
         """
         with patch.object(
             bot.executor.keyboard_commander, "type_text"
@@ -142,8 +135,8 @@ class TestExecuteTasksDispatch:
             results = bot.execute_tasks(
                 [{"type": "type_text", "text": "hello", "interval": 0.01}]
             )
-        assert results[0].success is False
-        mock_type.assert_not_called()
+        mock_type.assert_called_once_with("hello", 0.01)
+        assert results[0].success is True
 
     def test_keyboard_command_task_dispatches(self, bot):
         """A 'keyboard_command' task routes to keyboard_commander.execute_command."""

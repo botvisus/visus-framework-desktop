@@ -181,11 +181,12 @@ class VisualOverlay:
         Args:
             region (tuple): (x, y, width, height) of the region
         """
+        # Unpack before the try so the except/fallback below can always use these.
+        x, y, w, h = region
+
         try:
             import ctypes
             import time
-
-            x, y, w, h = region
 
             # Use the Windows API to create the overlay
             user32 = ctypes.windll.user32

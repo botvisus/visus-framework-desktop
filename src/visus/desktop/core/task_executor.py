@@ -233,7 +233,21 @@ class TaskExecutor:
         # Try to execute the task with multiple attempts
         while attempts < self.max_attempts and location is None:
             try:
-                if "text" in task:
+                # Explicit action types take precedence over the text/image
+                # heuristics, so e.g. a {"type": "type_text", "text": ...} task
+                # is typed rather than being intercepted by the OCR branch.
+                task_type = task.get("type")
+                if task_type == "type_text":
+                    location = self._execute_type_text(task, attempts)
+                elif task_type == "keyboard_command":
+                    location = self._execute_keyboard_command(task, attempts)
+                elif task_type == "click":
+                    location = self._find_coordinate_location(task, attempts)
+                elif task_type == "relative_image":
+                    location = self._find_relative_image_location(task, attempts)
+                elif task_type == "extract_text":
+                    location = self._execute_extract_text(task, attempts)
+                elif "text" in task:
                     # Check whether it has wait parameters
                     if task.get("wait_until_found") or task.get(
                         "wait_until_disappears"
@@ -249,16 +263,6 @@ class TaskExecutor:
                         location = self._find_image_with_wait(task, attempts)
                     else:
                         location = self._find_image_location(task, attempts)
-                elif task.get("type") == "relative_image":
-                    location = self._find_relative_image_location(task, attempts)
-                elif task.get("type") == "click":
-                    location = self._find_coordinate_location(task, attempts)
-                elif task.get("type") == "type_text":
-                    location = self._execute_type_text(task, attempts)
-                elif task.get("type") == "keyboard_command":
-                    location = self._execute_keyboard_command(task, attempts)
-                elif task.get("type") == "extract_text":
-                    location = self._execute_extract_text(task, attempts)
                 else:
                     last_error = (
                         "Task without a 'text', 'image' key or a valid type defined"
