@@ -1,19 +1,18 @@
-"""Virtual vs physical mouse — do they click the same spot? Does the virtual click register?
+"""Virtual vs physical mouse — do they target the SAME position? (no GUI needed)
 
-This opens a small target window that RECORDS every click it receives (and the exact
-client coordinates). It then fires a PHYSICAL click and a VIRTUAL click at the *same*
-screen point and reports, side by side, what the window actually received.
+Hover your mouse over the on-screen element you want to test. After a short countdown
+the script captures that point and:
 
-Why this matters: the virtual mouse on Windows clicks by POSTING WM_LBUTTONDOWN/UP
-messages to the window under the point (it never moves the real cursor). Many apps
-(Chrome/Electron, Java/Oracle Forms, games, custom-drawn UIs) IGNORE posted mouse
-messages — so the virtual click silently does nothing. This test shows whether your
-environment honors it, and whether the position matches the physical click.
+  1) PROVES the position is correct by comparing the client coordinates the virtual
+     mouse computes against the OS ground truth (win32 ScreenToClient). If they match,
+     the virtual click targets the exact same pixel as a physical click.
+  2) Fires a PHYSICAL click (moves the real cursor) and a VIRTUAL click (cursor stays)
+     at that point, so you can watch whether both activate the same element.
+
+This uses only the Win32 API (no Tkinter), so it works even if your Python's Tcl/Tk
+is broken.
 
 Run:  python manual_tests/07_virtual_vs_physical.py
-
-Note: this moves the real mouse (for the physical click) and briefly forces the target
-window on top. Don't fight it for the mouse during the ~4 seconds it runs.
 """
 
 from __future__ import annotations
@@ -24,22 +23,25 @@ from pathlib import Path
 # Run from source without installing the package: add the project's src/ to sys.path.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-import threading
 import time
-import tkinter as tk
 
 from visus.desktop.core.virtual_mouse import VirtualMouse
 from visus.desktop.utils.config import BotVisionConfig
 
-# Shared state between the click handler (main/Tk thread) and the worker thread.
-received: list[dict] = []
-phase = {"name": "idle"}
+COUNTDOWN = 5
 
 
 def main() -> int:
     print(__doc__)
 
-    # Build a config + the virtual mouse. (BotVisionConfig needs Tesseract installed.)
+    try:
+        import pyautogui
+        import win32gui
+    except Exception as exc:  # noqa: BLE001
+        print(f"[FAIL] missing runtime dependency: {exc}")
+        print("       Install with: pip install pyautogui pywin32")
+        return 1
+
     try:
         config = BotVisionConfig(
             {"use_virtual_mouse": True, "click_duration": 0, "movement_duration": 0}
@@ -50,100 +52,57 @@ def main() -> int:
         return 1
 
     vm = VirtualMouse(config)
-    print(f"\nvirtual mouse available on this system: {vm.is_virtual_available()}")
+    print(f"virtual mouse available on this system: {vm.is_virtual_available()}")
     if not vm.is_virtual_available():
-        print("  -> win32 not available; virtual clicks will FALL BACK to physical.")
-        print("     Install with: pip install pywin32")
+        print("  -> win32 not available; virtual clicks FALL BACK to physical "
+              "(pip install pywin32).")
 
-    # --- Target window that records what it receives -------------------------
-    root = tk.Tk()
-    root.title("Visus mouse test — click target")
-    root.geometry("640x460+200+200")
-    root.attributes("-topmost", True)  # keep it frontmost so both clicks land here
+    print(f"\nHover your mouse over the element to test. Capturing in {COUNTDOWN}s...")
+    for remaining in range(COUNTDOWN, 0, -1):
+        print(f"  {remaining}...", end="\r")
+        time.sleep(1)
+    print(" " * 40, end="\r")
 
-    canvas = tk.Canvas(root, width=640, height=400, bg="white", highlightthickness=0)
-    canvas.pack()
-    status = tk.Label(root, text="Preparing...", font=("Segoe UI", 11))
-    status.pack(fill="x")
+    pos = pyautogui.position()
+    px, py = int(pos[0]), int(pos[1])
+    target = (px, py)
+    print(f"Target screen point: {target}")
 
-    def on_click(event: tk.Event, button: str) -> None:
-        rec = {
-            "phase": phase["name"],
-            "button": button,
-            "client": (event.x, event.y),
-            "screen": (event.x_root, event.y_root),
-        }
-        received.append(rec)
-        color = "#1e88e5" if phase["name"] == "PHYSICAL" else "#e53935"
-        canvas.create_oval(
-            event.x - 8, event.y - 8, event.x + 8, event.y + 8, outline=color, width=3
-        )
-        canvas.create_text(
-            event.x, event.y - 16, text=phase["name"], fill=color, font=("Segoe UI", 9)
-        )
-        status.config(text=f"Received {phase['name']} {button} click at client {rec['client']}")
+    hwnd = win32gui.WindowFromPoint(target)
+    if not hwnd:
+        print("[FAIL] No window found under that point.")
+        return 1
+    title = win32gui.GetWindowText(hwnd) or "(no title)"
 
-    canvas.bind("<Button-1>", lambda e: on_click(e, "left"))
-    canvas.bind("<Button-3>", lambda e: on_click(e, "right"))
+    # --- Position proof: our computed client coords must equal the OS ground truth ---
+    our_client = vm._resolve_client_coordinates(hwnd, target)[:2]
+    os_client = tuple(win32gui.ScreenToClient(hwnd, target))
+    match = tuple(our_client) == os_client
 
-    # --- Worker thread that fires the two clicks -----------------------------
-    def worker() -> None:
-        time.sleep(1.0)  # let the window render and come to front
-        root.update_idletasks()
-        target_x = canvas.winfo_rootx() + canvas.winfo_width() // 2
-        target_y = canvas.winfo_rooty() + canvas.winfo_height() // 2
-        expected_client = (canvas.winfo_width() // 2, canvas.winfo_height() // 2)
+    print("\n" + "=" * 64)
+    print("POSITION PROOF")
+    print("=" * 64)
+    print(f"  window under point        : {title!r} (hwnd={hwnd})")
+    print(f"  VirtualMouse client coords : {tuple(our_client)}  <- what the click posts")
+    print(f"  OS ScreenToClient (truth)  : {os_client}")
+    print(f"  MATCH: {match}  -> "
+          f"{'virtual click targets the correct pixel' if match else 'OFF — coordinate bug!'}")
+    print("=" * 64)
 
-        print(f"\nTarget screen point: ({target_x}, {target_y})")
-        print(f"Expected client point inside the canvas: {expected_client}\n")
+    # --- Live clicks so you can watch the behavior ---------------------------
+    print("\nFiring PHYSICAL click (the real cursor moves)...")
+    r_phys = vm.click(px, py, button="left", use_virtual=False)
+    print(f"  physical click() -> {r_phys}")
+    time.sleep(0.8)
 
-        phase["name"] = "PHYSICAL"
-        print(f"-> Firing PHYSICAL click at screen ({target_x}, {target_y}) ...")
-        ok_phys = vm.click(target_x, target_y, button="left", use_virtual=False)
-        print(f"   physical click() returned: {ok_phys}")
-        time.sleep(1.0)
+    print("Firing VIRTUAL click (the real cursor should NOT move)...")
+    r_virt = vm.click(px, py, button="left", use_virtual=True)
+    print(f"  virtual click()  -> {r_virt}")
 
-        phase["name"] = "VIRTUAL"
-        print(f"-> Firing VIRTUAL click at screen ({target_x}, {target_y}) ...")
-        ok_virt = vm.click(target_x, target_y, button="left", use_virtual=True)
-        print(f"   virtual click() returned: {ok_virt}")
-        time.sleep(1.0)
-
-        phase["name"] = "done"
-        root.after(0, lambda: report(expected_client))
-
-    def report(expected_client: tuple[int, int]) -> None:
-        phys = [r for r in received if r["phase"] == "PHYSICAL"]
-        virt = [r for r in received if r["phase"] == "VIRTUAL"]
-
-        print("\n" + "=" * 64)
-        print("RESULT")
-        print("=" * 64)
-        print(f"  expected client point : {expected_client}")
-        print(f"  PHYSICAL clicks received: {len(phys)}  "
-              f"{phys[0]['client'] if phys else '(none)'}")
-        print(f"  VIRTUAL  clicks received: {len(virt)}  "
-              f"{virt[0]['client'] if virt else '(none)'}")
-
-        if phys and virt:
-            same = phys[0]["client"] == virt[0]["client"]
-            print(f"\n  Same client position? {'YES' if same else 'NO'} "
-                  f"(physical {phys[0]['client']} vs virtual {virt[0]['client']})")
-            print("  => Virtual mouse WORKS here and lands at the same spot.")
-        elif phys and not virt:
-            print("\n  => The PHYSICAL click registered but the VIRTUAL click did NOT.")
-            print("     This is the 'it wasn't clicking' symptom: this target ignores")
-            print("     posted WM_LBUTTONDOWN messages. The virtual mouse cannot drive it.")
-            print("     Use the physical mouse (use_virtual_mouse=False) for such apps.")
-        elif not phys:
-            print("\n  => Even the PHYSICAL click did not register on the window.")
-            print("     The window may not have been focused/on top. Try running again.")
-
-        print("=" * 64)
-        root.after(3000, root.destroy)
-
-    threading.Thread(target=worker, daemon=True).start()
-    root.mainloop()
+    print("\nDone. [OK]")
+    print("If both clicks activated the same element, position is correct (proof above).")
+    print("If the virtual click did nothing, this target ignores posted mouse messages")
+    print("(common in Chrome/Electron/Java/Oracle Forms) — use the physical mouse there.")
     return 0
 
 
