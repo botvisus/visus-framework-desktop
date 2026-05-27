@@ -10,7 +10,6 @@ performing clicks without moving the physical mouse cursor.
 
 """
 
-import ctypes
 import logging
 import platform
 import time
@@ -103,81 +102,30 @@ class VirtualMouse:
 
         return False
 
-    def _get_windows_dpi_scale(self, hwnd: int) -> Tuple[float, float]:
-        if self.system != "windows" or not hwnd:
-            return 1.0, 1.0
-
-        scale_x = scale_y = 1.0
-        try:
-            user32 = ctypes.windll.user32
-            get_dpi_for_window = getattr(user32, "GetDpiForWindow", None)
-            if get_dpi_for_window:
-                dpi = get_dpi_for_window(hwnd)
-                if dpi:
-                    scale = dpi / 96.0
-                    return scale, scale
-
-            monitor = None
-            monitor_from_window = getattr(user32, "MonitorFromWindow", None)
-            if monitor_from_window:
-                MONITOR_DEFAULTTONEAREST = 2
-                monitor = monitor_from_window(hwnd, MONITOR_DEFAULTTONEAREST)
-
-            if monitor:
-                try:
-                    shcore = ctypes.windll.shcore
-                except AttributeError:
-                    shcore = None
-
-                if shcore:
-                    MDT_EFFECTIVE_DPI = 0
-                    dpi_x = ctypes.c_uint()
-                    dpi_y = ctypes.c_uint()
-                    result = shcore.GetDpiForMonitor(
-                        monitor,
-                        MDT_EFFECTIVE_DPI,
-                        ctypes.byref(dpi_x),
-                        ctypes.byref(dpi_y),
-                    )
-                    if result == 0:
-                        if dpi_x.value:
-                            scale_x = dpi_x.value / 96.0
-                        if dpi_y.value:
-                            scale_y = dpi_y.value / 96.0
-        except Exception as e:
-            logger.debug(f"Failed to get DPI scale: {e}")
-        return scale_x, scale_y
-
     def _resolve_client_coordinates(
         self,
         hwnd: int,
         logical_point: Tuple[int, int],
-        scale_x: float,
-        scale_y: float,
     ) -> Tuple[int, int, int, int]:
+        """Convert a screen point to the target window's client coordinates.
+
+        The incoming point and ScreenToClient share the same coordinate space
+        (matching this process's DPI awareness), so NO manual DPI scaling is
+        applied here: scaling the client offset misplaces the click on
+        high-DPI / scaled displays (it was the cause of "clicks in the wrong
+        position"). PostMessage expects plain client coordinates.
+        """
         import win32gui
 
-        scale_x = scale_x or 1.0
-        scale_y = scale_y or 1.0
-
-        screen_x = int(round(logical_point[0] * scale_x))
-        screen_y = int(round(logical_point[1] * scale_y))
+        screen_x = int(round(logical_point[0]))
+        screen_y = int(round(logical_point[1]))
 
         try:
-            origin = win32gui.ClientToScreen(hwnd, (0, 0))
-            origin_x = int(round(origin[0] * scale_x))
-            origin_y = int(round(origin[1] * scale_y))
-            return screen_x - origin_x, screen_y - origin_y, screen_x, screen_y
-        except Exception as ex:
-            logger.debug(f"ScreenToClient fallback after ClientToScreen error: {ex}")
-            try:
-                client_x, client_y = win32gui.ScreenToClient(hwnd, logical_point)
-                client_x = int(round(client_x * scale_x))
-                client_y = int(round(client_y * scale_y))
-                return client_x, client_y, screen_x, screen_y
-            except Exception as inner:
-                logger.debug(f"Failed to convert coordinates to client: {inner}")
-                return screen_x, screen_y, screen_x, screen_y
+            client_x, client_y = win32gui.ScreenToClient(hwnd, (screen_x, screen_y))
+            return int(client_x), int(client_y), screen_x, screen_y
+        except Exception as inner:
+            logger.debug(f"Failed to convert coordinates to client: {inner}")
+            return screen_x, screen_y, screen_x, screen_y
 
     def save_cursor_position(self):
         """Saves the current cursor position."""
@@ -231,15 +179,8 @@ class VirtualMouse:
             if not hwnd:
                 return False
 
-            scale_x, scale_y = self._get_windows_dpi_scale(hwnd)
-            scale_x = scale_x or 1.0
-            scale_y = scale_y or 1.0
-
             client_x, client_y, screen_x, screen_y = self._resolve_client_coordinates(
-                hwnd,
-                logical_point,
-                scale_x,
-                scale_y,
+                hwnd, logical_point
             )
 
             if client_x < 0 or client_y < 0:
@@ -247,11 +188,6 @@ class VirtualMouse:
                     f"Coordinates outside the client area: ({client_x}, {client_y})"
                 )
                 return False
-
-            if scale_x != 1.0 or scale_y != 1.0:
-                logger.debug(
-                    f"Applying DPI scale ({scale_x:.3f}, {scale_y:.3f}) for screen ({screen_x}, {screen_y})"
-                )
 
             lParam = win32api.MAKELONG(int(client_x), int(client_y))
 
