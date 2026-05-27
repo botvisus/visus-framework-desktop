@@ -237,3 +237,48 @@ class CapabilitiesMixin:
         """Return the center ``(x, y)`` of a ``(x, y, width, height)`` location box."""
         x, y, width, height = location
         return (x + width // 2, y + height // 2)
+
+    def click_relative(
+        self,
+        image: str,
+        x_offset: int = 0,
+        y_offset: int = 0,
+        region: tuple | None = None,
+        confidence: float = 0.9,
+        mouse_button: str = "left",
+        delay: float = 0,
+        centered: bool = False,
+    ) -> bool:
+        """Find an image (label or path), then click at an offset from it.
+
+        Unlike :meth:`click_relative_image` (anchor image -> target image), this
+        clicks at a fixed coordinate offset relative to a single found image:
+        the image's top-left ``+ (x_offset, y_offset)``, or its center ``+`` the
+        offset when ``centered=True``.
+
+        Args:
+            image: Registered label or path of the reference image.
+            x_offset: Horizontal offset (pixels) from the reference point.
+            y_offset: Vertical offset (pixels) from the reference point.
+            region: Optional search region for the image.
+            confidence: Image match confidence (0.0-1.0).
+            mouse_button: ``"left"`` / ``"right"`` / ``"double"`` / ``"move_to"``.
+            delay: Seconds to pause after the click.
+            centered: Offset from the image center instead of its top-left.
+
+        Returns:
+            bool: True if the image was found and the click was performed.
+        """
+        location = self.find_image(image, region=region, confidence=confidence)
+        if location is None:
+            return False
+        if centered:
+            base_x, base_y = self.get_element_coords_centered(location)
+        else:
+            base_x, base_y = self.get_element_coords(location)
+        return self.click_coordinates(
+            base_x + x_offset,
+            base_y + y_offset,
+            mouse_button=mouse_button,
+            delay=delay,
+        )

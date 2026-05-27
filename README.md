@@ -15,7 +15,8 @@
 Visus Desktop automates desktop applications the way a person does: it **reads on‑screen text** with
 OCR (Tesseract), **locates UI elements by image** template matching, and **clicks, types, or sends
 keyboard shortcuts** to drive the app — even when there is no API to hook into. It is built for RPA
-and end‑to‑end UI automation on Windows, Linux, and macOS.
+and end‑to‑end UI automation on **Windows** and **Linux** (see [Platform support](#platform-support)
+for the few Windows‑only features).
 
 > **Part of the Visus family.** `visus-desktop` (import root `visus.desktop`) is the first module of
 > the planned **Visus** automation ecosystem, designed to sit alongside future `visus.web` (browser
@@ -26,20 +27,33 @@ and end‑to‑end UI automation on Windows, Linux, and macOS.
 ## Table of contents
 
 - [Features](#features)
+- [Platform support](#platform-support)
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Quickstart](#quickstart)
 - [Usage guide](#usage-guide)
   - [Find & click text (OCR)](#find--click-text-ocr)
   - [Find & click images](#find--click-images)
+  - [Find all / find multiple](#find-all--find-multiple)
+  - [Image map (register images by name)](#image-map-register-images-by-name)
   - [Relative images](#relative-images)
   - [Coordinates, typing & keyboard](#coordinates-typing--keyboard)
+  - [Named keyboard shortcuts](#named-keyboard-shortcuts)
+  - [Mouse extras (scroll, drag, triple‑click)](#mouse-extras-scroll-drag-triple-click)
+  - [Coordinate helpers](#coordinate-helpers)
   - [Text extraction](#text-extraction)
   - [Task‑list automation](#task-list-automation)
   - [Backtracking sessions](#backtracking-sessions)
   - [Wait parameters](#wait-parameters)
   - [Virtual mouse](#virtual-mouse)
   - [Visual overlay](#visual-overlay)
+  - [Native (accessibility) automation](#native-accessibility-automation)
+  - [Process management](#process-management)
+  - [Window management](#window-management)
+  - [Screen capture](#screen-capture)
+  - [Clipboard](#clipboard)
+  - [Waiting for files](#waiting-for-files)
+  - [Opening a browser](#opening-a-browser)
   - [Standalone functions](#standalone-functions)
   - [Text helpers](#text-helpers)
 - [Configuration](#configuration)
@@ -57,19 +71,34 @@ and end‑to‑end UI automation on Windows, Linux, and macOS.
 - **🔎 OCR text search & click** — find on‑screen text with Tesseract and click it, with character
   filtering (`letters` / `numbers` / `both`) and occurrence selection.
 - **🖼️ Image detection & click** — locate UI elements by template image, with adjustable confidence
-  and optional automatic scale variations for resolution‑independent matching.
+  and optional automatic scale variations for resolution‑independent matching. Find a *single* match,
+  *all* matches (`find_all`), or *several* templates at once (`find_multiple`).
+- **🏷️ Image map** — register images under friendly labels once (`register_image`) and refer to them
+  by name everywhere; `find_image` / `click_image` accept either a label or a path.
 - **🎯 Relative‑image detection** — find a target image *near* a unique anchor image (great when many
   identical buttons exist on screen).
 - **⌨️ Typing & keyboard commands** — type text (with special sequences like `{ctrl}a`, `{del}`,
-  `{tab}`, `{enter}`) and send named shortcuts such as `Ctrl+S`, `F7`, `Alt+Tab`.
+  `{tab}`, `{enter}`), send named shortcuts such as `Ctrl+S`, `F7`, `Alt+Tab`, and use expressive
+  named methods (`enter()`, `control_c()`, `key_f5()`, …) plus modifier primitives (`hold_shift`,
+  `key_combo`).
+- **🖱️ Mouse extras** — `scroll`, `drag`, `triple_click`, and a lightly humanized `move_random`.
 - **📋 Task‑list automation** — describe a whole workflow as a list of dictionaries and run it with a
   single `execute_tasks` call.
 - **↩️ Smart backtracking** — when a step fails, re‑run the previous step and retry, both inside task
   lists and between individual method calls.
 - **⏳ Wait parameters** — wait for an element to appear or disappear (`wait_until_found`,
   `wait_until_disappears`, `wait_timeout`).
+- **🪟 Native (accessibility) automation** *(Windows)* — connect to a running app and drive its
+  windows and controls through UIA/Win32 (`connect_to_app`, `find_app_window`, `find_app_element`).
+- **🧩 Process & window control** — launch apps, find/kill processes, and focus/maximize/minimize/close
+  windows (window management is Windows‑only for now).
+- **🖼️ Screen capture** — fast multi‑monitor screenshots via `mss` (`take_screenshot`,
+  `save_screenshot`, `get_display_size`) with an automatic `pyautogui` fallback.
+- **📋 Clipboard & file waits** — read/write the clipboard (`copy`, `paste`) and wait for files to
+  appear or finish downloading (`wait_for_file`, `wait_for_file_stable`).
 - **🖱️ Virtual mouse** — perform clicks **without moving the physical cursor** (`use_virtual_mouse`),
-  so automations don't fight you for the mouse.
+  so automations don't fight you for the mouse (best on Windows; falls back to a physical click
+  elsewhere).
 - **🟥 Visual overlay** — draw a colored rectangle over the target before clicking — perfect for
   debugging and demos.
 - **🧠 Multi‑technique OCR** — a preprocessing pipeline (HSV/LAB, masking, thresholding, and more)
@@ -80,13 +109,45 @@ and end‑to‑end UI automation on Windows, Linux, and macOS.
 
 ---
 
+## Platform support
+
+Visus Desktop runs on **Windows** and **Linux**. Most capabilities are cross‑platform; a small number
+of features are Windows‑only for now.
+
+| Capability | Windows | Linux | Notes |
+|------------|:-------:|:-----:|-------|
+| OCR (text search/extract) | ✅ | ✅ | Requires Tesseract OCR. |
+| Image matching (`find_image`, `find_all`, `find_multiple`, relative images) | ✅ | ✅ | |
+| Mouse & keyboard input, typing, named shortcuts | ✅ | ✅ | |
+| Screen capture (`take_screenshot`, `save_screenshot`, `get_display_size`) | ✅ | ✅ | Uses `mss` (multi‑monitor) with a `pyautogui` fallback. |
+| Clipboard (`copy`, `paste`, `get_clipboard`) | ✅ | ✅ | On Linux needs `xclip` (or `xsel`). |
+| Process management (`launch`, `find_process`, `kill_process`, …) | ✅ | ✅ | Uses `psutil`. |
+| File waits (`wait_for_file`, `wait_for_file_stable`) | ✅ | ✅ | |
+| Task lists, backtracking, wait parameters | ✅ | ✅ | |
+| Visual overlay | ✅ | ✅ | Needs a Tk display (`python3-tk` on Linux). |
+| Virtual mouse (`use_virtual_mouse`) | ✅ | ⚠️ | Non‑intrusive (no cursor movement) on Windows; **falls back to a physical click** elsewhere. |
+| Native / accessibility automation (`connect_to_app`, `find_app_window`, `find_app_element`) | ✅ | ❌ | Windows‑only (pywinauto). Raises `NotSupportedOnThisOS` on other platforms; a Linux backend via AT‑SPI is planned. |
+| Window management (`focus_window`, `maximize_window`, `minimize_window`, `close_window`) | ✅ | ❌ | Windows‑only (pywin32). Raises `NotSupportedOnThisOS` on other platforms; a Linux backend via xdotool/wmctrl is planned. |
+
+> **Linux system dependencies.** Beyond the Python packages, install the OS tools the cross‑platform
+> features rely on:
+>
+> ```bash
+> sudo apt-get install tesseract-ocr scrot xclip python3-tk
+> ```
+>
+> Native automation and window management are not available on Linux yet — they raise
+> `NotSupportedOnThisOS` so you can branch on platform with a clear, actionable error.
+
+---
+
 ## Requirements
 
 - **Python 3.8+**
 - **[Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) installed on the system** — this
   is a hard requirement; Visus Desktop shells out to the Tesseract binary for OCR.
 - Core Python dependencies are installed automatically: `PyAutoGUI`, `pytesseract`, `opencv-python`,
-  `Pillow`, `numpy`, `pyperclip` (plus `pywin32` on Windows).
+  `Pillow`, `numpy`, `pyperclip`, `psutil`, `mss` (plus `pywin32` on Windows).
 
 ### Install Tesseract OCR
 
@@ -115,9 +176,16 @@ pip install visus-desktop
 Optional extras:
 
 ```bash
+pip install "visus-desktop[native]"       # pywinauto (native/accessibility automation, Windows)
 pip install "visus-desktop[automation]"   # keyboard, MouseInfo, pandas
 pip install "visus-desktop[ai]"           # openai
 pip install "visus-desktop[web]"          # webdriver-manager
+```
+
+On **Linux**, also install the system tools the cross‑platform features need:
+
+```bash
+sudo apt-get install tesseract-ocr scrot xclip python3-tk
 ```
 
 See [docs/installation.md](docs/installation.md) for detailed, per‑OS instructions and
@@ -203,6 +271,51 @@ bot.click_image(
 `specific=False` also tries scaled versions of the template, which helps when the UI renders at a
 different resolution/DPI. You can pass an explicit `scales=[1.0, 0.95, 1.05]` list too.
 
+`find_image` / `click_image` accept either a **registered label** or a **file path** for the image —
+see [Image map](#image-map-register-images-by-name).
+
+### Find all / find multiple
+
+Locate *every* occurrence of one template, or the first match of *several* templates in a single call.
+Both return plain `(left, top, width, height)` boxes and accept registered labels or paths.
+
+```python
+bot = VisusBot()
+
+# Every match of one template -> list of boxes (empty list if none found)
+boxes = bot.find_all("checkbox.png", region=(0, 0, 1920, 1080), confidence=0.9, grayscale=False)
+for box in boxes:
+    bot.click_at(box)
+
+# First match of several templates at once
+# - pass a list -> keyed by path; or a dict -> keyed by your labels
+results = bot.find_multiple(["ok.png", "cancel.png"], confidence=0.9)
+results = bot.find_multiple({"ok": "ok.png", "cancel": "cancel.png"})
+if results["ok"]:
+    bot.click_at(results["ok"])   # value is a box tuple, or None when not found
+```
+
+### Image map (register images by name)
+
+Register each template once under a friendly label and refer to it by name throughout your script.
+Registration validates that the file exists.
+
+```python
+bot = VisusBot()
+
+bot.register_image("save", "assets/save_button.png")
+bot.register_images({
+    "login": "assets/login.png",
+    "logout": "assets/logout.png",
+})
+
+bot.get_image("save")             # -> "assets/save_button.png"
+
+# A label works anywhere an image path is accepted
+bot.click_image("save")
+bot.find_all("login")
+```
+
 ### Relative images
 
 Find a target image positioned near a unique anchor — ideal when several identical targets exist:
@@ -220,6 +333,19 @@ bot.click_relative_image(
 )
 ```
 
+To click at a fixed **coordinate offset** from a single found image (image + coordinate, rather
+than two images), use `click_relative`:
+
+```python
+bot = VisusBot()
+
+# Find "label.png", then click 60px to its right and 5px down (from its top-left)
+bot.click_relative("label.png", x_offset=60, y_offset=5)
+
+# Offset from the image's center instead, with a right-click
+bot.click_relative("icon.png", x_offset=0, y_offset=40, centered=True, mouse_button="right")
+```
+
 ### Coordinates, typing & keyboard
 
 ```python
@@ -232,6 +358,69 @@ bot.type_text("{ctrl}a{del}New value{enter}")      # special key sequences suppo
 bot.keyboard_command("Ctrl+S")                     # named shortcut
 
 print(bot.get_available_keyboard_commands())       # list supported command names
+```
+
+### Named keyboard shortcuts
+
+In addition to the `keyboard_command("Ctrl+C")` string API, `VisusBot` exposes expressive, named
+methods. The named methods are **sugar** over `keyboard_command` (the same command map is the single
+source of truth), so they read like intentions:
+
+```python
+bot = VisusBot()
+
+# Navigation & editing
+bot.enter(); bot.tab(); bot.shift_tab(); bot.esc(); bot.space()
+bot.backspace(); bot.delete()
+bot.key_up(); bot.key_down(); bot.key_left(); bot.key_right()
+bot.page_up(); bot.page_down(); bot.home(); bot.end()
+
+# Function keys F1–F12
+bot.key_f1(); bot.key_f5(); bot.key_f12()
+
+# Shortcuts
+bot.control_c(); bot.control_v(); bot.control_x(); bot.control_a()
+bot.control_s(); bot.control_z(); bot.control_y()
+bot.control_f(); bot.control_p()
+bot.alt_tab(); bot.alt_f4()
+```
+
+Low‑level primitives talk to `pyautogui` directly (they are not part of the named command map):
+
+```python
+bot.type_key("a")                 # press a single key by its pyautogui name
+bot.key_combo("ctrl", "alt", "del")  # press an arbitrary key combination
+
+# Hold/release a modifier across several presses
+bot.hold_shift()
+bot.key_down(); bot.key_down()
+bot.release_shift()
+
+bot.hold_ctrl(); bot.type_key("a"); bot.release_ctrl()
+```
+
+### Mouse extras (scroll, drag, triple‑click)
+
+```python
+bot = VisusBot()
+
+bot.scroll(3)                          # scroll up 3 clicks (negative = down)
+bot.scroll(-3, x=400, y=300)           # move to (400, 300) first, then scroll down
+
+bot.drag(100, 100, 400, 300, duration=0.5, button="left")   # press, drag, release
+bot.triple_click(250, 180, interval=0.05)                   # e.g. select a whole line
+bot.move_random(640, 480, max_offset=3, duration=0.2)       # lightly "human" move
+```
+
+### Coordinate helpers
+
+Turn a `(x, y, width, height)` location (as returned by `find_*`) into a click point:
+
+```python
+loc = bot.find_image("button.png")    # -> (x, y, width, height) or None
+if loc:
+    VisusBot.get_element_coords(loc)            # top-left (x, y)
+    VisusBot.get_element_coords_centered(loc)   # center (x, y)
 ```
 
 ### Text extraction
@@ -361,6 +550,120 @@ print(VisusBot.get_available_overlay_colors())
 # red, blue, green, yellow, purple, orange, cyan, magenta, white, black
 ```
 
+### Native (accessibility) automation
+
+> **Windows‑only (for now).** These methods drive an application through the Windows accessibility
+> layers (UIA/Win32) via [pywinauto](https://pywinauto.readthedocs.io). Install the extra with
+> `pip install "visus-desktop[native]"`. On non‑Windows platforms they raise `NotSupportedOnThisOS`.
+
+Unlike OCR/image matching, native automation finds controls by their accessibility properties — so it
+keeps working even if the UI repaints or moves. Selectors are passed straight through to pywinauto
+(`title`, `title_re`, `auto_id`, `control_type`, `class_name`, `process`, …).
+
+```python
+from visus.desktop import VisusBot, Backend
+
+bot = VisusBot()
+
+# Connect to an already-running application (retries until it appears or times out)
+bot.connect_to_app(backend=Backend.UIA, timeout=60.0, title_re=".*Notepad")
+
+# Find a top-level window of the connected app
+window = bot.find_app_window(timeout=10.0, title_re=".*Notepad")
+
+# Find a child control inside that window by accessibility selectors
+edit = bot.find_app_element(from_parent_window=window, control_type="Edit")
+
+# Interact with the control via pywinauto's own API
+edit.set_edit_text("Hello from Visus")
+```
+
+- `connect_to_app(backend=Backend.UIA, timeout=60.0, **selectors)` — connect and store the app on
+  `bot.app`. `backend` is `Backend.UIA` (modern WPF/WinForms/Qt/UWP) or `Backend.WIN32` (classic
+  Win32). Raises `NativeError` if the connection cannot be made within `timeout`.
+- `find_app_window(timeout=10.0, **selectors)` — return a top‑level window (or `None`). Requires a
+  prior `connect_to_app`, otherwise raises `NativeError`.
+- `find_app_element(from_parent_window=None, timeout=10.0, **selectors)` — return a control. With
+  `from_parent_window` it drills into that window's children; without it, it behaves like
+  `find_app_window`.
+
+### Process management
+
+Cross‑platform process helpers (powered by `psutil`):
+
+```python
+bot = VisusBot()
+
+bot.launch("notepad.exe")              # open an app or file via the OS default handler
+
+proc = bot.find_process(name="notepad")   # first match by name substring (or pid=...)
+bot.is_process_running("notepad")          # -> True / False
+bot.kill_process("notepad")                # by name substring, pid, or Process object -> True / False
+```
+
+### Window management
+
+> **Windows‑only (for now)** (pywin32). Matching is by a case‑insensitive substring of the window
+> title. On non‑Windows platforms these raise `NotSupportedOnThisOS`.
+
+```python
+bot = VisusBot()
+
+bot.focus_window("Notepad")      # bring the first matching window to the foreground
+bot.maximize_window("Notepad")
+bot.minimize_window("Notepad")
+bot.close_window("Notepad")      # each returns True if a matching window was found
+```
+
+### Screen capture
+
+Fast, multi‑monitor screenshots via `mss`, with an automatic `pyautogui` fallback:
+
+```python
+bot = VisusBot()
+
+img = bot.take_screenshot()                          # full primary screen -> PIL.Image
+img = bot.take_screenshot(region=(0, 0, 800, 600))   # a region (x, y, width, height)
+
+bot.save_screenshot("shot.png")                      # capture + save -> returns the path
+bot.save_screenshot("region.png", region=(0, 0, 800, 600))
+
+width, height = bot.get_display_size()               # primary display size in pixels
+```
+
+### Clipboard
+
+```python
+bot = VisusBot()
+
+bot.copy("text to place on the clipboard")
+text = bot.paste()              # current clipboard contents
+text = bot.get_clipboard()      # alias of paste()
+```
+
+### Waiting for files
+
+Useful for downloads or output produced by other processes:
+
+```python
+bot = VisusBot()
+
+# Wait until the file exists and is readable (polls until timeout)
+if bot.wait_for_file("report.pdf", timeout=30, poll_interval=0.5):
+    ...
+
+# Wait until the file exists AND its size stops changing (download finished)
+if bot.wait_for_file_stable("download.zip", timeout=60, stable_for=1.0):
+    ...
+```
+
+### Opening a browser
+
+```python
+bot = VisusBot()
+bot.browse("https://example.com")   # open a URL in the system default browser
+```
+
 ### Standalone functions
 
 Prefer not to manage an instance? Import functions directly — each creates a temporary bot:
@@ -372,6 +675,24 @@ click_text("Login", region=(0, 0, 800, 600))
 click_image("submit.png", confidence=0.9)
 execute_tasks([{"text": "OK"}, {"type": "keyboard_command", "command": "Enter"}])
 ```
+
+Several capability helpers are also re‑exported at the module level so you can call them as plain
+functions without a `VisusBot` instance:
+
+```python
+from visus.desktop import (
+    find_all, find_multiple,                       # image location
+    capture_screen, save_screenshot, get_display_size,  # screen
+    copy_to_clipboard, paste, get_clipboard,       # clipboard
+    launch, find_process, is_process_running, kill_process,  # process
+    focus_window, maximize_window, minimize_window, close_window,  # window (Windows)
+    scroll, drag, triple_click, move_random,       # mouse extras
+    wait_for_file, wait_for_file_stable,           # files
+)
+```
+
+> **Note:** `copy_to_clipboard` is the module‑level alias of `VisusBot.copy`, and `capture_screen` is
+> the module‑level name for `VisusBot.take_screenshot`.
 
 > **Note:** the standalone `type_text(text, config=None)` takes only those two arguments. For
 > `interval` / `delay` / `backtrack`, use the `VisusBot.type_text` method or `type_text_standalone`.
@@ -466,6 +787,21 @@ except TaskExecutionError as e:
 | `ConfigurationError` | A configuration error (e.g. a missing dependency). |
 | `OCRProcessingError` | An error during OCR processing. |
 | `ImageProcessingError` | An error during image processing. |
+| `NotSupportedOnThisOS` | A feature (native automation, window management) is not available on the current OS. |
+
+`NativeError` (importable from `visus.desktop`) is raised by the native‑automation helpers when a
+connection or element lookup fails. It does **not** subclass `BotVisionError`.
+
+```python
+from visus.desktop import VisusBot
+from visus.desktop.exceptions import NotSupportedOnThisOS
+
+bot = VisusBot()
+try:
+    bot.focus_window("Notepad")
+except NotSupportedOnThisOS:
+    print("Window management is Windows-only for now.")
+```
 
 ---
 

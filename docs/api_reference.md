@@ -18,20 +18,55 @@ Conventions used throughout:
 
 ## Table of contents
 
+- [Platform support](#platform-support)
 - [`VisusBot`](#visusbot)
   - [Text (OCR)](#text-ocr)
   - [Images](#images)
+  - [Find all / find multiple](#find-all--find-multiple)
+  - [Image map](#image-map)
   - [Relative images](#relative-images)
   - [Coordinates, typing, keyboard](#coordinates-typing-keyboard)
+  - [Named keyboard shortcuts](#named-keyboard-shortcuts)
+  - [Mouse extras](#mouse-extras)
+  - [Coordinate helpers](#coordinate-helpers)
   - [Text extraction](#text-extraction)
   - [Task lists](#task-lists)
   - [Backtracking sessions](#backtracking-sessions)
   - [Overlay control](#overlay-control)
+  - [Native (accessibility) automation](#native-accessibility-automation)
+  - [Process management](#process-management)
+  - [Window management](#window-management)
+  - [Screen capture](#screen-capture)
+  - [Clipboard](#clipboard)
+  - [Files](#files)
+  - [Web](#web)
+- [Module-level capability functions](#module-level-capability-functions)
 - [Standalone convenience functions](#standalone-convenience-functions)
 - [`BotVisionConfig`](#botvisionconfig)
 - [Text helpers](#text-helpers)
 - [Exceptions](#exceptions)
 - [Backward-compatibility aliases](#backward-compatibility-aliases)
+
+---
+
+## Platform support
+
+The library targets **Windows** and **Linux**. Most of the API is cross‑platform; two areas are
+Windows‑only for now and raise `NotSupportedOnThisOS` elsewhere:
+
+- **Native (accessibility) automation** — `connect_to_app`, `find_app_window`, `find_app_element`
+  (pywinauto). A Linux backend via AT‑SPI is planned.
+- **Window management** — `focus_window`, `maximize_window`, `minimize_window`, `close_window`
+  (pywin32). A Linux backend via xdotool/wmctrl is planned.
+
+The non‑intrusive **virtual mouse** (`use_virtual_mouse`) performs clicks without moving the cursor on
+Windows and automatically falls back to a physical click on other platforms.
+
+On Linux, install the system tools the cross‑platform features rely on:
+
+```bash
+sudo apt-get install tesseract-ocr scrot xclip python3-tk
+```
 
 ---
 
@@ -105,6 +140,58 @@ click_image(image_path, region=None, confidence=0.9, delay=0, mouse_button="left
 
 Find an image and click it. Returns `True`/`False`.
 
+For both `find_image` and `click_image`, `image_path` may be a **registered label** (see
+[Image map](#image-map)) or a direct file path.
+
+### Find all / find multiple
+
+#### `find_all`
+
+```python
+find_all(image, region=None, confidence=0.9, grayscale=False)
+```
+
+Return **every** on‑screen match of a template `image` (a registered label or a path). Returns a
+`list[tuple]` of `(left, top, width, height)` boxes — an empty list if nothing matched. `confidence`
+requires OpenCV; if OpenCV is unavailable the search is retried without it. `grayscale=True` performs a
+faster grayscale match.
+
+#### `find_multiple`
+
+```python
+find_multiple(images, region=None, confidence=0.9, grayscale=False)
+```
+
+Locate the first match of **several** templates at once. `images` is either a list of labels/paths
+(keyed by the path in the result) or a dict `{key: label_or_path}` (keyed by your keys). Returns a
+`dict` mapping each key to its first match box, or `None` for images that were not found.
+
+```python
+bot.find_all("checkbox.png", region=(0, 0, 1920, 1080))
+bot.find_multiple({"ok": "ok.png", "cancel": "cancel.png"})
+```
+
+### Image map
+
+A per‑bot registry mapping friendly labels to image file paths. Once registered, a label can be used
+anywhere an image path is accepted (`find_image`, `click_image`, `find_all`, `find_multiple`).
+
+```python
+register_image(label, path)        # register one label -> path (validates the path exists)
+register_images(mapping)           # register a {label: path} dict at once
+get_image(label)                   # -> the path registered for label (KeyError if unknown)
+```
+
+Registration raises `FileNotFoundError` if a path does not exist and `ValueError` if a label is empty.
+The registry is also exposed as the `bot.image_map` property (an `ImageMap` instance).
+
+```python
+bot = VisusBot()
+bot.register_image("save", "assets/save.png")
+bot.register_images({"login": "assets/login.png", "logout": "assets/logout.png"})
+bot.click_image("save")            # label resolved to its path
+```
+
 ### Relative images
 
 Locate a target image positioned near a unique anchor image. Useful when several identical targets exist on screen and you want the one closest to a distinctive reference point.
@@ -129,6 +216,18 @@ click_relative_image(anchor_image, target_image, max_distance=200, confidence=0.
 ```
 
 Find the relative target and click it. Returns `True`/`False`.
+
+#### `click_relative`
+
+```python
+click_relative(image, x_offset=0, y_offset=0, region=None, confidence=0.9,
+               mouse_button="left", delay=0, centered=False)
+```
+
+Find a single `image` (registered label or path) and click at a fixed coordinate offset from it:
+the image's top-left `+ (x_offset, y_offset)`, or its center `+` the offset when `centered=True`.
+This is the "image + coordinate" relative click (as opposed to `click_relative_image`, which is
+anchor-image → target-image). Returns `True` if found and clicked, `False` otherwise.
 
 ### Coordinates, typing, keyboard
 
@@ -174,6 +273,58 @@ get_available_keyboard_commands()
 ```
 
 Return the list of supported keyboard command names.
+
+### Named keyboard shortcuts
+
+`VisusBot` also exposes named, self‑documenting keyboard methods. Each is **sugar** that delegates to
+`keyboard_command("<Command>")` (the command map is the single source of truth), so `bot.control_c()`
+is equivalent to `bot.keyboard_command("Ctrl+C")`. All take no arguments and return whatever
+`keyboard_command` returns.
+
+| Group | Methods |
+|-------|---------|
+| Navigation / editing | `enter`, `tab`, `shift_tab`, `esc`, `space`, `backspace`, `delete`, `key_up`, `key_down`, `key_left`, `key_right`, `page_up`, `page_down`, `home`, `end` |
+| Function keys | `key_f1` … `key_f12` |
+| Shortcuts | `control_c`, `control_v`, `control_x`, `control_a`, `control_s`, `control_z`, `control_y`, `control_f`, `control_p`, `alt_tab`, `alt_f4` |
+
+Low‑level **primitives** call `pyautogui` directly (they are *not* in the command map):
+
+```python
+type_key(key)        # press a single key by its pyautogui name (e.g. "a", "f5")
+key_combo(*keys)     # press an arbitrary combination, e.g. key_combo("ctrl", "alt", "del")
+hold_shift()         # press and hold Shift (release later)
+release_shift()      # release Shift held with hold_shift()
+hold_ctrl()          # press and hold Ctrl
+release_ctrl()       # release Ctrl held with hold_ctrl()
+```
+
+### Mouse extras
+
+Thin wrappers over `pyautogui`.
+
+```python
+scroll(amount, x=None, y=None)
+    # scroll the wheel `amount` clicks (positive = up, negative = down);
+    # optionally move to (x, y) first.
+
+drag(start_x, start_y, end_x, end_y, duration=0.5, button="left")
+    # move to the start point, then drag to the end point while holding `button`.
+
+triple_click(x=None, y=None, interval=0.05)
+    # triple-click at (x, y), or at the current cursor position when omitted.
+
+move_random(x, y, max_offset=3, duration=0.2)
+    # move to (x, y) with a small random jitter, then settle exactly on the target.
+```
+
+### Coordinate helpers
+
+Static helpers that convert a `(x, y, width, height)` location into a point.
+
+```python
+VisusBot.get_element_coords(location)            # -> (x, y) top-left corner
+VisusBot.get_element_coords_centered(location)   # -> (x, y) center of the box
+```
 
 ### Text extraction
 
@@ -285,6 +436,182 @@ The find/click methods accept these to synchronize with a changing UI:
 - `wait_until_found` (bool) — block until the element appears.
 - `wait_until_disappears` (bool) — block until the element disappears.
 - `wait_timeout` (int, optional) — timeout in seconds for this call; overrides the global `wait_timeout` config (default 30).
+
+### Native (accessibility) automation
+
+> **Windows‑only.** Backed by [pywinauto](https://pywinauto.readthedocs.io) (install the `[native]`
+> extra). On other platforms these raise `NotSupportedOnThisOS`. `Backend` and `NativeError` are
+> importable from `visus.desktop`.
+
+Selectors (`**selectors`) are forwarded directly to pywinauto — for example `title`, `title_re`,
+`auto_id`, `control_type`, `class_name`, `process`, `handle`, `path`.
+
+#### `connect_to_app`
+
+```python
+connect_to_app(backend=Backend.UIA, timeout=60.0, poll_interval=0.5, **selectors)
+```
+
+Connect to an already‑running application, retrying every `poll_interval` seconds until it appears or
+`timeout` elapses. `backend` is a `Backend` member or its string value: `Backend.UIA` (`"uia"`, for
+modern WPF/WinForms/Qt/UWP apps) or `Backend.WIN32` (`"win32"`, for classic Win32 controls). The
+connected application is stored on `bot.app` and returned. Raises `NativeError` if it cannot connect
+within `timeout`.
+
+#### `find_app_window`
+
+```python
+find_app_window(timeout=10.0, **selectors)
+```
+
+Return a top‑level window of the connected application (or `None` if none appears within `timeout`).
+Requires a prior `connect_to_app`, otherwise raises `NativeError`.
+
+#### `find_app_element`
+
+```python
+find_app_element(from_parent_window=None, timeout=10.0, **selectors)
+```
+
+Return a control of the connected application (or `None`). When `from_parent_window` is provided, the
+lookup drills into that window's descendants (`child_window`); when omitted, it behaves like
+`find_app_window`. Requires a prior `connect_to_app`.
+
+```python
+from visus.desktop import VisusBot, Backend
+
+bot = VisusBot()
+bot.connect_to_app(backend=Backend.UIA, title_re=".*Notepad")
+window = bot.find_app_window(title_re=".*Notepad")
+edit = bot.find_app_element(from_parent_window=window, control_type="Edit")
+edit.set_edit_text("Hello")
+```
+
+### Process management
+
+Cross‑platform helpers powered by `psutil`.
+
+```python
+launch(path)
+    # open an application or file via the OS default handler (os.startfile on
+    # Windows; subprocess.Popen elsewhere).
+
+find_process(name=None, pid=None)
+    # -> the first running psutil.Process whose name contains `name`
+    #    (case-insensitive) or whose pid == `pid`, else None.
+
+is_process_running(name)
+    # -> True if a process whose name contains `name` is running.
+
+kill_process(target)
+    # terminate a process by psutil.Process, pid (int), or name substring (str);
+    # tries terminate() then kill(). -> True if a match was found and stopped.
+```
+
+### Window management
+
+> **Windows‑only.** Backed by pywin32; matching is by a case‑insensitive substring of the window
+> title. On other platforms these raise `NotSupportedOnThisOS`.
+
+```python
+focus_window(title_substring)      # bring the first matching window to the foreground
+maximize_window(title_substring)
+minimize_window(title_substring)
+close_window(title_substring)      # posts WM_CLOSE
+```
+
+Each returns `True` if a matching window was found (and the action issued), `False` otherwise.
+
+### Screen capture
+
+Capture prefers `mss` (fast, multi‑monitor) and falls back to `pyautogui` on any failure.
+
+```python
+take_screenshot(region=None)
+    # -> a PIL.Image of the full primary screen, or of `region` = (x, y, width, height).
+
+save_screenshot(path, region=None)
+    # capture and save to `path`; returns `path`.
+
+get_display_size()
+    # -> the primary display size as (width, height) in pixels.
+```
+
+### Clipboard
+
+Thin wrappers over `pyperclip`.
+
+```python
+copy(text)            # place `text` on the system clipboard
+paste()               # -> current clipboard text
+get_clipboard()       # -> current clipboard text (alias of paste())
+```
+
+### Files
+
+Helpers for synchronizing with files produced externally (e.g. downloads).
+
+```python
+wait_for_file(path, timeout=10.0, poll_interval=0.5)
+    # -> True once `path` exists and is readable; False on timeout.
+
+wait_for_file_stable(path, timeout=30.0, stable_for=1.0, poll_interval=0.5)
+    # -> True once `path` exists and its size has not changed for `stable_for`
+    #    seconds (download finished); False on timeout.
+```
+
+### Web
+
+```python
+browse(url)           # open `url` in the system default web browser
+```
+
+---
+
+## Module-level capability functions
+
+The capability helpers above are also re‑exported as module‑level functions, so they can be used
+without a `VisusBot` instance. Import them from `visus.desktop`.
+
+```python
+# Image location
+find_all(image_path, region=None, confidence=0.9, grayscale=False)
+find_multiple(images, region=None, confidence=0.9, grayscale=False)
+
+# Screen
+capture_screen(region=None)                 # module-level name for VisusBot.take_screenshot
+save_screenshot(path, region=None)
+get_display_size()
+
+# Clipboard
+copy_to_clipboard(text)                     # module-level alias of VisusBot.copy
+paste()
+get_clipboard()
+
+# Process
+launch(path)
+find_process(name=None, pid=None)
+is_process_running(name)
+kill_process(target)
+
+# Window (Windows-only; raise NotSupportedOnThisOS elsewhere)
+focus_window(title_substring)
+maximize_window(title_substring)
+minimize_window(title_substring)
+close_window(title_substring)
+
+# Mouse extras
+scroll(amount, x=None, y=None)
+drag(start_x, start_y, end_x, end_y, duration=0.5, button="left")
+triple_click(x=None, y=None, interval=0.05)
+move_random(x, y, max_offset=3, duration=0.2)
+
+# Files
+wait_for_file(path, timeout=10.0, poll_interval=0.5)
+wait_for_file_stable(path, timeout=30.0, stable_for=1.0, poll_interval=0.5)
+```
+
+The `ImageMap` class, plus `Backend` and `NativeError`, are also importable from `visus.desktop`.
 
 ---
 
@@ -457,6 +784,11 @@ All exceptions live in `visus.desktop.exceptions` and are re-exported from `visu
 | `ConfigurationError` | A configuration error occurred (e.g. missing dependency). |
 | `OCRProcessingError` | An error occurred during OCR processing. |
 | `ImageProcessingError` | An error occurred during image processing. |
+| `NotSupportedOnThisOS` | A feature (native automation, window management) is not available on the current OS. |
+
+`NativeError` is raised by the native‑automation helpers (`connect_to_app`, `find_app_*`) when a
+connection or element lookup fails. It is importable from `visus.desktop` (and from
+`visus.desktop.core.native`) but does **not** subclass `BotVisionError`.
 
 ```python
 from visus.desktop import VisusBot

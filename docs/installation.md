@@ -15,7 +15,14 @@ The following Python packages are installed automatically as dependencies:
 - `Pillow`
 - `numpy`
 - `pyperclip`
+- `psutil`
+- `mss`
 - `pywin32` (Windows only)
+
+> **Platform note.** Visus Desktop runs on **Windows** and **Linux**. Most features are
+> cross‑platform; native/accessibility automation (`connect_to_app`, `find_app_*`) and window
+> management (`focus_window`, `maximize_window`, …) are Windows‑only for now and raise
+> `NotSupportedOnThisOS` on other platforms.
 
 ## Installing the package
 
@@ -65,6 +72,18 @@ sudo apt-get install tesseract-ocr
 
 Visus Desktop looks for the binary in common locations such as `/usr/bin/tesseract` and `/usr/local/bin/tesseract`, as well as on the `PATH`.
 
+On Linux you also need a few additional system packages for the cross‑platform features to work
+(screen capture, clipboard, and the visual overlay):
+
+```bash
+sudo apt-get install scrot xclip python3-tk
+```
+
+- `scrot` — backend used by `pyautogui` for screenshots (the library prefers `mss`, with `pyautogui`
+  as a fallback).
+- `xclip` (or `xsel`) — required by `pyperclip` for clipboard access (`copy` / `paste`).
+- `python3-tk` — Tk runtime used by the visual overlay.
+
 ### macOS
 
 ```bash
@@ -113,6 +132,9 @@ print("Visus Desktop is ready.")
 Extra dependency groups can be installed for additional, optional capabilities:
 
 ```bash
+# Native (accessibility) automation on Windows: pywinauto
+pip install "visus-desktop[native]"
+
 # Extra automation helpers: keyboard, MouseInfo, pandas
 pip install "visus-desktop[automation]"
 
@@ -123,10 +145,13 @@ pip install "visus-desktop[ai]"
 pip install "visus-desktop[web]"
 ```
 
+The `[native]` extra installs `pywinauto`, which is required by the native/accessibility automation
+methods (`connect_to_app`, `find_app_window`, `find_app_element`). It is only installed on Windows.
+
 Extras can be combined:
 
 ```bash
-pip install "visus-desktop[automation,ai]"
+pip install "visus-desktop[native,automation]"
 ```
 
 ## Development install
