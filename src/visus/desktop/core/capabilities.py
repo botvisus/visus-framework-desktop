@@ -18,11 +18,14 @@ from typing import Any
 
 from ..utils import clipboard as _clipboard
 from ..utils import files as _files
+from . import locate as _locate
 from . import mouse_extra as _mouse
+from . import native as _native
 from . import process as _process
 from . import screen as _screen
 from . import window as _window
 from .image_map import ImageMap
+from .native import Backend, NativeError
 
 
 class CapabilitiesMixin:
@@ -160,3 +163,77 @@ class CapabilitiesMixin:
     def browse(self, url: str) -> None:
         """Open ``url`` in the system default web browser."""
         webbrowser.open(url)
+
+    # --- Image: find all / multiple -------------------------------------
+    def find_all(
+        self,
+        image: str,
+        region: tuple | None = None,
+        confidence: float = 0.9,
+        grayscale: bool = False,
+    ) -> list:
+        """Return ALL on-screen matches of an image (label or path) as boxes."""
+        return _locate.find_all(
+            self.image_map.resolve(image), region, confidence, grayscale
+        )
+
+    def find_multiple(
+        self,
+        images,
+        region: tuple | None = None,
+        confidence: float = 0.9,
+        grayscale: bool = False,
+    ) -> dict:
+        """Locate several images (labels or paths) at once -> {key: box | None}."""
+        if isinstance(images, dict):
+            resolved = {k: self.image_map.resolve(v) for k, v in images.items()}
+        else:
+            resolved = {item: self.image_map.resolve(item) for item in images}
+        return _locate.find_multiple(resolved, region, confidence, grayscale)
+
+    # --- Native (accessibility) automation ------------------------------
+    def connect_to_app(
+        self,
+        backend: Backend | str = Backend.UIA,
+        timeout: float = 60.0,
+        poll_interval: float = 0.5,
+        **selectors,
+    ):
+        """Connect to a running application for native (UIA/Win32) automation.
+
+        Stores the connected application on ``self.app`` and returns it.
+        """
+        self.app = _native.connect_to_app(
+            backend, timeout, poll_interval, **selectors
+        )
+        return self.app
+
+    def find_app_window(self, timeout: float = 10.0, **selectors):
+        """Find a window of the connected application (call connect_to_app first)."""
+        app = getattr(self, "app", None)
+        if app is None:
+            raise NativeError(
+                "Not connected to an application; call connect_to_app() first."
+            )
+        return _native.find_window(app, timeout, **selectors)
+
+    def find_app_element(self, from_parent_window=None, timeout: float = 10.0, **selectors):
+        """Find a control of the connected application by accessibility selectors."""
+        app = getattr(self, "app", None)
+        if app is None:
+            raise NativeError(
+                "Not connected to an application; call connect_to_app() first."
+            )
+        return _native.find_element(app, from_parent_window, timeout, **selectors)
+
+    # --- Coordinate helpers ---------------------------------------------
+    @staticmethod
+    def get_element_coords(location: tuple) -> tuple:
+        """Return the top-left ``(x, y)`` of a ``(x, y, width, height)`` location box."""
+        return (location[0], location[1])
+
+    @staticmethod
+    def get_element_coords_centered(location: tuple) -> tuple:
+        """Return the center ``(x, y)`` of a ``(x, y, width, height)`` location box."""
+        x, y, width, height = location
+        return (x + width // 2, y + height // 2)

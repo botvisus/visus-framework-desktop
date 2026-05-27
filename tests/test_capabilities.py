@@ -81,3 +81,67 @@ def test_get_image_unknown_label_raises():
     bot = _Bot()
     with pytest.raises(KeyError):
         bot.get_image("never_registered")
+
+
+def test_visusbot_inherits_keyboard_mixin():
+    from visus.desktop import VisusBot
+    from visus.desktop.core.keyboard_extra import KeyboardMixin
+
+    assert issubclass(VisusBot, KeyboardMixin)
+
+
+def test_find_all_resolves_label(monkeypatch, tmp_path):
+    from visus.desktop.core import locate
+
+    img = tmp_path / "a.png"
+    img.write_bytes(b"x")
+    recorded = {}
+
+    def fake_find_all(path, region=None, confidence=0.9, grayscale=False):
+        recorded["path"] = path
+        return [(1, 2, 3, 4)]
+
+    monkeypatch.setattr(locate, "find_all", fake_find_all)
+
+    bot = _Bot()
+    bot.register_image("a", str(img))
+    result = bot.find_all("a")  # passes a label; must resolve to the path
+
+    assert recorded["path"] == str(img)
+    assert result == [(1, 2, 3, 4)]
+
+
+def test_find_multiple_resolves_labels(monkeypatch, tmp_path):
+    from visus.desktop.core import locate
+
+    img = tmp_path / "a.png"
+    img.write_bytes(b"x")
+    recorded = {}
+
+    def fake_find_multiple(images, region=None, confidence=0.9, grayscale=False):
+        recorded["images"] = images
+        return {k: None for k in images}
+
+    monkeypatch.setattr(locate, "find_multiple", fake_find_multiple)
+
+    bot = _Bot()
+    bot.register_image("a", str(img))
+    bot.find_multiple(["a", "literal.png"])
+
+    # Keys stay as given; the "a" label resolves to its path, unknown stays as-is.
+    assert recorded["images"]["a"] == str(img)
+    assert recorded["images"]["literal.png"] == "literal.png"
+
+
+def test_find_app_window_requires_connect():
+    from visus.desktop.core.native import NativeError
+
+    bot = _Bot()
+    with pytest.raises(NativeError):
+        bot.find_app_window(title="x")
+
+
+def test_element_coord_helpers():
+    bot = _Bot()
+    assert bot.get_element_coords((10, 20, 30, 40)) == (10, 20)
+    assert bot.get_element_coords_centered((10, 20, 30, 40)) == (25, 40)

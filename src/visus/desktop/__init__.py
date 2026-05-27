@@ -434,7 +434,10 @@ from .core.capabilities import CapabilitiesMixin
 from .core.image_map import ImageMap
 from .core.image_processing import ImageProcessor, preprocess_image_for_ocr
 from .core.keyboard_commands import KeyboardCommander  # NEW FEATURE
+from .core.keyboard_extra import KeyboardMixin
+from .core.locate import find_all, find_multiple
 from .core.mouse_extra import drag, move_random, scroll, triple_click
+from .core.native import Backend, NativeError
 from .core.ocr_engine import OCREngine, OCRResult, find_text_with_multiple_preprocessing
 from .core.overlay import VisualOverlay, show_overlay
 from .core.process import find_process, is_process_running, kill_process, launch
@@ -471,7 +474,7 @@ __license__ = "MIT"
 logger = logging.getLogger(__name__)
 
 
-class VisusBot(CapabilitiesMixin):
+class VisusBot(CapabilitiesMixin, KeyboardMixin):
     """
     Main class of Visus Desktop.
 
@@ -2978,6 +2981,10 @@ __all__ = [
     "triple_click",
     "move_random",
     "ImageMap",
+    "find_all",
+    "find_multiple",
+    "Backend",
+    "NativeError",
     # Exceptions
     "BotVisionError",
     "ImageNotFoundError",
