@@ -1,11 +1,15 @@
-"""Visus Desktop - Top-level window management (Windows).
+"""Visus Desktop - Top-level window management.
 
-Helpers for locating and manipulating top-level windows on Windows by a
-case-insensitive substring of their title. Win32 functionality comes from
-:mod:`pywin32` (``win32gui``/``win32con``), imported lazily so this module can
-be imported on any platform. On non-Windows systems the functions raise
-:class:`~visus.desktop.exceptions.NotSupportedOnThisOS` (a Linux backend via
-xdotool/wmctrl is planned).
+Cross-platform window helpers. The public surface (``focus_window``,
+``maximize_window``, ``minimize_window``, ``close_window``) dispatches
+by OS:
+
+  * Windows -> ``pywin32`` (``win32gui`` / ``win32con``).
+  * Linux   -> ``xdotool`` + ``wmctrl`` via
+    :mod:`visus.desktop.core.window_linux` (Phase 4 / X1).
+
+On unsupported platforms the public helpers raise
+:class:`~visus.desktop.exceptions.NotSupportedOnThisOS`.
 """
 
 from __future__ import annotations
@@ -18,8 +22,7 @@ from ..exceptions import NotSupportedOnThisOS
 def _require_windows() -> None:
     if sys.platform != "win32":
         raise NotSupportedOnThisOS(
-            "Window management is only available on Windows for now "
-            "(a Linux backend via xdotool/wmctrl is planned)."
+            "Direct win32 API requires Windows."
         )
 
 
@@ -48,9 +51,18 @@ def find_window(title_substring: str) -> int | None:
     return matches[0] if matches else None
 
 
-def focus_window(title_substring: str) -> bool:
-    """Bring a window matching ``title_substring`` to the foreground."""
-    _require_windows()
+def _dispatch_or_raise(win_impl, linux_fn, *args):
+    """Pick the OS backend; raise NotSupportedOnThisOS otherwise."""
+    if sys.platform == "win32":
+        return win_impl(*args)
+    if sys.platform.startswith("linux"):
+        return linux_fn(*args)
+    raise NotSupportedOnThisOS(
+        f"Window management is not implemented on {sys.platform!r}."
+    )
+
+
+def _win_focus(title_substring: str) -> bool:
     import win32gui
 
     hwnd = find_window(title_substring)
@@ -60,9 +72,7 @@ def focus_window(title_substring: str) -> bool:
     return True
 
 
-def maximize_window(title_substring: str) -> bool:
-    """Maximize a window matching ``title_substring``."""
-    _require_windows()
+def _win_maximize(title_substring: str) -> bool:
     import win32con
     import win32gui
 
@@ -73,9 +83,7 @@ def maximize_window(title_substring: str) -> bool:
     return True
 
 
-def minimize_window(title_substring: str) -> bool:
-    """Minimize a window matching ``title_substring``."""
-    _require_windows()
+def _win_minimize(title_substring: str) -> bool:
     import win32con
     import win32gui
 
@@ -86,9 +94,7 @@ def minimize_window(title_substring: str) -> bool:
     return True
 
 
-def close_window(title_substring: str) -> bool:
-    """Request that a window matching ``title_substring`` close (posts WM_CLOSE)."""
-    _require_windows()
+def _win_close(title_substring: str) -> bool:
     import win32con
     import win32gui
 
@@ -97,3 +103,35 @@ def close_window(title_substring: str) -> bool:
         return False
     win32gui.PostMessage(hwnd, win32con.WM_CLOSE, 0, 0)
     return True
+
+
+def focus_window(title_substring: str) -> bool:
+    """Bring a window matching ``title_substring`` to the foreground."""
+    from . import window_linux as _linux
+
+    return _dispatch_or_raise(_win_focus, _linux.focus_window_linux, title_substring)
+
+
+def maximize_window(title_substring: str) -> bool:
+    """Maximize a window matching ``title_substring``."""
+    from . import window_linux as _linux
+
+    return _dispatch_or_raise(
+        _win_maximize, _linux.maximize_window_linux, title_substring
+    )
+
+
+def minimize_window(title_substring: str) -> bool:
+    """Minimize a window matching ``title_substring``."""
+    from . import window_linux as _linux
+
+    return _dispatch_or_raise(
+        _win_minimize, _linux.minimize_window_linux, title_substring
+    )
+
+
+def close_window(title_substring: str) -> bool:
+    """Request that a window matching ``title_substring`` close (posts WM_CLOSE on Win)."""
+    from . import window_linux as _linux
+
+    return _dispatch_or_raise(_win_close, _linux.close_window_linux, title_substring)

@@ -133,7 +133,11 @@ def check_display() -> CheckResult:
     try:
         width, height = _get_display_size()
     except Exception as exc:
-        return False, f"No usable display: {exc}"
+        from .platform import wsl_display_hint
+
+        hint = wsl_display_hint()
+        suffix = f"  {hint}" if hint else ""
+        return False, f"No usable display: {exc}{suffix}"
     return True, f"Display available ({width}x{height})"
 
 
