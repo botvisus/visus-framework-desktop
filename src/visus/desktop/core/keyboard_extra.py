@@ -3,11 +3,17 @@
 A mixin that mirrors BotCity's rich, named keyboard API (``enter``, ``tab``,
 ``control_c``, ``key_f1`` .. ``key_f12``, etc.) without duplicating the existing
 keyboard system. Each named shortcut is a thin one-liner that delegates to
-``self.keyboard_command("<Command>")`` -- the single source of truth being the
-command map owned by
+``self.keyboard_command("<Command>", delay=delay, backtrack=backtrack)`` -- the
+single source of truth being the command map owned by
 :class:`visus.desktop.core.keyboard_commands.KeyboardCommander`. This keeps the
 method names reading like intentions while ensuring there is exactly one place
 that knows how a command maps to real keystrokes.
+
+Every delegating method accepts two optional keyword arguments, ``delay`` and
+``backtrack``, which are forwarded verbatim to ``keyboard_command``. This lets
+callers tune how the underlying ``KeyboardCommander`` paces each command (for
+example, adding a small delay between modifier and key, or backtracking on
+failure) without having to drop down to ``keyboard_command`` directly.
 
 The mixin assumes the host class provides a ``keyboard_command`` method.
 :class:`visus.desktop.VisusBot` does, so mixing this into the bot is enough.
@@ -19,7 +25,8 @@ present in the ``KeyboardCommander`` map (holding/releasing a modifier across
 several presses, or pressing/combining arbitrary keys, is not a fixed named
 command), so they are not duplication. They import ``pyautogui`` lazily, which
 keeps the module importable in headless environments (for example CI runners)
-where ``pyautogui`` cannot initialize a display.
+where ``pyautogui`` cannot initialize a display. Because they do not go through
+``keyboard_command``, the primitives do NOT accept ``delay`` or ``backtrack``.
 
 Example:
     >>> from visus.desktop.core.keyboard_extra import KeyboardMixin
@@ -29,12 +36,12 @@ Example:
     ...         ...  # provided by VisusBot in real usage
     >>>
     >>> bot = Bot()
-    >>> bot.enter()              # -> self.keyboard_command("Enter")
-    >>> bot.control_c()          # -> self.keyboard_command("Ctrl+C")
-    >>> bot.key_f5()             # -> self.keyboard_command("F5")
-    >>> bot.type_key("h")        # primitive: pyautogui.press("h")
-    >>> bot.hold_shift()         # primitive: pyautogui.keyDown("shift")
-    >>> bot.release_shift()      # primitive: pyautogui.keyUp("shift")
+    >>> bot.enter()                          # -> keyboard_command("Enter", 0, False)
+    >>> bot.control_c(delay=0.2)             # -> keyboard_command("Ctrl+C", 0.2, False)
+    >>> bot.key_f5(backtrack=True)           # -> keyboard_command("F5", 0, True)
+    >>> bot.type_key("h")                    # primitive: pyautogui.press("h")
+    >>> bot.hold_shift()                     # primitive: pyautogui.keyDown("shift")
+    >>> bot.release_shift()                  # primitive: pyautogui.keyUp("shift")
 """
 
 from __future__ import annotations
@@ -53,19 +60,23 @@ class KeyboardMixin:
     Design:
 
     * **Named shortcuts** (everything except the primitives below) delegate to
-      ``self.keyboard_command("<Command>")``. The ``KeyboardCommander`` command
-      map is the single source of truth for how each command is performed, so
-      these methods never duplicate that logic -- they only translate a friendly
-      method name into the canonical command string.
+      ``self.keyboard_command("<Command>", delay=delay, backtrack=backtrack)``.
+      The ``KeyboardCommander`` command map is the single source of truth for
+      how each command is performed, so these methods never duplicate that
+      logic -- they only translate a friendly method name into the canonical
+      command string. They all accept ``delay: float = 0`` and
+      ``backtrack: bool = False``, forwarded as-is to ``keyboard_command``.
     * **Primitives** (:meth:`type_key`, :meth:`key_combo`, :meth:`hold_shift`,
       :meth:`release_shift`, :meth:`hold_ctrl`, :meth:`release_ctrl`) call
       ``pyautogui`` directly. They are *not* part of the command map, so they
       are not duplication; ``pyautogui`` is imported lazily inside each one.
+      They do NOT accept ``delay``/``backtrack`` because they never reach
+      ``keyboard_command``.
 
     Example:
-        >>> bot.control_a()   # select all -> self.keyboard_command("Ctrl+A")
-        >>> bot.control_c()   # copy       -> self.keyboard_command("Ctrl+C")
-        >>> bot.tab()         # next field -> self.keyboard_command("Tab")
+        >>> bot.control_a()                # select all
+        >>> bot.control_c(delay=0.1)       # copy with a 0.1s delay
+        >>> bot.tab(backtrack=True)        # next field with backtrack on failure
     """
 
     # ``keyboard_command`` is supplied by the host class (for example VisusBot).
@@ -116,163 +127,353 @@ class KeyboardMixin:
     # ------------------------------------------------------------------
     # Navigation and editing (delegate to keyboard_command)
     # ------------------------------------------------------------------
-    def enter(self) -> Any:
-        """Press the Enter/Return key."""
-        return self.keyboard_command("Enter")
+    def enter(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the Enter/Return key.
 
-    def tab(self) -> Any:
-        """Press the Tab key (move to the next field)."""
-        return self.keyboard_command("Tab")
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Enter", delay=delay, backtrack=backtrack)
 
-    def shift_tab(self) -> Any:
-        """Press Shift+Tab (move to the previous field)."""
-        return self.keyboard_command("Shift+Tab")
+    def tab(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the Tab key (move to the next field).
 
-    def esc(self) -> Any:
-        """Press the Escape key."""
-        return self.keyboard_command("Escape")
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Tab", delay=delay, backtrack=backtrack)
 
-    def space(self) -> Any:
-        """Press the Spacebar."""
-        return self.keyboard_command("Space")
+    def shift_tab(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press Shift+Tab (move to the previous field).
 
-    def backspace(self) -> Any:
-        """Press the Backspace key (delete the character to the left)."""
-        return self.keyboard_command("Backspace")
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Shift+Tab", delay=delay, backtrack=backtrack)
 
-    def delete(self) -> Any:
-        """Press the Delete key (delete the character to the right)."""
-        return self.keyboard_command("Delete")
+    def esc(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the Escape key.
 
-    def key_up(self) -> Any:
-        """Press the Up arrow key."""
-        return self.keyboard_command("Arrow Up")
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Escape", delay=delay, backtrack=backtrack)
 
-    def key_down(self) -> Any:
-        """Press the Down arrow key."""
-        return self.keyboard_command("Arrow Down")
+    def space(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the Spacebar.
 
-    def key_left(self) -> Any:
-        """Press the Left arrow key."""
-        return self.keyboard_command("Arrow Left")
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Space", delay=delay, backtrack=backtrack)
 
-    def key_right(self) -> Any:
-        """Press the Right arrow key."""
-        return self.keyboard_command("Arrow Right")
+    def backspace(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the Backspace key (delete the character to the left).
 
-    def page_up(self) -> Any:
-        """Press the Page Up key."""
-        return self.keyboard_command("Page Up")
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Backspace", delay=delay, backtrack=backtrack)
 
-    def page_down(self) -> Any:
-        """Press the Page Down key."""
-        return self.keyboard_command("Page Down")
+    def delete(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the Delete key (delete the character to the right).
 
-    def home(self) -> Any:
-        """Press the Home key."""
-        return self.keyboard_command("Home")
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Delete", delay=delay, backtrack=backtrack)
 
-    def end(self) -> Any:
-        """Press the End key."""
-        return self.keyboard_command("End")
+    def key_up(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the Up arrow key.
+
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Arrow Up", delay=delay, backtrack=backtrack)
+
+    def key_down(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the Down arrow key.
+
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Arrow Down", delay=delay, backtrack=backtrack)
+
+    def key_left(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the Left arrow key.
+
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Arrow Left", delay=delay, backtrack=backtrack)
+
+    def key_right(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the Right arrow key.
+
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Arrow Right", delay=delay, backtrack=backtrack)
+
+    def page_up(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the Page Up key.
+
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Page Up", delay=delay, backtrack=backtrack)
+
+    def page_down(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the Page Down key.
+
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Page Down", delay=delay, backtrack=backtrack)
+
+    def home(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the Home key.
+
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Home", delay=delay, backtrack=backtrack)
+
+    def end(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the End key.
+
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("End", delay=delay, backtrack=backtrack)
 
     # ------------------------------------------------------------------
     # Function keys (F1 - F12) (delegate to keyboard_command)
     # ------------------------------------------------------------------
-    def key_f1(self) -> Any:
-        """Press the F1 key."""
-        return self.keyboard_command("F1")
+    def key_f1(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the F1 key.
 
-    def key_f2(self) -> Any:
-        """Press the F2 key."""
-        return self.keyboard_command("F2")
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("F1", delay=delay, backtrack=backtrack)
 
-    def key_f3(self) -> Any:
-        """Press the F3 key."""
-        return self.keyboard_command("F3")
+    def key_f2(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the F2 key.
 
-    def key_f4(self) -> Any:
-        """Press the F4 key."""
-        return self.keyboard_command("F4")
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("F2", delay=delay, backtrack=backtrack)
 
-    def key_f5(self) -> Any:
-        """Press the F5 key."""
-        return self.keyboard_command("F5")
+    def key_f3(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the F3 key.
 
-    def key_f6(self) -> Any:
-        """Press the F6 key."""
-        return self.keyboard_command("F6")
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("F3", delay=delay, backtrack=backtrack)
 
-    def key_f7(self) -> Any:
-        """Press the F7 key."""
-        return self.keyboard_command("F7")
+    def key_f4(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the F4 key.
 
-    def key_f8(self) -> Any:
-        """Press the F8 key."""
-        return self.keyboard_command("F8")
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("F4", delay=delay, backtrack=backtrack)
 
-    def key_f9(self) -> Any:
-        """Press the F9 key."""
-        return self.keyboard_command("F9")
+    def key_f5(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the F5 key.
 
-    def key_f10(self) -> Any:
-        """Press the F10 key."""
-        return self.keyboard_command("F10")
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("F5", delay=delay, backtrack=backtrack)
 
-    def key_f11(self) -> Any:
-        """Press the F11 key."""
-        return self.keyboard_command("F11")
+    def key_f6(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the F6 key.
 
-    def key_f12(self) -> Any:
-        """Press the F12 key."""
-        return self.keyboard_command("F12")
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("F6", delay=delay, backtrack=backtrack)
+
+    def key_f7(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the F7 key.
+
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("F7", delay=delay, backtrack=backtrack)
+
+    def key_f8(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the F8 key.
+
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("F8", delay=delay, backtrack=backtrack)
+
+    def key_f9(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the F9 key.
+
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("F9", delay=delay, backtrack=backtrack)
+
+    def key_f10(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the F10 key.
+
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("F10", delay=delay, backtrack=backtrack)
+
+    def key_f11(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the F11 key.
+
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("F11", delay=delay, backtrack=backtrack)
+
+    def key_f12(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press the F12 key.
+
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("F12", delay=delay, backtrack=backtrack)
 
     # ------------------------------------------------------------------
     # Shortcuts (hotkeys) (delegate to keyboard_command)
     # ------------------------------------------------------------------
-    def control_c(self) -> Any:
-        """Press Ctrl+C (copy)."""
-        return self.keyboard_command("Ctrl+C")
+    def control_c(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press Ctrl+C (copy).
 
-    def control_v(self) -> Any:
-        """Press Ctrl+V (paste)."""
-        return self.keyboard_command("Ctrl+V")
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Ctrl+C", delay=delay, backtrack=backtrack)
 
-    def control_x(self) -> Any:
-        """Press Ctrl+X (cut)."""
-        return self.keyboard_command("Ctrl+X")
+    def control_v(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press Ctrl+V (paste).
 
-    def control_a(self) -> Any:
-        """Press Ctrl+A (select all)."""
-        return self.keyboard_command("Ctrl+A")
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Ctrl+V", delay=delay, backtrack=backtrack)
 
-    def control_s(self) -> Any:
-        """Press Ctrl+S (save)."""
-        return self.keyboard_command("Ctrl+S")
+    def control_x(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press Ctrl+X (cut).
 
-    def control_z(self) -> Any:
-        """Press Ctrl+Z (undo)."""
-        return self.keyboard_command("Ctrl+Z")
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Ctrl+X", delay=delay, backtrack=backtrack)
 
-    def control_y(self) -> Any:
-        """Press Ctrl+Y (redo)."""
-        return self.keyboard_command("Ctrl+Y")
+    def control_a(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press Ctrl+A (select all).
 
-    def control_f(self) -> Any:
-        """Press Ctrl+F (find)."""
-        return self.keyboard_command("Ctrl+F")
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Ctrl+A", delay=delay, backtrack=backtrack)
 
-    def control_p(self) -> Any:
-        """Press Ctrl+P (print)."""
-        return self.keyboard_command("Ctrl+P")
+    def control_s(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press Ctrl+S (save).
 
-    def alt_tab(self) -> Any:
-        """Press Alt+Tab (switch windows)."""
-        return self.keyboard_command("Alt+Tab")
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Ctrl+S", delay=delay, backtrack=backtrack)
 
-    def alt_f4(self) -> Any:
-        """Press Alt+F4 (close the active window)."""
-        return self.keyboard_command("Alt+F4")
+    def control_z(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press Ctrl+Z (undo).
+
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Ctrl+Z", delay=delay, backtrack=backtrack)
+
+    def control_y(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press Ctrl+Y (redo).
+
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Ctrl+Y", delay=delay, backtrack=backtrack)
+
+    def control_f(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press Ctrl+F (find).
+
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Ctrl+F", delay=delay, backtrack=backtrack)
+
+    def control_p(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press Ctrl+P (print).
+
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Ctrl+P", delay=delay, backtrack=backtrack)
+
+    def alt_tab(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press Alt+Tab (switch windows).
+
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Alt+Tab", delay=delay, backtrack=backtrack)
+
+    def alt_f4(self, delay: float = 0, backtrack: bool = False) -> Any:
+        """Press Alt+F4 (close the active window).
+
+        Args:
+            delay: Forwarded to ``keyboard_command``.
+            backtrack: Forwarded to ``keyboard_command``.
+        """
+        return self.keyboard_command("Alt+F4", delay=delay, backtrack=backtrack)
 
     # ------------------------------------------------------------------
     # Modifier hold / release (primitives; talk to pyautogui directly)

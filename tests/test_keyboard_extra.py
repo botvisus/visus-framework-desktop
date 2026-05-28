@@ -1,11 +1,12 @@
 """Tests for ``visus.desktop.core.keyboard_extra``.
 
-The named shortcut methods delegate to ``self.keyboard_command("<Command>")``
-(the single source of truth being :class:`KeyboardCommander`'s command map), so
-they are tested against a fake host that records the command strings it
-receives. The low-level primitives talk to ``pyautogui`` directly, so they are
-tested by monkeypatching the relevant ``pyautogui`` entry points -- no real
-keystrokes are ever sent to the host system.
+The named shortcut methods delegate to
+``self.keyboard_command("<Command>", delay=..., backtrack=...)`` (the single
+source of truth being :class:`KeyboardCommander`'s command map), so they are
+tested against a fake host that records the ``(command, delay, backtrack)``
+tuples it receives. The low-level primitives talk to ``pyautogui`` directly, so
+they are tested by monkeypatching the relevant ``pyautogui`` entry points -- no
+real keystrokes are ever sent to the host system.
 """
 
 from __future__ import annotations
@@ -21,12 +22,14 @@ class _Bot(KeyboardMixin):
     """Minimal host recording the commands its named methods delegate."""
 
     def __init__(self) -> None:
-        self.commands: list[str] = []
+        # Each entry is a ``(command, delay, backtrack)`` tuple, capturing the
+        # full call shape the delegating methods must forward.
+        self.commands: list[tuple[str, float, bool]] = []
 
     def keyboard_command(
         self, command: str, delay: float = 0, backtrack: bool = False
     ) -> bool:
-        self.commands.append(command)
+        self.commands.append((command, delay, backtrack))
         return True
 
 
@@ -97,16 +100,34 @@ _NON_DELEGATING = {
     list(_DELEGATING_COMMANDS.items()),
     ids=list(_DELEGATING_COMMANDS),
 )
-def test_named_method_delegates_to_keyboard_command(method_name, expected_command):
-    """Each named method records exactly its expected command string."""
+def test_named_method_delegates_with_defaults(
+    method_name: str, expected_command: str
+) -> None:
+    """Each named method records ``(<command>, 0, False)`` when called with no args."""
     bot = _Bot()
 
     getattr(bot, method_name)()
 
-    assert bot.commands == [expected_command]
+    assert bot.commands == [(expected_command, 0, False)]
 
 
-def test_every_delegating_method_is_covered():
+@pytest.mark.parametrize(
+    "method_name, expected_command",
+    list(_DELEGATING_COMMANDS.items()),
+    ids=list(_DELEGATING_COMMANDS),
+)
+def test_named_method_forwards_delay_and_backtrack(
+    method_name: str, expected_command: str
+) -> None:
+    """Each named method forwards ``delay`` and ``backtrack`` to ``keyboard_command``."""
+    bot = _Bot()
+
+    getattr(bot, method_name)(delay=0.5, backtrack=True)
+
+    assert bot.commands == [(expected_command, 0.5, True)]
+
+
+def test_every_delegating_method_is_covered() -> None:
     """Guard: every public delegating method appears in the table above.
 
     If a new named shortcut is added to the mixin it must also be added to
@@ -217,7 +238,7 @@ def test_primitives_do_not_touch_keyboard_command(recorder):
 # ----------------------------------------------------------------------
 # Integration: delegation can't silently break against the real command map
 # ----------------------------------------------------------------------
-def test_all_delegated_commands_exist_in_commander_map():
+def test_all_delegated_commands_exist_in_commander_map() -> None:
     """Every command string the named methods use is a real, available command.
 
     This pins the mixin's delegation to the actual ``KeyboardCommander`` map, so
