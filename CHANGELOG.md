@@ -33,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   non-zero on any failure, suitable for CI gates. The Tesseract candidate
   paths now live in `visus.desktop.utils.config.get_tesseract_candidate_paths`
   and are shared by the doctor and `BotVisionConfig`.
+- **Graceful SIGINT shutdown** (Phase 1, R5): a `KeyboardInterrupt` during
+  `execute_tasks` is intercepted to release any held mouse buttons
+  (`left`, `middle`, `right`) before the exception propagates. Prevents
+  stuck buttons after an interrupted `drag` / `mouse_down`.
 
 ### Changed
 - `BotVisionConfig._get_tesseract_paths` was refactored to delegate to

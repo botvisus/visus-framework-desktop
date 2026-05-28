@@ -151,6 +151,26 @@ class TaskExecutor:
         except ImportError as e:
             raise TaskExecutionError("PyAutoGUI is not installed") from e
 
+    def _release_held_inputs(self) -> None:
+        """Defensively release any held mouse buttons (Phase 1 / R5).
+
+        ``pyautogui`` does not track which buttons are pressed, so on a
+        user-initiated abort (Ctrl+C) we release ``left``, ``middle`` and
+        ``right`` unconditionally. The cost is three syscalls; the benefit
+        is no stuck buttons after an interrupted ``drag`` / ``mouse_down``.
+        Errors here are swallowed so they never mask the user's original
+        ``KeyboardInterrupt``.
+        """
+        try:
+            import pyautogui
+        except ImportError:  # pragma: no cover - pyautogui is a hard dep
+            return
+        for button in ("left", "middle", "right"):
+            try:
+                pyautogui.mouseUp(button=button)
+            except Exception as exc:  # pragma: no cover - logged for forensics
+                logger.debug("mouseUp(%s) during cleanup failed: %s", button, exc)
+
     def execute_tasks(self, tasks: List[Dict[str, Any]]) -> List[TaskResult]:
         """
         Executes a list of tasks sequentially.
@@ -179,6 +199,21 @@ class TaskExecutor:
         i = 0
         backtrack_stack = []  # Stack to track backtracks
 
+        try:
+            return self._run_task_loop(tasks, results, i, backtrack_stack)
+        except KeyboardInterrupt:
+            logger.info("Interrupted by SIGINT/KeyboardInterrupt; cleaning up")
+            self._release_held_inputs()
+            raise
+
+    def _run_task_loop(
+        self,
+        tasks: List[Dict[str, Any]],
+        results: List["TaskResult"],
+        i: int,
+        backtrack_stack: List[int],
+    ) -> List["TaskResult"]:
+        """Inner driver for :meth:`execute_tasks` (extracted for cleanup wrap)."""
         while i < len(tasks):
             task = tasks[i]
             task_result = self._execute_single_task(task, i, len(tasks))
