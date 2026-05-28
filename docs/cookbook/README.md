@@ -12,10 +12,10 @@ specific Visus Desktop APIs involved.
 | Recipe | Status | Summary |
 |---|---|---|
 | [Download wait](download-wait.md) | ✅ Worked | Trigger a download, then block until the file finished writing to disk. |
+| [File dialogs](file-dialogs.md) | ✅ Worked | Skip Windows "Open File" tree navigation by typing the absolute path. |
+| [Excel input](excel-input.md) | ✅ Worked | Drive an Excel grid from a CSV without COM / OLE. |
+| [Captcha (OCR)](captcha.md) | ✅ Worked | Solve old-style image captchas with Tesseract whitelisting. |
 | [Oracle Forms](oracle-forms.md) | 🚧 Stub | Notes and patterns for legacy Oracle Forms — the eternal RPA target. |
-| [Captcha (OCR)](captcha.md) | 🚧 Stub | Solve image captchas by capturing a region and running OCR. |
-| [Excel input](excel-input.md) | 🚧 Stub | Drive an Excel-style spreadsheet from a CSV without OLE. |
-| [File dialogs](file-dialogs.md) | 🚧 Stub | Auto-fill the Windows "Open File" dialog. |
 
 ## Reading these recipes
 

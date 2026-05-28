@@ -33,6 +33,15 @@ class TestCookbook:
         missing = expected - present
         assert not missing, f"missing cookbook recipes: {sorted(missing)}"
 
+    def test_worked_recipes_are_no_longer_stubs(self):
+        """The Phase 5 / D4 expansion replaced these stubs with worked examples."""
+        worked = ["download-wait.md", "captcha.md", "excel-input.md", "file-dialogs.md"]
+        for name in worked:
+            content = (DOCS / "cookbook" / name).read_text(encoding="utf-8")
+            assert "🚧" not in content, f"{name} is still a stub"
+            # A worked recipe shows real code: at least one ``` fenced block.
+            assert "```python" in content, f"{name} should contain a python block"
+
     def test_cookbook_is_linked_from_docs_readme(self):
         content = (DOCS / "README.md").read_text(encoding="utf-8")
         assert "cookbook/README.md" in content
