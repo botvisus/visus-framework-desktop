@@ -48,6 +48,9 @@ web = ["webdriver-manager>=4.0.0"]
 rapidocr = ["rapidocr>=2.0.0", "onnxruntime>=1.16.0"]
 # pytest-visus fixtures (Phase 2 / TS1): mock_screen, fake_ocr, record_clicks
 test = ["pytest>=7.0.0"]
+# MCP server -- expose the automation primitives as agent tools.
+# Install with: pip install 'visus-desktop[mcp]'
+mcp = ["mcp[cli]>=1.27.0"]
 
 [dependency-groups]
 dev = [
@@ -67,6 +70,7 @@ Repository = "https://github.com/matheuszwilk/visus-desktop.git"
 [project.scripts]
 visus = "visus.desktop.cli:main"
 visus-doctor = "visus.desktop.doctor:main"
+visus-mcp = "visus.desktop.mcp_server:main"
 
 [project.entry-points."pytest11"]
 visus_pytest = "visus_pytest"

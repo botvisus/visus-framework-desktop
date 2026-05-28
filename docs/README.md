@@ -9,6 +9,7 @@ Documentation for **Visus Desktop** (`visus-desktop`) — desktop GUI automation
 - **[Cookbook](cookbook/README.md)** — end-to-end recipes for common automation patterns (download wait, file dialogs, captcha, Excel input, Oracle Forms).
 - **[Migration guide](migration.md)** — from `bot-vision-suite` to `visus-desktop` (imports, renames, new opt-ins, step-by-step checklist).
 - **[Troubleshooting](troubleshooting.md)** — symptom → diagnosis → fix for OCR misses, DPI issues, `pywinauto` connection failures, Tcl/Tk on Linux/WSL, and more.
+- **[MCP server](mcp.md)** — drive `visus-desktop` from any MCP-aware agent (Claude Desktop, Claude Code, Cursor). 30 tools + bundled Skills.
 
 ## Quick links
 

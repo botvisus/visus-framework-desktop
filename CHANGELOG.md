@@ -37,6 +37,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `execute_tasks` is intercepted to release any held mouse buttons
   (`left`, `middle`, `right`) before the exception propagates. Prevents
   stuck buttons after an interrupted `drag` / `mouse_down`.
+- **MCP server + Skills bundle**: new `visus-mcp` console script
+  exposes 30 tools (find/click/screenshot/keyboard/process/window/
+  task-list/session/report/doctor/configure) via FastMCP for any
+  MCP-aware agent (Claude Desktop, Claude Code, Cursor, custom
+  clients). Install with `pip install 'visus-desktop[mcp]'`. The
+  `skills/` directory ships 7 agent-ready playbooks
+  (using-visus-desktop, automate-form-login, extract-table-data,
+  wait-for-download, solve-image-captcha, file-dialog-automation,
+  record-and-replay) referenced by name in the host's settings.json.
+  Full docs at `docs/mcp.md`.
 - **Pluggable OCR backend** (Phase 3, E5 — early): set
   `config['ocr_backend'] = 'rapidocr'` to swap Tesseract for the
   ONNX-runtime-based PP-OCR pipeline. Default stays `'tesseract'` so no

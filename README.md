@@ -217,6 +217,25 @@ if bot.find_text("Username", region=(100, 100, 500, 300), filter_type="letters")
     bot.click_text("Username", region=(100, 100, 500, 300), sendtext="admin")
 ```
 
+### Drive it from any MCP agent
+
+`visus-desktop` ships a **Model Context Protocol** server. Install the extra and wire it into Claude Desktop / Code / Cursor — your agent can now call `find_text`, `click_image`, `take_screenshot`, `execute_tasks`, `start_recording`, `render_report` and 24 more tools directly.
+
+```bash
+pip install 'visus-desktop[mcp]'
+```
+
+```jsonc
+// claude_desktop_config.json (or ~/.claude/settings.json for Claude Code)
+{
+  "mcpServers": {
+    "visus-desktop": { "command": "visus-mcp" }
+  }
+}
+```
+
+See [`docs/mcp.md`](docs/mcp.md) for the full tool list and [`skills/`](skills/) for ready-to-use playbooks (login forms, table scraping, captchas, downloads, file dialogs, record/replay).
+
 ---
 
 ## Usage guide
