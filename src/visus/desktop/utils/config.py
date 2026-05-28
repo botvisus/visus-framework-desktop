@@ -17,6 +17,47 @@ from ..exceptions import ConfigurationError, TesseractNotFoundError
 logger = logging.getLogger(__name__)
 
 
+def get_tesseract_candidate_paths() -> list:
+    """Return the OS-appropriate Tesseract install paths to probe.
+
+    Shared by ``BotVisionConfig`` (full validation, runs the binary) and
+    ``visus.desktop.doctor`` (cheap existence-only diagnostic), so both
+    paths stay in lock-step. Each list is deduplicated while preserving
+    order.
+    """
+    system = platform.system().lower()
+    if system == "windows":
+        user_local = (
+            r"C:\Users\{}\AppData\Local\Tesseract-OCR\tesseract.exe".format(
+                os.getenv("USERNAME", "")
+            )
+        )
+        candidates = [
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+            user_local,
+        ]
+    elif system == "linux":
+        candidates = [
+            "/usr/bin/tesseract",
+            "/usr/local/bin/tesseract",
+            "/opt/tesseract/bin/tesseract",
+            "/snap/bin/tesseract",
+        ]
+    elif system == "darwin":
+        candidates = [
+            "/usr/local/bin/tesseract",
+            "/opt/homebrew/bin/tesseract",
+            "/usr/bin/tesseract",
+            "/Applications/Tesseract.app/Contents/MacOS/tesseract",
+        ]
+    else:
+        candidates = ["/usr/bin/tesseract", "/usr/local/bin/tesseract"]
+    # Preserve first-occurrence order while deduplicating.
+    seen: set = set()
+    return [p for p in candidates if not (p in seen or seen.add(p))]
+
+
 class BotVisionConfig:
     """
     Main configuration class for Visus Desktop.
@@ -158,34 +199,7 @@ class BotVisionConfig:
 
     def _get_tesseract_paths(self) -> list:
         """Return a list of possible Tesseract paths based on the OS."""
-        system = platform.system().lower()
-
-        if system == "windows":
-            return [
-                r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-                r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-                r"C:\Users\{}\AppData\Local\Tesseract-OCR\tesseract.exe".format(
-                    os.getenv("USERNAME", "")
-                ),
-                r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-                r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-            ]
-        elif system == "linux":
-            return [
-                "/usr/bin/tesseract",
-                "/usr/local/bin/tesseract",
-                "/opt/tesseract/bin/tesseract",
-                "/snap/bin/tesseract",
-            ]
-        elif system == "darwin":  # macOS
-            return [
-                "/usr/local/bin/tesseract",
-                "/opt/homebrew/bin/tesseract",
-                "/usr/bin/tesseract",
-                "/Applications/Tesseract.app/Contents/MacOS/tesseract",
-            ]
-        else:
-            return ["/usr/bin/tesseract", "/usr/local/bin/tesseract"]
+        return get_tesseract_candidate_paths()
 
     def _validate_tesseract_path(self, path: str) -> bool:
         """Validate whether a Tesseract path is valid."""

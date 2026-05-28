@@ -59,6 +59,9 @@ Documentation = "https://github.com/matheuszwilk/visus-desktop#readme"
 Repository = "https://github.com/matheuszwilk/visus-desktop.git"
 "Bug Tracker" = "https://github.com/matheuszwilk/visus-desktop/issues"
 
+[project.scripts]
+visus-doctor = "visus.desktop.doctor:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["visus*"]

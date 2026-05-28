@@ -26,6 +26,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   allow-list. Complements `backtrack`, which only retries within a task
   list — `@retry` is the standalone primitive for arbitrary functions
   (HTTP calls, file I/O, third-party APIs).
+- **`visus-doctor` health-check CLI** (Phase 1, R4): run
+  `python -m visus.desktop.doctor` (or the `visus-doctor` console
+  script) to verify Tesseract, required Python modules, the display, and
+  `pywinauto` (Windows-only). Prints `[OK]`/`[FAIL]` per check and exits
+  non-zero on any failure, suitable for CI gates. The Tesseract candidate
+  paths now live in `visus.desktop.utils.config.get_tesseract_candidate_paths`
+  and are shared by the doctor and `BotVisionConfig`.
+
+### Changed
+- `BotVisionConfig._get_tesseract_paths` was refactored to delegate to
+  the shared `get_tesseract_candidate_paths()` helper. The Windows
+  candidate list previously contained the same path three times; the
+  helper deduplicates while preserving order.
 
 ### Fixed
 - **B1 / TS4**: the `cv2` warm-up shim was moved into `tests/conftest.py` so
