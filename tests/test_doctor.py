@@ -139,6 +139,57 @@ class TestCliEntryPoint:
         assert callable(doctor.main)
 
 
+class TestActiveBackendCheck:
+    """``check_active_ocr_backend`` reports which backend is configured."""
+
+    def test_default_backend_uses_tesseract_check(self):
+        # Default config -> tesseract backend; success when path exists.
+        with patch.object(doctor, "_detect_tesseract", return_value="/fake/tess"):
+            ok, detail = doctor.check_active_ocr_backend()
+        assert ok is True
+        assert "tesseract" in detail.lower()
+
+    def test_rapidocr_backend_check_passes_when_importable(self):
+        import sys
+        from unittest.mock import MagicMock
+
+        fake_rapid = MagicMock()
+        fake_rapid.__version__ = "2.0.0"
+        fake_onnx = MagicMock()
+        fake_onnx.__version__ = "1.16.0"
+        from visus.desktop.utils import config as _config
+
+        with patch.dict(
+            sys.modules, {"rapidocr": fake_rapid, "onnxruntime": fake_onnx}
+        ), patch.object(
+            _config.BotVisionConfig,
+            "_load_default_config",
+            return_value={"ocr_backend": "rapidocr"},
+        ):
+            ok, detail = doctor.check_active_ocr_backend()
+        assert ok is True
+        assert "rapidocr" in detail.lower()
+
+    def test_rapidocr_backend_check_fails_when_not_installed(self):
+        from visus.desktop.utils import config as _config
+
+        original_import = __import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "rapidocr":
+                raise ImportError(name)
+            return original_import(name, *args, **kwargs)
+
+        with patch.object(
+            _config.BotVisionConfig,
+            "_load_default_config",
+            return_value={"ocr_backend": "rapidocr"},
+        ), patch("builtins.__import__", side_effect=fake_import):
+            ok, detail = doctor.check_active_ocr_backend()
+        assert ok is False
+        assert "rapidocr" in detail.lower()
+
+
 class TestTesseractPathHelper:
     """``get_tesseract_candidate_paths`` is the canonical source of paths."""
 

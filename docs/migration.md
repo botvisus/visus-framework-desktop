@@ -130,9 +130,14 @@ These are pure additions — opt-in via config:
 * **`@retry` decorator** — `from visus.desktop import retry` for
   arbitrary callables (HTTP, file I/O, third-party APIs).
 * **`visus-doctor` CLI** — `python -m visus.desktop.doctor` /
-  `visus-doctor` checks Tesseract, deps, display, pywinauto.
+  `visus-doctor` checks the active OCR backend, deps, display,
+  pywinauto.
 * **Graceful SIGINT** — Ctrl+C during `execute_tasks` releases any held
   mouse buttons before propagating.
+* **Pluggable OCR backend** — `config['ocr_backend'] = 'rapidocr'`
+  swaps Tesseract for the ONNX-runtime PP-OCR pipeline. Useful on
+  machines where the Tesseract binary cannot be installed. Install
+  with `pip install 'visus-desktop[rapidocr]'`.
 
 See [`CHANGELOG.md`](../CHANGELOG.md) for the authoritative list.
 

@@ -81,7 +81,11 @@ class BotVisionConfig:
         if config_dict:
             self.config.update(config_dict)
 
-        self._detect_tesseract()
+        # Tesseract is only required when it is the active OCR backend (Phase 3 / E5).
+        # Users on machines that cannot install the Tesseract binary can opt
+        # into ``ocr_backend='rapidocr'`` and skip this gate entirely.
+        if self.config.get("ocr_backend", "tesseract") == "tesseract":
+            self._detect_tesseract()
         self._validate_dependencies()
         self._validate_overlay_config()
         self._validate_mouse_button_config()
@@ -166,6 +170,12 @@ class BotVisionConfig:
             #   'json' -> one JSON object per task on logger
             #            ``visus.desktop.task_events``
             "log_format": "text",
+            # Pluggable OCR backend (Phase 3 / E5).
+            #   'tesseract' -> default; uses pytesseract + multi-PSM pipeline.
+            #   'rapidocr'  -> PP-OCR models via ONNX Runtime, zero external
+            #                  binary. Install with: pip install
+            #                  'visus-desktop[rapidocr]'.
+            "ocr_backend": "tesseract",
         }
 
     def _detect_tesseract(self) -> None:

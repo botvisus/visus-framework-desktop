@@ -12,6 +12,31 @@ python -m visus.desktop.doctor   # equivalent
 
 ---
 
+## "I can't / don't want to install Tesseract"
+
+Switch to the RapidOCR backend:
+
+```bash
+pip install 'visus-desktop[rapidocr]'
+```
+
+```python
+bot = VisusBot({"ocr_backend": "rapidocr"})
+```
+
+No `.exe` install, no `tessdata/` folder. The first call downloads the
+PP-OCR ONNX models (~10 MB) into your user cache. Caveats:
+
+* Portuguese has no dedicated model — the `latin` model handles Latin
+  scripts generically. If your bot reads accented Portuguese, keep
+  Tesseract for now.
+* No equivalent of `tessedit_char_whitelist=0123456789` — numeric-only
+  fields may have lower accuracy than with Tesseract.
+
+Run `visus-doctor` to confirm the backend is wired up correctly.
+
+---
+
 ## OCR cannot find text that is clearly on screen
 
 **Symptoms**

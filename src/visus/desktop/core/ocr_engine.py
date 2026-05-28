@@ -1,8 +1,18 @@
 """
 Visus Desktop - OCR Engine
 
-This module manages optical character recognition (OCR) using Tesseract
-with multiple configurations and techniques optimized for different types of text.
+Pluggable OCR engine (Phase 3 / E5). ``OCREngine`` is a thin facade that
+selects a backend at construction time based on
+``config['ocr_backend']``:
+
+  * ``'tesseract'`` (default) -- multi-PSM pipeline over 19 preprocessing
+    variants. Best for Portuguese, character whitelisting, RPA UI text.
+  * ``'rapidocr'``           -- PP-OCR models via ONNX Runtime. No
+    external binary; install with ``pip install
+    'visus-desktop[rapidocr]'``.
+
+Both backends honour the same contract (``find_text`` /
+``extract_all_text``) so callers don't need to care which one is active.
 """
 
 import logging
@@ -10,7 +20,7 @@ from typing import Dict, List, Optional, Tuple
 
 from PIL import Image
 
-from ..exceptions import OCRProcessingError, TesseractNotFoundError
+from ..exceptions import ConfigurationError, OCRProcessingError, TesseractNotFoundError
 from ..utils.config import BotVisionConfig
 from ..utils.text_filters import limpar_texto, matches_filter
 from .image_processing import ImageProcessor
@@ -42,12 +52,54 @@ class OCRResult:
 
 
 class OCREngine:
-    """
-    OCR engine with multiple configurations and optimized processing.
+    """Facade selecting the active OCR backend based on config.
 
-    Uses different Tesseract configurations and preprocessing techniques
-    to maximize accuracy in text detection.
+    The class keeps the historical ``OCREngine(config)`` constructor so
+    existing call sites do not change. The actual work is delegated to a
+    backend instance stored on ``self._backend``; both Tesseract and
+    RapidOCR backends implement the same two methods (``find_text``,
+    ``extract_all_text``) and the facade just forwards.
     """
+
+    def __init__(self, config: Optional[BotVisionConfig] = None):
+        self.config = config or BotVisionConfig()
+        backend_name = self.config.get("ocr_backend", "tesseract")
+        if backend_name == "tesseract":
+            self._backend = _TesseractBackend(self.config)
+        elif backend_name == "rapidocr":
+            self._backend = _RapidOCRBackend(self.config)
+        else:
+            raise ConfigurationError(
+                f"Unknown ocr_backend {backend_name!r}; "
+                "expected 'tesseract' or 'rapidocr'."
+            )
+        # Expose a few attributes the legacy tests/users inspect directly
+        # so the facade stays a drop-in replacement for the old class.
+        self.image_processor = getattr(self._backend, "image_processor", None)
+
+    # ------------------------------------------------------------------
+    # Public OCR contract -- both backends implement these.
+    # ------------------------------------------------------------------
+
+    def find_text(self, *args, **kwargs):
+        return self._backend.find_text(*args, **kwargs)
+
+    def extract_all_text(self, *args, **kwargs):
+        return self._backend.extract_all_text(*args, **kwargs)
+
+    def __getattr__(self, item):
+        """Proxy legacy attribute reads (``ocr_configs``, ``config_names``, …)
+        through to the active backend so existing callers keep working."""
+        # ``__getattr__`` only fires for names not already on the instance,
+        # so this is purely a compat shim for backend-specific attributes.
+        backend = self.__dict__.get("_backend")
+        if backend is None or item.startswith("_"):
+            raise AttributeError(item)
+        return getattr(backend, item)
+
+
+class _TesseractBackend:
+    """Tesseract-backed OCR pipeline (the historical implementation)."""
 
     def __init__(self, config: Optional[BotVisionConfig] = None):
         """
@@ -116,7 +168,7 @@ class OCREngine:
             "both": {2: 2, 3: 1, 4: 2, 5: 1},  # General configurations
         }
 
-        self._setup_tesseract()
+        self._setup()
 
     def _get_method_name(self, index: int) -> str:
         """
@@ -148,7 +200,7 @@ class OCREngine:
         else:
             return f"Custom config #{index + 1}"
 
-    def _setup_tesseract(self) -> None:
+    def _setup(self) -> None:
         """Configures Tesseract with the current settings."""
         try:
             self.config.setup_tesseract()
@@ -492,6 +544,111 @@ class OCREngine:
         except Exception as e:
             logger.error(f"Error during full text extraction: {e}")
             raise OCRProcessingError(f"Extraction failed: {e}") from e
+
+
+class _RapidOCRBackend:
+    """RapidOCR-backed OCR pipeline (PP-OCR via ONNX Runtime).
+
+    Lazy-imports ``rapidocr`` so the package is only required when this
+    backend is actually selected. Maps RapidOCR's output (lists of text /
+    polygons / 0-1 scores) into the shape historically produced by
+    Tesseract (axis-aligned ``(x, y, w, h)`` boxes and 0-100 scores).
+    """
+
+    def __init__(self, config: Optional[BotVisionConfig] = None):
+        self.config = config or BotVisionConfig()
+        try:
+            import rapidocr  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise ConfigurationError(
+                "ocr_backend='rapidocr' requires the optional dependency. "
+                "Install with: pip install 'visus-desktop[rapidocr]'"
+            ) from exc
+        self._engine = rapidocr.RapidOCR()
+
+    def _run(self, image: Image.Image):
+        """Invoke RapidOCR and return ``(txts, boxes, scores)`` triples."""
+        import numpy as np
+
+        arr = np.array(image)
+        result = self._engine(arr)
+        if result is None:
+            return [], [], []
+        txts = list(getattr(result, "txts", []) or [])
+        boxes_raw = getattr(result, "boxes", None)
+        scores = list(getattr(result, "scores", []) or [])
+        if boxes_raw is None:
+            return txts, [], scores
+        # Accept either a numpy array of polygons or a plain list.
+        try:
+            boxes_iter = boxes_raw.tolist()  # type: ignore[union-attr]
+        except AttributeError:
+            boxes_iter = list(boxes_raw)
+        return txts, boxes_iter, scores
+
+    @staticmethod
+    def _poly_to_xywh(polygon) -> Tuple[int, int, int, int]:
+        """Convert a 4-vertex polygon to an axis-aligned (x, y, w, h)."""
+        xs = [int(p[0]) for p in polygon]
+        ys = [int(p[1]) for p in polygon]
+        x, y = min(xs), min(ys)
+        return (x, y, max(xs) - x, max(ys) - y)
+
+    def find_text(
+        self,
+        region_img: Image.Image,
+        target_text: str,
+        filter_type: str = "both",
+        early_confidence_threshold: float = 75.0,
+    ) -> Tuple[List[Tuple], List[float], bool]:
+        try:
+            txts, boxes, scores = self._run(region_img)
+        except Exception as exc:
+            raise OCRProcessingError(f"RapidOCR call failed: {exc}") from exc
+
+        target_clean = limpar_texto(target_text, filter_type).lower()
+        if not target_clean:
+            return [], [], False
+
+        matched_boxes: List[Tuple] = []
+        matched_scores: List[float] = []
+        early_match = False
+        for txt, polygon, raw_score in zip(txts, boxes, scores):
+            candidate = limpar_texto(str(txt), filter_type)
+            if not matches_filter(candidate, filter_type):
+                continue
+            if target_clean not in candidate.lower():
+                continue
+            box = self._poly_to_xywh(polygon)
+            score_pct = float(raw_score) * 100.0
+            matched_boxes.append(box)
+            matched_scores.append(score_pct)
+            if score_pct >= early_confidence_threshold:
+                early_match = True
+                return [box], [score_pct], True
+        return matched_boxes, matched_scores, early_match
+
+    def extract_all_text(
+        self, img: Image.Image, filter_type: str = "both"
+    ) -> List[OCRResult]:
+        try:
+            txts, boxes, scores = self._run(img)
+        except Exception as exc:
+            raise OCRProcessingError(f"RapidOCR call failed: {exc}") from exc
+
+        results: List[OCRResult] = []
+        for txt, polygon, raw_score in zip(txts, boxes, scores):
+            cleaned = limpar_texto(str(txt), filter_type)
+            if not cleaned or not matches_filter(cleaned, filter_type):
+                continue
+            results.append(
+                OCRResult(
+                    text=cleaned,
+                    confidence=float(raw_score) * 100.0,
+                    box=self._poly_to_xywh(polygon),
+                )
+            )
+        return results
 
 
 # Convenience functions

@@ -37,6 +37,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `execute_tasks` is intercepted to release any held mouse buttons
   (`left`, `middle`, `right`) before the exception propagates. Prevents
   stuck buttons after an interrupted `drag` / `mouse_down`.
+- **Pluggable OCR backend** (Phase 3, E5 — early): set
+  `config['ocr_backend'] = 'rapidocr'` to swap Tesseract for the
+  ONNX-runtime-based PP-OCR pipeline. Default stays `'tesseract'` so no
+  existing user notices. Install the optional dep with
+  `pip install 'visus-desktop[rapidocr]'`. `BotVisionConfig` no longer
+  forces a Tesseract install when the RapidOCR backend is selected, so
+  the library is usable on locked-down corporate Windows machines.
+  `visus-doctor` now reports the active backend and checks the
+  appropriate dependency chain.
 
 ### Documentation
 - **Cookbook** (Phase 1, DOC1) — `docs/cookbook/` with a worked

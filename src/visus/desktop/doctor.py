@@ -77,6 +77,44 @@ def check_tesseract() -> CheckResult:
     )
 
 
+def check_rapidocr() -> CheckResult:
+    """Verify the optional RapidOCR backend is importable."""
+    try:
+        import rapidocr  # type: ignore[import-not-found]
+    except ImportError:
+        return False, (
+            "rapidocr not installed. Install with: "
+            "pip install 'visus-desktop[rapidocr]'"
+        )
+    try:
+        import onnxruntime  # type: ignore[import-not-found]
+    except ImportError:
+        return False, "onnxruntime missing -- pip install onnxruntime"
+    version = getattr(rapidocr, "__version__", "unknown")
+    onnx_version = getattr(onnxruntime, "__version__", "unknown")
+    return True, f"rapidocr {version} + onnxruntime {onnx_version} importable"
+
+
+def check_active_ocr_backend() -> CheckResult:
+    """Verify the OCR backend the user actually configured is usable.
+
+    Reads ``visus.desktop.utils.config.get_default_config()['ocr_backend']``
+    and routes to the appropriate sub-check. Defaults to Tesseract.
+    """
+    from .utils import config as _config
+
+    backend = (
+        _config.BotVisionConfig._load_default_config(
+            _config.BotVisionConfig.__new__(_config.BotVisionConfig)
+        ).get("ocr_backend", "tesseract")
+    )
+    if backend == "rapidocr":
+        ok, detail = check_rapidocr()
+        return ok, f"backend={backend}; {detail}"
+    ok, detail = check_tesseract()
+    return ok, f"backend={backend}; {detail}"
+
+
 def check_python_dependencies() -> CheckResult:
     """Verify every required Python module can be imported."""
     missing: list[str] = []
@@ -115,7 +153,7 @@ def check_pywinauto() -> CheckResult:
 
 
 DEFAULT_CHECKS: list[Check] = [
-    ("Tesseract OCR", check_tesseract),
+    ("Active OCR backend", check_active_ocr_backend),
     ("Python dependencies", check_python_dependencies),
     ("Display", check_display),
     ("pywinauto (native automation)", check_pywinauto),
