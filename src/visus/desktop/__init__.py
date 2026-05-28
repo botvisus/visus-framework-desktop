@@ -450,9 +450,12 @@ from .core.overlay import VisualOverlay, show_overlay
 from .core.process import find_process, is_process_running, kill_process, launch
 from .core.relative_image import RelativeImageDetector  # NEW FEATURE
 from .core.screen import (
+    Monitor,
     capture_screen,
     get_display_size,
+    get_monitors,
     save_screenshot,
+    take_screenshot,
     wait_for_stable_screen,
 )
 from .core.session import Session
@@ -520,7 +523,13 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         else:
             self.config = get_default_config()
 
-        self.executor = TaskExecutor(self.config)
+        # Bind the hybrid finder lazily so that monkeypatches on
+        # ``self.hybrid_find`` (e.g. in tests) take effect for hybrid
+        # task dispatch in the executor.
+        self.executor = TaskExecutor(
+            self.config,
+            hybrid_finder=lambda name, **kw: self.hybrid_find(name, **kw),
+        )
         self.ocr_engine = OCREngine(self.config)
         self.image_processor = ImageProcessor()
 
@@ -842,6 +851,68 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
                 )
 
             return False
+
+    # ------------------------------------------------------------------
+    # Hybrid targeting (Phase 3 / T1)
+    # ------------------------------------------------------------------
+
+    _IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff")
+
+    def _hybrid_native_lookup(self, name, region=None):
+        """Best-effort native lookup used by :meth:`hybrid_find`.
+
+        Returns an ``(x, y, w, h)`` box or ``None`` if the active app
+        handle does not know the element. Subclasses / tests can patch
+        this without touching the OCR or image layers.
+        """
+        try:
+            element = self.find_app_element(name, search_mode="any")
+        except Exception:
+            return None
+        if element is None:
+            return None
+        rect = getattr(element, "rectangle", None)
+        if rect is None:
+            return None
+        try:
+            r = rect() if callable(rect) else rect
+            return (
+                int(r.left),
+                int(r.top),
+                int(r.right - r.left),
+                int(r.bottom - r.top),
+            )
+        except Exception:
+            return None
+
+    def hybrid_find(self, name, region=None):
+        """Find a target by trying native → OCR → image in order.
+
+        Each layer is mockable; the first hit wins. Returns an
+        ``(x, y, w, h)`` tuple or ``None``. The image layer is only
+        attempted when ``name`` looks like an image filename (one of
+        ``.png .jpg .jpeg .bmp .gif .tiff``).
+        """
+        # Layer 1 -- native UI handle (pywinauto).
+        try:
+            box = self._hybrid_native_lookup(name, region=region)
+        except Exception:
+            box = None
+        if box:
+            return box
+
+        # Layer 2 -- OCR.
+        box = self.find_text(name, region=region)
+        if box:
+            return box
+
+        # Layer 3 -- image template (only for paths that look like images).
+        lower = name.lower() if isinstance(name, str) else ""
+        if lower.endswith(self._IMAGE_SUFFIXES):
+            box = self.find_image(name, region=region)
+            if box:
+                return box
+        return None
 
     def execute_tasks(self, tasks, resume: bool = False):
         """
@@ -2988,7 +3059,10 @@ __all__ = [
     "get_clipboard",
     "capture_screen",
     "save_screenshot",
+    "take_screenshot",
     "get_display_size",
+    "get_monitors",
+    "Monitor",
     "wait_for_stable_screen",
     "launch",
     "find_process",

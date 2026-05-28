@@ -11,8 +11,26 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class Monitor:
+    """One physical display, returned by :func:`get_monitors`.
+
+    ``index`` is 1-based; mss reserves index 0 for the virtual screen
+    spanning every monitor, which the public helpers hide. ``is_primary``
+    follows mss's convention -- the first physical monitor it lists.
+    """
+
+    index: int
+    x: int
+    y: int
+    width: int
+    height: int
+    is_primary: bool
 
 
 # Optional alternative screen source -- when set, ``capture_screen`` reads
@@ -20,6 +38,60 @@ logger = logging.getLogger(__name__)
 # ``'disk:<dir>'`` for now (Phase 2 / TS3). Thread-local so concurrent
 # tests don't step on each other.
 _source_state = threading.local()
+
+
+# Per-region screenshot cache (Phase 3 / E3). TTL stays 0 (disabled) by
+# default; users opt in via ``set_screen_cache_ms`` or
+# ``config['screen_cache_ms']``. Cache key is ``(region, monitor)`` so
+# different regions don't collide.
+_cache_state = threading.local()
+
+
+def set_screen_cache_ms(ms: int) -> None:
+    """Configure the TTL of the per-region screenshot cache in milliseconds.
+
+    ``0`` (default) disables caching. Non-zero values let back-to-back
+    ``capture_screen`` calls on the same region reuse the previous PIL
+    image, useful when several finds run sequentially on the same area.
+    """
+    _cache_state.ttl_ms = max(0, int(ms))
+    _cache_state.entries = {}
+
+
+def _get_cache_ttl_ms() -> int:
+    return int(getattr(_cache_state, "ttl_ms", 0))
+
+
+def invalidate_screen_cache() -> None:
+    """Clear every cached region (call after a click / typed input)."""
+    _cache_state.entries = {}
+
+
+def _cache_lookup(key):
+    entries = getattr(_cache_state, "entries", None)
+    if not entries:
+        return None
+    entry = entries.get(key)
+    if entry is None:
+        return None
+    ts, image = entry
+    if (_monotonic_ms() - ts) > _get_cache_ttl_ms():
+        return None
+    return image
+
+
+def _cache_store(key, image):
+    entries = getattr(_cache_state, "entries", None)
+    if entries is None:
+        entries = {}
+        _cache_state.entries = entries
+    entries[key] = (_monotonic_ms(), image)
+
+
+def _monotonic_ms() -> int:
+    import time as _time
+
+    return int(_time.monotonic() * 1000)
 
 
 def set_screen_source(source: str | None) -> None:
@@ -47,7 +119,10 @@ def get_display_size() -> tuple[int, int]:
     return tuple(pyautogui.size())
 
 
-def _capture_with_mss(region: tuple[int, int, int, int] | None):
+def _capture_with_mss(
+    region: tuple[int, int, int, int] | None,
+    monitor_index: int | None = None,
+):
     """Capture via ``mss`` and return a PIL image. Raises if mss is unavailable."""
     import mss
     from PIL import Image
@@ -61,12 +136,60 @@ def _capture_with_mss(region: tuple[int, int, int, int] | None):
                 "width": int(width),
                 "height": int(height),
             }
+        elif monitor_index is not None:
+            if monitor_index < 1 or monitor_index >= len(sct.monitors):
+                raise ValueError(
+                    f"monitor index {monitor_index} out of range "
+                    f"(have {len(sct.monitors) - 1} physical monitor(s))"
+                )
+            monitor = sct.monitors[monitor_index]
         else:
             # monitors[1] is the primary monitor; monitors[0] is the full virtual screen.
             monitor = sct.monitors[1]
         shot = sct.grab(monitor)
 
     return Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
+
+
+def get_monitors() -> list[Monitor]:
+    """Return the list of physical monitors (Phase 3 / E4).
+
+    mss reserves index 0 for the virtual screen spanning every monitor;
+    this helper hides it and returns just the physical ones starting at
+    index 1. The first physical monitor is marked ``is_primary``.
+    """
+    import mss
+
+    with mss.mss() as sct:
+        raw = list(sct.monitors)
+    physical: list[Monitor] = []
+    for idx, m in enumerate(raw):
+        if idx == 0:
+            continue  # the virtual-screen entry
+        physical.append(
+            Monitor(
+                index=idx,
+                x=int(m["left"]),
+                y=int(m["top"]),
+                width=int(m["width"]),
+                height=int(m["height"]),
+                is_primary=(idx == 1),
+            )
+        )
+    return physical
+
+
+def take_screenshot(
+    region: tuple[int, int, int, int] | None = None,
+    monitor: int | None = None,
+):
+    """Capture either a region or a whole monitor (Phase 3 / E4).
+
+    Convenience wrapper over :func:`capture_screen` exposed at the
+    top-level so users do not need to construct a ``VisusBot`` for a
+    one-shot screenshot.
+    """
+    return capture_screen(region=region, monitor=monitor)
 
 
 def _capture_from_disk_source(source: str, region):
@@ -94,7 +217,10 @@ def _capture_from_disk_source(source: str, region):
     return image
 
 
-def capture_screen(region: tuple[int, int, int, int] | None = None):
+def capture_screen(
+    region: tuple[int, int, int, int] | None = None,
+    monitor: int | None = None,
+):
     """Capture the screen (or a region) and return it as a PIL image.
 
     When ``set_screen_source('disk:<dir>')`` has been called, frames come
@@ -105,6 +231,10 @@ def capture_screen(region: tuple[int, int, int, int] | None = None):
     Args:
         region: Optional capture region as ``(x, y, width, height)``. When
             ``None`` (the default) the primary screen is captured.
+        monitor: Optional 1-based monitor index. ``None`` keeps the
+            historical behaviour (primary monitor); ``1`` is also the
+            primary, ``2`` the secondary, etc. Mutually exclusive with
+            ``region`` -- if both are given ``region`` wins.
 
     Returns:
         PIL.Image.Image: The captured screenshot.
@@ -116,8 +246,22 @@ def capture_screen(region: tuple[int, int, int, int] | None = None):
             return from_disk
         # Fall through to live capture so a misconfigured source does
         # not silently break the bot.
+    ttl_ms = _get_cache_ttl_ms()
+    cache_key = None
+    if ttl_ms > 0:
+        cache_key = (region, monitor)
+        cached = _cache_lookup(cache_key)
+        if cached is not None:
+            return cached
     try:
-        return _capture_with_mss(region)
+        captured = _capture_with_mss(region, monitor_index=monitor)
+        if cache_key is not None:
+            _cache_store(cache_key, captured)
+        return captured
+    except ValueError:
+        # Re-raise programmer errors (e.g. invalid monitor index) so they
+        # are not silently swallowed by the pyautogui fallback below.
+        raise
     except Exception as exc:
         logger.debug("mss capture failed (%s); falling back to pyautogui", exc)
         import pyautogui

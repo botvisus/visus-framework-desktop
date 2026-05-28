@@ -27,7 +27,12 @@ from .keyboard_commands import KeyboardCommander
 from .ocr_engine import OCREngine
 from .overlay import show_overlay
 from .relative_image import RelativeImageDetector
-from .screen import capture_screen, set_screen_source
+from .screen import (
+    capture_screen,
+    invalidate_screen_cache,
+    set_screen_cache_ms,
+    set_screen_source,
+)
 from .virtual_mouse import VirtualMouse
 from .wait_manager import WaitManager
 
@@ -70,14 +75,19 @@ class TaskExecutor:
     and robust execution with backtracking.
     """
 
-    def __init__(self, config: Optional[BotVisionConfig] = None):
+    def __init__(self, config: Optional[BotVisionConfig] = None, hybrid_finder=None):
         """
         Initializes the task executor.
 
         Args:
-            config (BotVisionConfig, optional): Library configuration
+            config: Library configuration.
+            hybrid_finder: Optional callable ``(name, region=None) -> box``
+                used to resolve ``{"type": "hybrid", "name": ...}`` tasks.
+                When unset, hybrid tasks fail with a clear error message
+                (Phase 3 / T2).
         """
         self.config = config or BotVisionConfig()
+        self._hybrid_finder = hybrid_finder
         self.ocr_engine = OCREngine(self.config)
         self.relative_detector = RelativeImageDetector()
         self.keyboard_commander = KeyboardCommander()
@@ -105,6 +115,9 @@ class TaskExecutor:
         screen_source = self.config.get("screen_source")
         if screen_source:
             set_screen_source(screen_source)
+
+        # Region screenshot cache (Phase 3 / E3). 0 = disabled.
+        set_screen_cache_ms(int(self.config.get("screen_cache_ms") or 0))
 
         self._setup_pyautogui()
 
@@ -473,6 +486,8 @@ class TaskExecutor:
                     location = self._find_relative_image_location(task, attempts)
                 elif task_type == "extract_text":
                     location = self._execute_extract_text(task, attempts)
+                elif task_type == "hybrid":
+                    location = self._execute_hybrid(task, attempts)
                 elif "text" in task:
                     # Check whether it has wait parameters
                     if task.get("wait_until_found") or task.get(
@@ -973,6 +988,9 @@ class TaskExecutor:
             task (dict): Task configuration
             location (tuple): Coordinates where to perform the action
         """
+        # Any physical input invalidates the region cache because the
+        # screen contents have just changed.
+        invalidate_screen_cache()
         delay = task.get("delay", 0)
         show_overlay_enabled = task.get("show_overlay")
 
@@ -1364,6 +1382,27 @@ class TaskExecutor:
                 return None
         except Exception as e:
             logger.error(f"Error executing keyboard command: {e}")
+            return None
+
+    def _execute_hybrid(self, task: Dict[str, Any], attempt: int) -> Optional[Tuple]:
+        """Resolve a ``{"type": "hybrid", "name": ...}`` task via ``hybrid_find``.
+
+        Returns the located ``(x, y, w, h)`` box or ``None`` so the
+        executor's standard "no location -> failure" path engages.
+        """
+        if self._hybrid_finder is None:
+            logger.warning(
+                "Hybrid task requires a hybrid_finder; falling back to OCR."
+            )
+            return self._find_text_location(
+                {**task, "text": task.get("name", "")}, attempt
+            )
+        name = task.get("name")
+        region = task.get("region")
+        try:
+            return self._hybrid_finder(name, region=region)
+        except Exception as exc:
+            logger.debug("hybrid_finder raised %s: %s", type(exc).__name__, exc)
             return None
 
     def _execute_extract_text(self, task: Dict[str, Any], attempt: int) -> str:

@@ -140,8 +140,7 @@ This is what users see first. Higher marketing leverage.
 |----|------|--------|------------|
 | D2 | `visus` CLI (`new project`, `run <script>`, `record`, `report`) | M | `pipx install visus-desktop` exposes the binary; `visus --help` covers all subcommands; each subcommand has a smoke test. |
 | D4 | Recipe gallery — at least 5 fully worked recipes under `docs/cookbook/` | S | Login form, table scraping, file download wait, captcha, Excel input. Cross-linked from README. |
-| D1 | **Recorder / codegen** ("Visus Studio") MVP — captures clicks/typing into a `tasks.py` | L | First version is CLI-only (`visus record --out tasks.py`); records via a global hook (`pynput`). |
-| D3 | VS Code extension: snippets + "Run this task list" + "Pick a region" tool | L | Published to the VS Code marketplace; smoke E2E test. |
+
 
 **Definition of done for Phase 5:**
 - A new user can `pipx install visus-desktop && visus new myproj && visus run` in < 5 minutes.

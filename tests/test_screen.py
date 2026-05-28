@@ -23,7 +23,7 @@ def test_capture_prefers_mss(monkeypatch):
     sentinel = object()
     recorded = {}
 
-    def fake_mss(region):
+    def fake_mss(region, monitor_index=None):
         recorded["region"] = region
         return sentinel
 
@@ -44,7 +44,7 @@ def test_capture_falls_back_to_pyautogui(monkeypatch):
     """When mss fails, capture_screen falls back to pyautogui and forwards region."""
     recorded = {}
 
-    def boom(region):
+    def boom(region, monitor_index=None):
         raise RuntimeError("mss unavailable")
 
     def fake_screenshot(region=None):
