@@ -9,8 +9,35 @@ imports cleanly even in headless environments.
 from __future__ import annotations
 
 import logging
+import os
+import threading
 
 logger = logging.getLogger(__name__)
+
+
+# Optional alternative screen source -- when set, ``capture_screen`` reads
+# frames from disk instead of grabbing the live display. Supports
+# ``'disk:<dir>'`` for now (Phase 2 / TS3). Thread-local so concurrent
+# tests don't step on each other.
+_source_state = threading.local()
+
+
+def set_screen_source(source: str | None) -> None:
+    """Configure where ``capture_screen`` reads from.
+
+    Args:
+        source: ``None`` for live capture (default), or
+            ``'disk:<directory>'`` to cycle through PNG files in the
+            directory (sorted alphabetically) instead of touching the
+            display. Used by the executor when
+            ``config['screen_source']`` is set, and directly by tests.
+    """
+    _source_state.source = source
+    _source_state.index = 0
+
+
+def get_screen_source() -> str | None:
+    return getattr(_source_state, "source", None)
 
 
 def get_display_size() -> tuple[int, int]:
@@ -42,10 +69,37 @@ def _capture_with_mss(region: tuple[int, int, int, int] | None):
     return Image.frombytes("RGB", shot.size, shot.bgra, "raw", "BGRX")
 
 
+def _capture_from_disk_source(source: str, region):
+    """Read the next PNG from a ``disk:<dir>`` source, looping when empty.
+
+    Returns the captured PIL image, or ``None`` if the source is empty /
+    missing so the caller can fall back to live capture.
+    """
+    from PIL import Image
+
+    directory = source[len("disk:"):]
+    if not os.path.isdir(directory):
+        return None
+    files = sorted(
+        f for f in os.listdir(directory) if f.lower().endswith(".png")
+    )
+    if not files:
+        return None
+    index = getattr(_source_state, "index", 0) % len(files)
+    _source_state.index = index + 1
+    image = Image.open(os.path.join(directory, files[index])).convert("RGB")
+    if region is not None:
+        x, y, w, h = region
+        image = image.crop((x, y, x + w, y + h))
+    return image
+
+
 def capture_screen(region: tuple[int, int, int, int] | None = None):
     """Capture the screen (or a region) and return it as a PIL image.
 
-    Uses ``mss`` for speed and multi-monitor support, falling back to
+    When ``set_screen_source('disk:<dir>')`` has been called, frames come
+    from disk instead of the live display (Phase 2 / TS3). Otherwise
+    uses ``mss`` for speed and multi-monitor support, falling back to
     ``pyautogui`` on any failure (e.g. mss not installed).
 
     Args:
@@ -55,6 +109,13 @@ def capture_screen(region: tuple[int, int, int, int] | None = None):
     Returns:
         PIL.Image.Image: The captured screenshot.
     """
+    source = get_screen_source()
+    if source and source.startswith("disk:"):
+        from_disk = _capture_from_disk_source(source, region)
+        if from_disk is not None:
+            return from_disk
+        # Fall through to live capture so a misconfigured source does
+        # not silently break the bot.
     try:
         return _capture_with_mss(region)
     except Exception as exc:

@@ -455,6 +455,7 @@ from .core.screen import (
     save_screenshot,
     wait_for_stable_screen,
 )
+from .core.session import Session
 
 # Import the main classes
 from .core.task_executor import TaskExecutor, TaskResult
@@ -2969,6 +2970,7 @@ __all__ = [
     "limpar_texto",
     "matches_filter",
     "retry",
+    "Session",
     # Standalone processing functions (compatibility)
     "preprocess_image_for_ocr",
     "find_text_with_multiple_preprocessing",

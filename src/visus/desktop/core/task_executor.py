@@ -27,7 +27,7 @@ from .keyboard_commands import KeyboardCommander
 from .ocr_engine import OCREngine
 from .overlay import show_overlay
 from .relative_image import RelativeImageDetector
-from .screen import capture_screen
+from .screen import capture_screen, set_screen_source
 from .virtual_mouse import VirtualMouse
 from .wait_manager import WaitManager
 
@@ -96,6 +96,15 @@ class TaskExecutor:
         # ``current_run_id`` is rotated at the start of every ``execute_tasks``
         # call so failure screenshots from concurrent runs don't collide.
         self.current_run_id: Optional[str] = None
+
+        # Test mode (Phase 2 / TS3): config['screen_source'] = 'disk:<path>'
+        # makes capture_screen read PNGs from disk instead of grabbing the
+        # live display. Applied here so any code path that goes through
+        # capture_screen (find_image, screenshot-on-failure, the stable
+        # screen helper, …) benefits without per-call plumbing.
+        screen_source = self.config.get("screen_source")
+        if screen_source:
+            set_screen_source(screen_source)
 
         self._setup_pyautogui()
 

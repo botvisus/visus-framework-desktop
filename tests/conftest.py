@@ -14,6 +14,25 @@ try:  # pragma: no cover - environment shim, not part of the tested code
 except Exception:  # pragma: no cover - cv2 is optional at import time
     pass
 
+# Patch broken Tcl/Tk paths on Windows Python installs that ship the
+# library under ``<base>/tcl/tcl8.6`` instead of the default
+# ``<base>/lib/tcl8.6``. Without this the ``tkinter`` import works but
+# ``tk.Tk()`` raises ``TclError: Can't find a usable init.tcl``. The
+# overlay code already tries to detect this at runtime; doing it here as
+# well keeps the test suite from skipping anything when the env vars
+# are not set in the user's shell.
+import os as _os  # noqa: E402
+import sys as _sys  # noqa: E402
+
+if _sys.platform == "win32" and not _os.environ.get("TCL_LIBRARY"):
+    _base = getattr(_sys, "base_prefix", _sys.prefix)
+    _candidate_tcl = _os.path.join(_base, "tcl", "tcl8.6")
+    _candidate_tk = _os.path.join(_base, "tcl", "tk8.6")
+    if _os.path.isdir(_candidate_tcl):
+        _os.environ.setdefault("TCL_LIBRARY", _candidate_tcl)
+    if _os.path.isdir(_candidate_tk):
+        _os.environ.setdefault("TK_LIBRARY", _candidate_tk)
+
 import tempfile
 from unittest.mock import patch
 
