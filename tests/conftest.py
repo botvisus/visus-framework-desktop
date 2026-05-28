@@ -2,6 +2,18 @@
 Test configuration and fixtures for the visus.desktop test suite.
 """
 
+# Fully warm up cv2 before pytest collects any test module that imports
+# ``visus.desktop`` (and before pytest-cov's import hooks run). Some cv2 builds
+# ship a lazy ``cv2.typing`` module that references
+# ``cv2.gapi.wip.draw.Text`` during a partial import; under coverage the import
+# ordering can hit that half-initialized state and raise AttributeError.
+# Importing eagerly here resolves it once, cleanly, for the whole session.
+try:  # pragma: no cover - environment shim, not part of the tested code
+    import cv2  # noqa: F401
+    import cv2.typing  # noqa: F401
+except Exception:  # pragma: no cover - cv2 is optional at import time
+    pass
+
 import tempfile
 from unittest.mock import patch
 

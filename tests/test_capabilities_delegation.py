@@ -14,17 +14,6 @@ the same module objects, patching an attribute on, for example,
 
 from __future__ import annotations
 
-# Fully warm up cv2 before the visus.desktop import chain (and pytest-cov's
-# import hooks) touch it. This venv ships a cv2 build whose lazy ``cv2.typing``
-# module references ``cv2.gapi.wip.draw.Text`` during a partial import; under
-# coverage the import ordering can otherwise hit that half-initialized state
-# and raise AttributeError. Importing it eagerly here resolves it once, cleanly.
-try:  # pragma: no cover - environment shim, not part of the tested code
-    import cv2  # noqa: F401
-    import cv2.typing  # noqa: F401
-except Exception:  # pragma: no cover - cv2 is optional at import time
-    pass
-
 import webbrowser
 
 import pytest
