@@ -69,3 +69,63 @@ def save_screenshot(path: str, region: tuple[int, int, int, int] | None = None) 
     image = capture_screen(region=region)
     image.save(path)
     return path
+
+
+def _frame_signature(image) -> bytes:
+    """Return a cheap content hash for a captured frame.
+
+    ``tobytes()`` is faster than a real hash for the small regions
+    typically passed to ``wait_for_stable_screen`` and is sufficient for
+    equality comparison.
+    """
+    return image.tobytes()
+
+
+def wait_for_stable_screen(
+    region: tuple[int, int, int, int] | None = None,
+    stable_for: float = 0.5,
+    timeout: float = 15.0,
+    poll_interval: float = 0.1,
+) -> bool:
+    """Wait until the screen stops changing (Phase 2, S1).
+
+    Polls ``capture_screen(region)`` every ``poll_interval`` seconds.
+    Returns True as soon as the same frame has been observed for at
+    least ``stable_for`` seconds; returns False if ``timeout`` elapses
+    first. Classic SPA / Oracle Forms "wait until the redraw finishes"
+    primitive.
+
+    Args:
+        region: Optional ``(x, y, w, h)`` to monitor a subset of the
+            screen; ``None`` watches the full primary monitor.
+        stable_for: Seconds of unchanged frames required to declare
+            stability.
+        timeout: Maximum total time to wait before giving up.
+        poll_interval: Time between consecutive captures.
+
+    Returns:
+        True if the screen stabilised, False on timeout.
+    """
+    import time as _time
+
+    deadline = _time.monotonic() + timeout
+    last_sig: bytes | None = None
+    stable_since: float | None = None
+    while _time.monotonic() < deadline:
+        # Import inside the loop so test patches of ``capture_screen``
+        # in the ``visus.desktop.core.screen`` namespace take effect.
+        from . import screen as _screen
+
+        frame = _screen.capture_screen(region=region)
+        sig = _frame_signature(frame)
+        now = _time.monotonic()
+        if sig == last_sig:
+            if stable_since is None:
+                stable_since = now
+            if (now - stable_since) >= stable_for:
+                return True
+        else:
+            last_sig = sig
+            stable_since = now
+        _time.sleep(poll_interval)
+    return False

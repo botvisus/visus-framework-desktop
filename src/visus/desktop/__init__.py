@@ -449,7 +449,12 @@ from .core.ocr_engine import OCREngine, OCRResult, find_text_with_multiple_prepr
 from .core.overlay import VisualOverlay, show_overlay
 from .core.process import find_process, is_process_running, kill_process, launch
 from .core.relative_image import RelativeImageDetector  # NEW FEATURE
-from .core.screen import capture_screen, get_display_size, save_screenshot
+from .core.screen import (
+    capture_screen,
+    get_display_size,
+    save_screenshot,
+    wait_for_stable_screen,
+)
 
 # Import the main classes
 from .core.task_executor import TaskExecutor, TaskResult
@@ -2978,6 +2983,7 @@ __all__ = [
     "capture_screen",
     "save_screenshot",
     "get_display_size",
+    "wait_for_stable_screen",
     "launch",
     "find_process",
     "is_process_running",

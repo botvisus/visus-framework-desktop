@@ -68,3 +68,21 @@ class NotSupportedOnThisOS(BotVisionError):
     """
 
     pass
+
+
+class CircuitBreakerTrippedError(BotVisionError):
+    """Raised when ``execute_tasks`` aborts due to consecutive failures.
+
+    The ``breaker_threshold`` config knob caps how many task failures in
+    a row the executor tolerates before refusing to continue. The
+    exception carries both the configured threshold and the failure
+    count at trip time so callers can decide how to react.
+    """
+
+    def __init__(self, threshold: int, consecutive_failures: int):
+        super().__init__(
+            f"circuit breaker tripped: {consecutive_failures} consecutive "
+            f"failures (threshold={threshold})"
+        )
+        self.threshold = threshold
+        self.consecutive_failures = consecutive_failures

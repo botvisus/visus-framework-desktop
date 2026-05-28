@@ -17,7 +17,11 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from PIL import Image
 
-from ..exceptions import TaskExecutionError, TextNotFoundError
+from ..exceptions import (
+    CircuitBreakerTrippedError,
+    TaskExecutionError,
+    TextNotFoundError,
+)
 from ..utils.config import BotVisionConfig
 from .keyboard_commands import KeyboardCommander
 from .ocr_engine import OCREngine
@@ -54,6 +58,10 @@ class TaskResult:
         # Path to a screenshot saved when the task failed (Phase 1 / O1).
         # Stays ``None`` for successful tasks or when the capture is disabled.
         self.failure_screenshot: Optional[str] = None
+        # Wall-clock time the find/locate loop took for this task (Phase 2 / O4).
+        # Excludes ``_perform_action`` (the click/typing happens after this
+        # result is built). Zero for tasks created outside the executor.
+        self.duration_ms: int = 0
 
 
 class TaskExecutor:
@@ -214,6 +222,9 @@ class TaskExecutor:
         backtrack_stack: List[int],
     ) -> List["TaskResult"]:
         """Inner driver for :meth:`execute_tasks` (extracted for cleanup wrap)."""
+        breaker_threshold = int(self.config.get("breaker_threshold") or 0)
+        consecutive_failures = 0
+
         while i < len(tasks):
             task = tasks[i]
             task_result = self._execute_single_task(task, i, len(tasks))
@@ -228,6 +239,7 @@ class TaskExecutor:
                 logger.info(
                     f"✓ Task {i + 1}/{len(tasks)}: '{task_result.task_name}' completed successfully"
                 )
+                consecutive_failures = 0
 
                 # Check whether there are pending backtracks on the stack
                 if backtrack_stack:
@@ -248,7 +260,20 @@ class TaskExecutor:
                 if task_result.location != "skip":
                     self._perform_action(task, task_result.location)
             else:
-                # Task failed, check backtracking
+                # Task failed, check the circuit breaker before deciding
+                # what to do with backtracking / advancement.
+                consecutive_failures += 1
+                if breaker_threshold > 0 and consecutive_failures >= breaker_threshold:
+                    logger.error(
+                        "Circuit breaker tripped after %s consecutive failures "
+                        "(threshold=%s); aborting execute_tasks.",
+                        consecutive_failures,
+                        breaker_threshold,
+                    )
+                    raise CircuitBreakerTrippedError(
+                        threshold=breaker_threshold,
+                        consecutive_failures=consecutive_failures,
+                    )
                 backtrack = task.get("backtrack", False)
 
                 if backtrack and i > 0:
@@ -394,8 +419,26 @@ class TaskExecutor:
 
         result.attempts = attempts
         duration_ms = int((time.monotonic() - start_monotonic) * 1000)
+        result.duration_ms = duration_ms
         self._emit_task_event(result, duration_ms)
+        if not result.success:
+            self._invoke_error_sink(result)
         return result
+
+    def _invoke_error_sink(self, result: "TaskResult") -> None:
+        """Call ``config['on_error']`` for a failed task (Phase 2 / O6).
+
+        Errors raised by the sink itself are swallowed and logged so a
+        buggy adapter (Sentry SDK, custom callback) never masks the
+        original task failure.
+        """
+        sink = self.config.get("on_error")
+        if sink is None:
+            return
+        try:
+            sink(result)
+        except Exception as exc:  # pragma: no cover - logged for forensics
+            logger.warning("on_error hook raised %s: %s", type(exc).__name__, exc)
 
     def _find_text_location(
         self, task: Dict[str, Any], attempt: int
@@ -1317,6 +1360,40 @@ class TaskExecutor:
         except Exception as e:
             logger.error(f"Error extracting text: {e}")
             return None
+
+
+def summarize(results: List[TaskResult]) -> Dict[str, Any]:
+    """Aggregate a list of ``TaskResult`` objects into a report dict.
+
+    Returns a small dict suitable for logging, HTML reports, or JSON
+    sinks. Keys are stable so downstream tooling can rely on them.
+
+    Phase 2 / O4. Empty input returns a zeroed dict rather than raising
+    so dashboards never need to special-case the no-run case.
+    """
+    total = len(results)
+    if total == 0:
+        return {
+            "total": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "success_rate": 0.0,
+            "total_duration_ms": 0,
+            "mean_duration_ms": 0.0,
+            "total_attempts": 0,
+        }
+    succeeded = sum(1 for r in results if r.success)
+    total_duration = sum(getattr(r, "duration_ms", 0) for r in results)
+    total_attempts = sum(getattr(r, "attempts", 0) for r in results)
+    return {
+        "total": total,
+        "succeeded": succeeded,
+        "failed": total - succeeded,
+        "success_rate": succeeded / total,
+        "total_duration_ms": total_duration,
+        "mean_duration_ms": total_duration / total,
+        "total_attempts": total_attempts,
+    }
 
 
 # Convenience functions
