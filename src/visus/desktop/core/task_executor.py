@@ -9,7 +9,9 @@ import logging
 import os
 import threading
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from PIL import Image
@@ -20,6 +22,7 @@ from .keyboard_commands import KeyboardCommander
 from .ocr_engine import OCREngine
 from .overlay import show_overlay
 from .relative_image import RelativeImageDetector
+from .screen import capture_screen
 from .virtual_mouse import VirtualMouse
 from .wait_manager import WaitManager
 
@@ -43,6 +46,9 @@ class TaskResult:
         self.location = location
         self.error = error
         self.attempts = 0
+        # Path to a screenshot saved when the task failed (Phase 1 / O1).
+        # Stays ``None`` for successful tasks or when the capture is disabled.
+        self.failure_screenshot: Optional[str] = None
 
 
 class TaskExecutor:
@@ -74,8 +80,37 @@ class TaskExecutor:
         self.task_failures = {}
         self.current_task_index = 0
         self.last_extracted_text = None  # Stores the last extracted text
+        # ``current_run_id`` is rotated at the start of every ``execute_tasks``
+        # call so failure screenshots from concurrent runs don't collide.
+        self.current_run_id: Optional[str] = None
 
         self._setup_pyautogui()
+
+    def _save_failure_screenshot(self, task_index: int) -> Optional[str]:
+        """Capture the current screen and save it under ``artifacts_dir``.
+
+        Called by ``_execute_single_task`` when a task ends unsuccessfully.
+        Returns the absolute path of the PNG, or ``None`` when the feature is
+        disabled or capture fails (capture failures are swallowed so they
+        never mask the original task failure).
+        """
+        if not self.config.get("screenshot_on_failure", True):
+            return None
+
+        artifacts_dir = self.config.get("artifacts_dir", "./visus-artifacts")
+        run_id = self.current_run_id or uuid.uuid4().hex[:8]
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        filename = f"{run_id}__{task_index}__{timestamp}.png"
+
+        try:
+            os.makedirs(artifacts_dir, exist_ok=True)
+            path = os.path.abspath(os.path.join(artifacts_dir, filename))
+            image = capture_screen()
+            image.save(path)
+            return path
+        except Exception as exc:  # pragma: no cover - logged for forensics
+            logger.warning("Failed to save failure screenshot: %s", exc)
+            return None
 
     def _setup_pyautogui(self) -> None:
         """Configures PyAutoGUI with the appropriate settings."""
@@ -105,6 +140,10 @@ class TaskExecutor:
         if not tasks:
             logger.warning("Task list is empty")
             return []
+
+        # Rotate the run identifier so failure artifacts from this invocation
+        # are namespaced separately from any previous run.
+        self.current_run_id = uuid.uuid4().hex[:8]
 
         logger.info(f"Starting execution of {len(tasks)} tasks")
 
@@ -287,6 +326,7 @@ class TaskExecutor:
             result = TaskResult(task_index, True, task_name, location)
         else:
             result = TaskResult(task_index, False, task_name, error=last_error)
+            result.failure_screenshot = self._save_failure_screenshot(task_index)
 
         result.attempts = attempts
         return result

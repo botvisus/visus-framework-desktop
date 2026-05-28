@@ -26,6 +26,30 @@ from PIL import Image
 from tests import tesseract_available  # noqa: F401
 
 
+@pytest.fixture(autouse=True)
+def _isolate_failure_artifacts(monkeypatch, tmp_path_factory):
+    """Redirect the default ``artifacts_dir`` to a per-session temp directory.
+
+    The default value of ``BotVisionConfig['artifacts_dir']`` is
+    ``./visus-artifacts/`` so failure screenshots land next to the user's bot.
+    Inside the test suite that would dump PNGs into the project root whenever
+    an existing test deliberately triggers a failure path. We patch the
+    default once, per test, to a writable tmp location; tests that exercise
+    the failure-screenshot feature explicitly still override ``artifacts_dir``
+    with their own ``tmp_path``.
+    """
+    from visus.desktop.utils import config as _config
+
+    real_load = _config.BotVisionConfig._load_default_config
+
+    def _patched(self):
+        defaults = real_load(self)
+        defaults["artifacts_dir"] = str(tmp_path_factory.mktemp("visus-artifacts"))
+        return defaults
+
+    monkeypatch.setattr(_config.BotVisionConfig, "_load_default_config", _patched)
+
+
 @pytest.fixture
 def temp_dir():
     """Create a temporary directory for test files."""

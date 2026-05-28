@@ -117,6 +117,9 @@ class BotVisionConfig:
             "use_virtual_mouse": False,  # Virtual mouse (cursor does not move)
             "wait_timeout": 30,  # Global timeout for wait parameters (30-300s)
             "screenshot_delay": 0.1,  # Delay for screen capture
+            # Failure artifacts (Phase 1 / O1)
+            "artifacts_dir": "./visus-artifacts",
+            "screenshot_on_failure": True,
         }
 
     def _detect_tesseract(self) -> None:

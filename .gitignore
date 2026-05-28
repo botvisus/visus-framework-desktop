@@ -66,3 +66,6 @@ ehthumbs.db
 
 # Internal planning docs (Claude / superpowers) — kept locally, not published
 docs/superpowers/
+
+# Failure artifacts emitted by execute_tasks (Phase 1 / O1)
+visus-artifacts/
