@@ -65,6 +65,7 @@ Repository = "https://github.com/matheuszwilk/visus-desktop.git"
 "Bug Tracker" = "https://github.com/matheuszwilk/visus-desktop/issues"
 
 [project.scripts]
+visus = "visus.desktop.cli:main"
 visus-doctor = "visus.desktop.doctor:main"
 
 [project.entry-points."pytest11"]
