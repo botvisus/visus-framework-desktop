@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `TaskResult.failure_screenshot`. The filename pattern is
   `<run_id>__<task_id>__<timestamp>.png`. Disable with
   `config['screenshot_on_failure'] = False`.
+- **Structured task events** (Phase 1, O2): set
+  `config['log_format'] = 'json'` to emit one JSON object per task on the
+  `visus.desktop.task_events` logger. Fields: `run_id`, `task_id`,
+  `task_name`, `success`, `duration_ms`, `error`, `failure_screenshot`,
+  `timestamp` (ISO 8601, UTC). Attach a handler to that logger to route
+  events to a file, Loki, or any structured sink. The default `text`
+  format keeps the existing human-readable `[INFO]` lines unchanged.
 
 ### Fixed
 - **B1 / TS4**: the `cv2` warm-up shim was moved into `tests/conftest.py` so

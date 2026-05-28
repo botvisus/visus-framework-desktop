@@ -120,6 +120,11 @@ class BotVisionConfig:
             # Failure artifacts (Phase 1 / O1)
             "artifacts_dir": "./visus-artifacts",
             "screenshot_on_failure": True,
+            # Structured task event logging (Phase 1 / O2)
+            #   'text' -> human-readable [INFO] lines (the default)
+            #   'json' -> one JSON object per task on logger
+            #            ``visus.desktop.task_events``
+            "log_format": "text",
         }
 
     def _detect_tesseract(self) -> None:

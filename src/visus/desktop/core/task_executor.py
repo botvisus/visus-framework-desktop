@@ -5,13 +5,14 @@ This module manages the execution of automation tasks, including
 text/image detection, clicks, typing, and navigation with backtracking.
 """
 
+import json
 import logging
 import os
 import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from PIL import Image
@@ -27,6 +28,10 @@ from .virtual_mouse import VirtualMouse
 from .wait_manager import WaitManager
 
 logger = logging.getLogger(__name__)
+# Dedicated logger for structured task events (Phase 1 / O2). Lives on its own
+# name so users can attach a JSON sink (file, Loki, OpenTelemetry, …) without
+# touching the human-readable ``visus.desktop`` logger.
+task_event_logger = logging.getLogger("visus.desktop.task_events")
 
 
 class TaskResult:
@@ -85,6 +90,29 @@ class TaskExecutor:
         self.current_run_id: Optional[str] = None
 
         self._setup_pyautogui()
+
+    def _emit_task_event(self, result: "TaskResult", duration_ms: int) -> None:
+        """Emit a structured JSON event for ``result`` when ``log_format='json'``.
+
+        Writes to the dedicated ``visus.desktop.task_events`` logger so users
+        can route structured records independently of the human-readable
+        ``visus.desktop`` log. The text default produces no event here -- the
+        existing ``logger.info`` lines in ``execute_tasks`` remain the
+        human-facing surface.
+        """
+        if self.config.get("log_format", "text") != "json":
+            return
+        event = {
+            "run_id": self.current_run_id,
+            "task_id": result.task_index,
+            "task_name": result.task_name,
+            "success": result.success,
+            "duration_ms": duration_ms,
+            "error": result.error,
+            "failure_screenshot": result.failure_screenshot,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        task_event_logger.info(json.dumps(event))
 
     def _save_failure_screenshot(self, task_index: int) -> Optional[str]:
         """Capture the current screen and save it under ``artifacts_dir``.
@@ -265,6 +293,7 @@ class TaskExecutor:
 
         logger.info(f"Starting task {task_index + 1}/{total_tasks}: {task_name}")
 
+        start_monotonic = time.monotonic()
         location = None
         attempts = 0
         last_error = None
@@ -329,6 +358,8 @@ class TaskExecutor:
             result.failure_screenshot = self._save_failure_screenshot(task_index)
 
         result.attempts = attempts
+        duration_ms = int((time.monotonic() - start_monotonic) * 1000)
+        self._emit_task_event(result, duration_ms)
         return result
 
     def _find_text_location(
