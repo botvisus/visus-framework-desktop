@@ -38,6 +38,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`left`, `middle`, `right`) before the exception propagates. Prevents
   stuck buttons after an interrupted `drag` / `mouse_down`.
 
+### Documentation
+- **Cookbook** (Phase 1, DOC1) — `docs/cookbook/` with a worked
+  download-wait recipe and stubs for Oracle Forms, captcha, Excel input,
+  and Windows file dialogs.
+- **Migration guide** (Phase 1, DOC2) — `docs/migration.md` covers
+  imports, renames (`BotVision` ↔ `VisusBot`, `limpar_texto` ↔
+  `clean_text`), bug fixes inherited from the rebrand, and the new
+  Phase 1 opt-ins.
+- **Troubleshooting guide** (Phase 1, DOC3) — `docs/troubleshooting.md`
+  with symptom → diagnosis → fix sections for OCR misses, DPI scaling,
+  `pywinauto` connection issues, Tcl/Tk on Linux/WSL, stuck mouse
+  buttons, and the `cv2 --cov` interaction.
+
 ### Changed
 - `BotVisionConfig._get_tesseract_paths` was refactored to delegate to
   the shared `get_tesseract_candidate_paths()` helper. The Windows
