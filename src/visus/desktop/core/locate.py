@@ -20,6 +20,7 @@ an empty iterator or by raising ``pyautogui.ImageNotFoundException``, and the
 from __future__ import annotations
 
 import logging
+import os
 from typing import Iterable, Mapping, Optional, Union
 
 logger = logging.getLogger(__name__)
@@ -28,6 +29,97 @@ logger = logging.getLogger(__name__)
 Region = Optional[tuple[int, int, int, int]]
 Box = tuple[int, int, int, int]
 ImagesInput = Union[Mapping[str, str], Iterable[str]]
+
+
+def locate_template_cv2(
+    image_path: str,
+    region: Region = None,
+    confidence: float = 0.9,
+) -> Box | None:
+    """Find ``image_path`` on the current screen using ``cv2.matchTemplate``.
+
+    Phase 3 / E1. The capture step still goes through ``capture_screen``
+    (mss-backed) so multi-monitor and the disk source mode keep working;
+    only the matching algorithm changes. ``cv2.matchTemplate`` is roughly
+    2--5x faster than pyscreeze's Python loop on a 1080p haystack.
+
+    Returns the absolute ``(x, y, w, h)`` of the best match when its
+    normalised correlation score is at least ``confidence``, otherwise
+    ``None``. Returns ``None`` (logging the cause) when the template
+    file or OpenCV itself misbehaves so the caller can fall back to
+    ``pyautogui.locateOnScreen``.
+    """
+    if not os.path.exists(image_path):
+        logger.debug("Template not found: %s", image_path)
+        return None
+    try:
+        import cv2
+        import numpy as np
+
+        from . import screen as _screen
+    except ImportError as exc:  # pragma: no cover - cv2 is a hard dep
+        logger.debug("cv2 unavailable for template matching: %s", exc)
+        return None
+
+    try:
+        template = cv2.imread(image_path, cv2.IMREAD_COLOR)
+        if template is None:
+            logger.debug("cv2 could not decode template: %s", image_path)
+            return None
+        haystack_pil = _screen.capture_screen(region=region).convert("RGB")
+        haystack = cv2.cvtColor(np.asarray(haystack_pil), cv2.COLOR_RGB2BGR)
+        if (
+            haystack.shape[0] < template.shape[0]
+            or haystack.shape[1] < template.shape[1]
+        ):
+            return None
+        result = cv2.matchTemplate(haystack, template, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(result)
+        if max_val < confidence:
+            return None
+        th, tw = template.shape[:2]
+        x, y = int(max_loc[0]), int(max_loc[1])
+        if region is not None:
+            x += int(region[0])
+            y += int(region[1])
+        return (x, y, int(tw), int(th))
+    except Exception as exc:  # noqa: BLE001 - tested via the fallback path
+        logger.debug("cv2 template match failed: %s", exc)
+        return None
+
+
+def safe_locate_on_screen(
+    image_path: str,
+    region: Region = None,
+    confidence: float = 0.9,
+    grayscale: bool = False,
+) -> Box | None:
+    """Dispatch to the configured matcher (Phase 3 / E1).
+
+    ``config['matcher']`` selects ``'cv2'`` (default, fast) or
+    ``'pyscreeze'`` (legacy). The cv2 path silently falls back to
+    pyscreeze when it returns ``None`` so users never lose the legacy
+    capability when a template happens to be tricky for matchTemplate.
+    """
+    from ..utils.config import BotVisionConfig
+
+    try:
+        default_config = BotVisionConfig._load_default_config(
+            BotVisionConfig.__new__(BotVisionConfig)
+        )
+        matcher = default_config.get("matcher", "cv2")
+    except Exception:
+        matcher = "cv2"
+
+    if matcher == "cv2":
+        box = locate_template_cv2(
+            image_path, region=region, confidence=confidence
+        )
+        if box is not None:
+            return box
+    return _locate_one(
+        image_path, region=region, confidence=confidence, grayscale=grayscale
+    )
 
 
 def _box_to_tuple(box) -> Box:

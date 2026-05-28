@@ -176,6 +176,13 @@ class BotVisionConfig:
             #                  binary. Install with: pip install
             #                  'visus-desktop[rapidocr]'.
             "ocr_backend": "tesseract",
+            # Image-matching backend (Phase 3 / E1).
+            #   'cv2'       -> default; cv2.matchTemplate over mss-captured
+            #                  haystack; ~2-5x faster than pyscreeze on
+            #                  1080p haystacks. Falls back to pyscreeze
+            #                  when matchTemplate misses.
+            #   'pyscreeze' -> legacy pyautogui.locateOnScreen path only.
+            "matcher": "cv2",
         }
 
     def _detect_tesseract(self) -> None:
