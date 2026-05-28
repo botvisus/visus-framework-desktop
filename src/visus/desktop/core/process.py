@@ -22,13 +22,13 @@ def launch(path: str) -> None:
     """Launch an application or open a file/document.
 
     On Windows the platform's default association is used via
-    :func:`os.startfile`. On other platforms the command is split on spaces
-    and executed with :class:`subprocess.Popen`.
+    :func:`os.startfile`. On other platforms the command is parsed with
+    :func:`shlex.split` (POSIX-quoted) and executed with
+    :class:`subprocess.Popen`, so a path containing spaces stays intact
+    when surrounded by single or double quotes.
 
     Args:
-        path: Path to the executable, file, or command line to launch. On
-            non-Windows platforms the string is split on spaces to build the
-            argument list.
+        path: Path to the executable, file, or command line to launch.
 
     Returns:
         None
@@ -37,7 +37,9 @@ def launch(path: str) -> None:
         # ``os.startfile`` is only available on Windows.
         os.startfile(path)  # type: ignore[attr-defined]  # noqa: S606
     else:
-        subprocess.Popen(path.split(" "))  # noqa: S603
+        import shlex
+
+        subprocess.Popen(shlex.split(path))  # noqa: S603
 
 
 def find_process(

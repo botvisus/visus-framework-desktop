@@ -361,11 +361,22 @@ def copy_to_clipboard(text: str) -> bool:
 def extract_text_from_region(
     region: list[int],
     filter_type: str = "both",
-    full_data: bool = False,
+    return_full_data: bool = False,
+    confidence_threshold: float = 50.0,
 ) -> Any:
-    """OCR-extract all text from ``region``. ``filter_type``: 'letters'|'numbers'|'both'."""
+    """OCR-extract all text from ``region``.
+
+    ``filter_type``: 'letters' | 'numbers' | 'both'.
+    When ``return_full_data`` is true, returns
+    ``[{text, confidence, box, absolute_box}, ...]`` instead of a flat
+    list of strings. ``confidence_threshold`` filters OCR matches below
+    that score (0-100).
+    """
     return get_bot().extract_text_from_region(
-        _coerce_region(region), filter_type=filter_type, full_data=full_data
+        region=_coerce_region(region),
+        filter_type=filter_type,
+        return_full_data=return_full_data,
+        confidence_threshold=confidence_threshold,
     )
 
 
@@ -375,24 +386,53 @@ def extract_text_from_region(
 
 
 @mcp.tool()
-def launch(command: str, args: list[str] | None = None) -> int:
-    """Launch a process and return its PID."""
-    from .core.process import launch as _launch
+def launch(command: str, args: list[str] | None = None) -> dict:
+    """Launch a process. Returns ``{pid, command}``.
 
-    return int(_launch(command, args or []))
+    On Windows uses ``subprocess.Popen`` so a real PID is captured (the
+    library's ``os.startfile`` path returns no PID; for the MCP surface
+    we always need one so agents can later ``kill_process(pid=…)``).
+    The MCP layer accepts an explicit ``args`` list to avoid the
+    space-splitting fragility of the underlying ``launch(path)`` API.
+    """
+    import shlex
+    import subprocess
+
+    if args is None:
+        # Honour shell-style quoting via shlex on POSIX-like input; on
+        # Windows ``subprocess.Popen`` accepts a string directly.
+        argv = shlex.split(command, posix=(os.name != "nt"))
+    else:
+        argv = [command, *args]
+    proc = subprocess.Popen(argv)  # noqa: S603 - caller-controlled command
+    return {"pid": int(proc.pid), "command": argv}
 
 
 @mcp.tool()
-def find_process(name: str) -> list[int]:
-    """Return the PIDs of running processes whose name contains ``name``."""
-    from .core.process import find_process as _find
+def find_process(name: str) -> list[dict]:
+    """Return all running processes whose name contains ``name``.
 
-    return list(_find(name))
+    Iterates over ``psutil.process_iter`` and returns
+    ``[{pid, name}]`` (case-insensitive substring match). Empty list
+    when nothing matches — never raises.
+    """
+    import psutil
+
+    needle = (name or "").lower()
+    matches: list[dict] = []
+    for proc in psutil.process_iter(["pid", "name"]):
+        try:
+            proc_name = proc.info.get("name") or ""
+            if needle and needle in proc_name.lower():
+                matches.append({"pid": int(proc.pid), "name": proc_name})
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return matches
 
 
 @mcp.tool()
 def kill_process(pid: int) -> bool:
-    """Terminate the process with the given ``pid``."""
+    """Terminate the process with the given ``pid``. Returns True on success."""
     from .core.process import kill_process as _kill
 
     return bool(_kill(pid))
@@ -453,8 +493,17 @@ def execute_tasks(tasks: list[dict], resume: bool = False) -> list[dict]:
 
 @mcp.tool()
 def start_recording(path: str) -> str:
-    """Begin recording every task event to ``path`` (a session zip)."""
+    """Begin recording every task event to ``path`` (a session zip).
+
+    Raises ``RuntimeError`` if a recording is already in progress --
+    callers must explicitly ``stop_recording()`` before opening a new
+    one so the previous zip is not orphaned.
+    """
     global _recording_ctx
+    if _recording_ctx is not None:
+        raise RuntimeError(
+            "recording already in progress; call stop_recording first"
+        )
     from .core.session import Session
 
     _recording_ctx = Session.start_recording(path)
@@ -496,11 +545,39 @@ def render_report(zip_path: str, html_path: str) -> str:
 
 
 @mcp.tool()
-def doctor() -> int:
-    """Run the health-check suite (same as ``visus-doctor``). 0 = all pass."""
+def doctor() -> dict:
+    """Run the health-check suite. Returns ``{exit_code, checks, output}``.
+
+    Captures stdout so the doctor's ``[OK]/[FAIL]`` lines never leak
+    into the MCP stdio JSON-RPC stream. The structured ``checks``
+    array carries one entry per check for agents that want to act on
+    individual failures without parsing the textual output.
+    """
+    import contextlib
+    import io
+
     from . import doctor as _doctor
 
-    return int(_doctor.run_checks())
+    # Drive the doctor's default check list ourselves so we can return
+    # a structured per-check payload without scraping printf output.
+    structured: list[dict] = []
+    for name, fn in _doctor.DEFAULT_CHECKS:
+        try:
+            ok, detail = fn()
+        except Exception as exc:  # never crash the diagnostic itself
+            ok, detail = False, f"{type(exc).__name__}: {exc}"
+        structured.append({"name": name, "ok": bool(ok), "detail": str(detail)})
+
+    # Still run the printf path for the text "output" field, but redirect
+    # stdout so no bytes hit the MCP transport.
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        exit_code = _doctor.run_checks()
+    return {
+        "exit_code": int(exit_code),
+        "checks": structured,
+        "output": buf.getvalue(),
+    }
 
 
 # ---------------------------------------------------------------------------

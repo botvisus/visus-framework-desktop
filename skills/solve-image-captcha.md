@@ -21,7 +21,7 @@ when_to_use: Activate ONLY for legacy intranet captchas (image-based, ~5 alphanu
 2. Capture the captcha image as its own region:
    * `take_screenshot(region=[x, y, w, h])` — store the data URL or width/height for sanity.
 3. Read it with a constrained alphabet. Captchas avoid ambiguous glyphs (`0`/`O`, `1`/`I`/`l`), so whitelisting only `ABCDEFGHJKLMNPQRSTUVWXYZ23456789` resolves most ambiguous reads.
-   * Use `extract_text_from_region(region=[x, y, w, h], filter_type="both", full_data=false)`.
+   * Use `extract_text_from_region(region=[x, y, w, h], filter_type="both", return_full_data=false)`.
    * If the result has spaces or extra characters, trim them.
 4. Locate the captcha input field: `find_text(text="Captcha")` or look at the layout from step 1.
 5. `click_at(x, y)` on the field, then `type_text(text="<solved>")`.

@@ -31,6 +31,15 @@ Box = tuple[int, int, int, int]
 ImagesInput = Union[Mapping[str, str], Iterable[str]]
 
 
+class _Cv2MatcherError(Exception):
+    """Internal sentinel: ``locate_template_cv2`` could not even attempt a match.
+
+    Distinguishes "cv2 errored / template invalid / capture failed"
+    (fallback to pyscreeze is desirable) from "cv2 ran and found no
+    match" (pyscreeze would also miss; don't double-scan).
+    """
+
+
 def locate_template_cv2(
     image_path: str,
     region: Region = None,
@@ -45,33 +54,35 @@ def locate_template_cv2(
 
     Returns the absolute ``(x, y, w, h)`` of the best match when its
     normalised correlation score is at least ``confidence``, otherwise
-    ``None``. Returns ``None`` (logging the cause) when the template
-    file or OpenCV itself misbehaves so the caller can fall back to
-    ``pyautogui.locateOnScreen``.
+    ``None``. **Raises :class:`_Cv2MatcherError` when cv2 itself cannot
+    attempt a match** (template missing / un-decodable, capture failure,
+    OpenCV exception). The :func:`safe_locate_on_screen` dispatcher uses
+    that distinction to decide whether to fall back to pyscreeze (yes,
+    on error) or accept the miss (no, on a legitimate "no match").
     """
     if not os.path.exists(image_path):
-        logger.debug("Template not found: %s", image_path)
-        return None
+        raise _Cv2MatcherError(f"template not found on disk: {image_path}")
     try:
         import cv2
         import numpy as np
 
         from . import screen as _screen
     except ImportError as exc:  # pragma: no cover - cv2 is a hard dep
-        logger.debug("cv2 unavailable for template matching: %s", exc)
-        return None
+        raise _Cv2MatcherError(f"cv2 unavailable: {exc}") from exc
 
     try:
         template = cv2.imread(image_path, cv2.IMREAD_COLOR)
         if template is None:
-            logger.debug("cv2 could not decode template: %s", image_path)
-            return None
+            raise _Cv2MatcherError(f"cv2 could not decode template: {image_path}")
         haystack_pil = _screen.capture_screen(region=region).convert("RGB")
         haystack = cv2.cvtColor(np.asarray(haystack_pil), cv2.COLOR_RGB2BGR)
         if (
             haystack.shape[0] < template.shape[0]
             or haystack.shape[1] < template.shape[1]
         ):
+            # Genuine "no match" -- haystack physically too small to
+            # contain the template. pyscreeze would also miss; do not
+            # raise an error.
             return None
         result = cv2.matchTemplate(haystack, template, cv2.TM_CCOEFF_NORMED)
         _, max_val, _, max_loc = cv2.minMaxLoc(result)
@@ -83,9 +94,10 @@ def locate_template_cv2(
             x += int(region[0])
             y += int(region[1])
         return (x, y, int(tw), int(th))
+    except _Cv2MatcherError:
+        raise
     except Exception as exc:  # noqa: BLE001 - tested via the fallback path
-        logger.debug("cv2 template match failed: %s", exc)
-        return None
+        raise _Cv2MatcherError(f"cv2 template match failed: {exc}") from exc
 
 
 def safe_locate_on_screen(
@@ -97,9 +109,13 @@ def safe_locate_on_screen(
     """Dispatch to the configured matcher (Phase 3 / E1).
 
     ``config['matcher']`` selects ``'cv2'`` (default, fast) or
-    ``'pyscreeze'`` (legacy). The cv2 path silently falls back to
-    pyscreeze when it returns ``None`` so users never lose the legacy
-    capability when a template happens to be tricky for matchTemplate.
+    ``'pyscreeze'`` (legacy). Fallback semantics tightened post-review
+    (M2/M3): the cv2 path falls back to pyscreeze **only when cv2 could
+    not attempt a match** (template invalid, capture failure, OpenCV
+    exception). A legitimate "cv2 ran and reported no match" returns
+    ``None`` directly -- pyscreeze would also miss, so a second
+    full-screen scan is wasted work. Fallback events are logged at
+    ``WARNING`` so a debugging user sees them at the default INFO level.
     """
     from ..utils.config import BotVisionConfig
 
@@ -112,11 +128,16 @@ def safe_locate_on_screen(
         matcher = "cv2"
 
     if matcher == "cv2":
-        box = locate_template_cv2(
-            image_path, region=region, confidence=confidence
-        )
-        if box is not None:
-            return box
+        try:
+            return locate_template_cv2(
+                image_path, region=region, confidence=confidence
+            )
+        except _Cv2MatcherError as exc:
+            logger.warning(
+                "cv2 matcher unavailable for %s (%s); falling back to pyscreeze",
+                image_path,
+                exc,
+            )
     return _locate_one(
         image_path, region=region, confidence=confidence, grayscale=grayscale
     )

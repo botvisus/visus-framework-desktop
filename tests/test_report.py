@@ -151,9 +151,11 @@ class TestReportSmoke:
         _make_zip(zip_path, events)
         Session.write_report(zip_path, html_path)
         html = html_path.read_text(encoding="utf-8")
-        # KPI strip should expose the totals so a reader sees them at a glance.
-        assert "4" in html  # total
-        assert "50" in html  # success rate percent
+        # Assert against the actual KPI block markup so a future cosmetic
+        # change to a "4" or "50" elsewhere in the page does not silently
+        # satisfy the test.
+        assert 'class="value">4</div>' in html
+        assert 'class="value">50%</div>' in html
 
     def test_report_follows_design_system_anchor_colors(self, tmp_path):
         """The cream canvas, coral accent and dark navy are present in the CSS."""

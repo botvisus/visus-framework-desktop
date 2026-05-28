@@ -14,7 +14,7 @@ Every test:
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -222,12 +222,31 @@ class TestExtractTextTool:
                 "extract_text_from_region",
                 region=[10, 20, 100, 30],
                 filter_type="numbers",
-                full_data=True,
+                return_full_data=True,
             )
         assert out == sample
         kwargs = ex.call_args.kwargs
         assert kwargs["filter_type"] == "numbers"
-        assert kwargs["full_data"] is True
+        # Forwarded under the underlying kwarg name (NOT the old wrong
+        # ``full_data``). This assertion is the regression test for C1.
+        assert kwargs["return_full_data"] is True
+
+    def test_signature_matches_underlying(self):
+        """C1 regression -- the MCP tool's kwargs must exist on VisusBot."""
+        import inspect
+
+        from visus.desktop import VisusBot
+        from visus.desktop import mcp_server as ms
+
+        tool = ms._tools_for_tests()["extract_text_from_region"]
+        tool_params = set(inspect.signature(tool).parameters)
+        bot_params = set(
+            inspect.signature(VisusBot.extract_text_from_region).parameters
+        )
+        unknown = tool_params - bot_params - {"region"}
+        assert not unknown, (
+            f"MCP tool forwards kwargs the bot does not accept: {unknown}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -236,19 +255,45 @@ class TestExtractTextTool:
 
 
 class TestProcessTools:
-    def test_launch_returns_int_pid(self, call_tool):
-        with patch(
-            "visus.desktop.core.process.launch", return_value=12345
-        ) as lp:
-            pid = call_tool("launch", command="notepad.exe", args=["foo.txt"])
-        assert pid == 12345
-        lp.assert_called_once_with("notepad.exe", ["foo.txt"])
+    def test_launch_returns_pid_dict(self, call_tool):
+        """C2 regression -- launch must return {pid, command} from a real Popen."""
+        fake_proc = MagicMock(pid=12345)
+        with patch("subprocess.Popen", return_value=fake_proc) as popen:
+            out = call_tool("launch", command="notepad.exe", args=["foo.txt"])
+        assert out["pid"] == 12345
+        assert out["command"] == ["notepad.exe", "foo.txt"]
+        popen.assert_called_once_with(["notepad.exe", "foo.txt"])
 
-    def test_find_process_returns_list_of_ints(self, call_tool):
-        with patch(
-            "visus.desktop.core.process.find_process", return_value=[1, 2, 3]
-        ):
-            assert call_tool("find_process", name="chrome") == [1, 2, 3]
+    def test_launch_shlex_splits_when_no_args(self, call_tool):
+        fake_proc = MagicMock(pid=999)
+        with patch("subprocess.Popen", return_value=fake_proc) as popen:
+            call_tool("launch", command="git status --short")
+        argv = popen.call_args[0][0]
+        # No shell quoting in this test -- the split must yield exactly 3
+        # tokens on every platform (POSIX and Windows non-posix mode).
+        assert argv == ["git", "status", "--short"]
+
+    def test_find_process_returns_list_of_dicts(self, call_tool):
+        """C3 regression -- find_process must enumerate psutil and return PIDs."""
+        from unittest.mock import MagicMock as _MM
+
+        def make(pid, name):
+            p = _MM()
+            p.pid = pid
+            p.info = {"pid": pid, "name": name}
+            return p
+
+        fake_processes = [make(1, "Chrome.exe"), make(2, "explorer.exe"), make(3, "chromedriver.exe")]
+        with patch("psutil.process_iter", return_value=iter(fake_processes)):
+            out = call_tool("find_process", name="chrome")
+        # Two matches (case-insensitive): Chrome.exe and chromedriver.exe.
+        pids = sorted(entry["pid"] for entry in out)
+        assert pids == [1, 3]
+        assert all("name" in entry for entry in out)
+
+    def test_find_process_empty_when_nothing_matches(self, call_tool):
+        with patch("psutil.process_iter", return_value=iter([])):
+            assert call_tool("find_process", name="nope") == []
 
     def test_kill_process_returns_bool(self, call_tool):
         with patch(

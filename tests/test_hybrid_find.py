@@ -8,7 +8,7 @@ or app handle.
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -97,6 +97,64 @@ class TestHybridFind:
         ):
             box = bot.hybrid_find("Login")
         assert box == (11, 12, 13, 14)
+
+    def test_native_lookup_walks_pywinauto_desktop_tree(self):
+        """M1 regression -- the native layer must reach pywinauto.Desktop.
+
+        Patches pywinauto.Desktop with a fake whose descendants() yields
+        a matching control. The native lookup must return its rectangle
+        (no mock of ``_hybrid_native_lookup`` itself this time).
+        """
+        bot = self._bot()
+        rect = MagicMock(left=10, top=20, right=110, bottom=70)
+        element = MagicMock()
+        element.element_info.name = "Login"
+        element.element_info.automation_id = ""
+        element.element_info.control_type = "Button"
+        element.rectangle = MagicMock(return_value=rect)
+
+        non_match = MagicMock()
+        non_match.element_info.name = "Cancel"
+        non_match.element_info.automation_id = ""
+        non_match.element_info.control_type = "Button"
+        non_match.rectangle = MagicMock(return_value=rect)
+
+        top = MagicMock()
+        top.exists = MagicMock(return_value=True)
+        top.descendants = MagicMock(return_value=[non_match, element])
+
+        fake_pywinauto = MagicMock()
+        fake_pywinauto.Desktop = MagicMock(
+            return_value=MagicMock(window=MagicMock(return_value=top))
+        )
+        with patch.dict("sys.modules", {"pywinauto": fake_pywinauto}):
+            box = bot._hybrid_native_lookup("Login")
+        assert box == (10, 20, 100, 50)
+
+    def test_native_lookup_returns_none_when_no_active_window(self):
+        bot = self._bot()
+        top = MagicMock()
+        top.exists = MagicMock(return_value=False)
+        fake_pywinauto = MagicMock()
+        fake_pywinauto.Desktop = MagicMock(
+            return_value=MagicMock(window=MagicMock(return_value=top))
+        )
+        with patch.dict("sys.modules", {"pywinauto": fake_pywinauto}):
+            assert bot._hybrid_native_lookup("Login") is None
+
+    def test_native_lookup_returns_none_when_pywinauto_missing(self):
+        bot = self._bot()
+        import builtins as _b
+
+        real_import = _b.__import__
+
+        def fake_import(name, *args, **kwargs):
+            if name == "pywinauto":
+                raise ImportError(name)
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=fake_import):
+            assert bot._hybrid_native_lookup("Login") is None
 
     def test_region_is_forwarded(self):
         bot = self._bot()

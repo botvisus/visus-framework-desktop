@@ -859,31 +859,57 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
     _IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff")
 
     def _hybrid_native_lookup(self, name, region=None):
-        """Best-effort native lookup used by :meth:`hybrid_find`.
+        """Best-effort native UIA lookup used by :meth:`hybrid_find`.
 
-        Returns an ``(x, y, w, h)`` box or ``None`` if the active app
-        handle does not know the element. Subclasses / tests can patch
-        this without touching the OCR or image layers.
+        Walks the foreground window's UIA tree (via ``pywinauto.Desktop``)
+        looking for a control whose **title**, **automation_id**, or
+        **control_type** contains ``name`` (case-insensitive). Returns an
+        ``(x, y, w, h)`` box or ``None`` when the element is not found.
+
+        Subclasses / tests can patch this without touching the OCR or
+        image layers. On non-Windows or when ``pywinauto`` is missing,
+        the function returns ``None`` cleanly so the OCR layer takes
+        over -- the hybrid contract still holds.
         """
         try:
-            element = self.find_app_element(name, search_mode="any")
-        except Exception:
-            return None
-        if element is None:
-            return None
-        rect = getattr(element, "rectangle", None)
-        if rect is None:
+            import pywinauto  # type: ignore[import-not-found]
+        except ImportError:
             return None
         try:
-            r = rect() if callable(rect) else rect
-            return (
-                int(r.left),
-                int(r.top),
-                int(r.right - r.left),
-                int(r.bottom - r.top),
-            )
-        except Exception:
+            desktop = pywinauto.Desktop(backend="uia")
+            top = desktop.window(active_only=True)
+            if not top.exists(timeout=0.5):
+                return None
+            needle = (name or "").lower()
+            # Walk descendants -- title_re would be regex; iterate so we
+            # can match against title / automation_id / control_type.
+            for descendant in top.descendants():
+                try:
+                    info = descendant.element_info
+                    title = (info.name or "").lower()
+                    auto_id = (getattr(info, "automation_id", "") or "").lower()
+                    ctrl = (getattr(info, "control_type", "") or "").lower()
+                except Exception:
+                    continue
+                if needle and (
+                    needle in title
+                    or needle in auto_id
+                    or needle in ctrl
+                ):
+                    try:
+                        r = descendant.rectangle()
+                    except Exception:
+                        continue
+                    return (
+                        int(r.left),
+                        int(r.top),
+                        int(r.right - r.left),
+                        int(r.bottom - r.top),
+                    )
+        except Exception as exc:  # any pywinauto-level fault is non-fatal
+            logger.debug("native hybrid lookup failed: %s", exc)
             return None
+        return None
 
     def hybrid_find(self, name, region=None):
         """Find a target by trying native → OCR → image in order.

@@ -15,7 +15,7 @@ You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **30 t
 | **Find / click** | `find_text`, `click_text`, `find_image`, `click_image`, `click_at`, `hybrid_find` |
 | **Keyboard** | `type_text`, `keyboard_command` |
 | **Screen / monitors** | `take_screenshot`, `get_monitors`, `wait_for_stable_screen` |
-| **Files / clipboard** | `wait_for_file`, `wait_for_file_stable`, `get_clipboard`, `copy_to_clipboard`, `extract_text_from_region` |
+| **Files / clipboard** | `wait_for_file`, `wait_for_file_stable`, `get_clipboard`, `copy_to_clipboard`, `extract_text_from_region` *(use `return_full_data=true` for boxes + scores)* |
 | **Process / window** | `launch`, `find_process`, `kill_process`, `focus_window`, `maximize_window`, `minimize_window`, `close_window` |
 | **Task lists** | `execute_tasks` |
 | **Sessions / reports** | `start_recording`, `stop_recording`, `replay_session`, `render_report` |

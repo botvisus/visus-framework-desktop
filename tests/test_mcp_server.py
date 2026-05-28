@@ -81,6 +81,7 @@ def test_tool_registry_covers_each_capability(server):
         "extract_text_from_region",
         "start_recording",
         "stop_recording",
+        "replay_session",
         "render_report",
         "doctor",
         "configure",
@@ -88,6 +89,11 @@ def test_tool_registry_covers_each_capability(server):
     present = set(server._tools_for_tests())
     missing = expected - present
     assert not missing, f"missing tools: {sorted(missing)}"
+    # N7 regression -- new tools must update the expected set above too.
+    extra = present - expected
+    assert not extra, (
+        f"new tools registered but not in the expected set: {sorted(extra)}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -242,13 +248,34 @@ class TestConfigure:
 
 
 class TestDoctor:
-    def test_doctor_returns_zero_when_all_pass(self, server, capsys):
-        with patch(
-            "visus.desktop.doctor.run_checks", return_value=0
+    def test_doctor_returns_structured_payload(self, server):
+        """C4 regression -- doctor must NOT print to stdout (MCP stdio).
+
+        The structured ``checks`` array is filled from the default check
+        functions; ``output`` carries the textual report (captured, not
+        leaked to the real stdout).
+        """
+        from visus.desktop import doctor as _doctor
+
+        smoke = [("Smoke", lambda: (True, "ok"))]
+        with patch.object(_doctor, "DEFAULT_CHECKS", smoke), patch.object(
+            _doctor, "run_checks", return_value=0
         ) as run_checks:
-            rc = _call(server, "doctor")
-        assert rc == 0
+            payload = _call(server, "doctor")
+        assert payload["exit_code"] == 0
+        assert isinstance(payload["checks"], list)
+        assert payload["checks"][0]["name"] == "Smoke"
+        assert payload["checks"][0]["ok"] is True
         run_checks.assert_called_once()
+
+    def test_doctor_does_not_leak_to_stdout(self, server, capsys):
+        """The captured stdout must never reach the test's real stdout."""
+        _call(server, "doctor")
+        captured = capsys.readouterr()
+        # ``run_checks`` would normally print [OK]/[FAIL] lines; the MCP
+        # wrapper captures them, so nothing should reach stdout here.
+        assert "[OK]" not in captured.out
+        assert "[FAIL]" not in captured.out
 
 
 # ---------------------------------------------------------------------------

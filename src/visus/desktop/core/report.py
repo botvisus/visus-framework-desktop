@@ -53,8 +53,8 @@ _CSS = """
   --on-dark-soft: #a09d96;
   --success: #5db872;
   --error: #c64545;
-  --serif: 'EB Garamond', 'Cormorant Garamond', 'Tiempos Headline', Garamond, 'Times New Roman', serif;
-  --sans: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --serif: Copernicus, 'Tiempos Headline', 'EB Garamond', 'Cormorant Garamond', Garamond, 'Times New Roman', serif;
+  --sans: StyreneB, Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
 }
 * { box-sizing: border-box; }

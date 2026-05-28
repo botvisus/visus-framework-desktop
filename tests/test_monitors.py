@@ -14,15 +14,22 @@ typed way:
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from unittest.mock import MagicMock, patch
 
+import mss
 import pytest
 
 from visus.desktop import Monitor, capture_screen, get_monitors, take_screenshot
 
 
 def _fake_mss(monitors):
-    """Patch ``mss.mss`` to return a deterministic monitor list."""
+    """Patch the mss class lookup to return a deterministic monitor list.
+
+    The library prefers ``mss.MSS`` (the canonical class in mss>=10)
+    and falls back to ``mss.mss`` (legacy alias). The helper patches
+    whichever attribute exists so the test works on both versions.
+    """
 
     class _Cm:
         def __init__(self):
@@ -40,16 +47,21 @@ def _fake_mss(monitors):
             img = _Image.new(
                 "RGB", (monitor["width"], monitor["height"]), color="white"
             )
-            from io import BytesIO
-
-            buf = BytesIO()
-            img.save(buf, "PNG")
             shot = MagicMock()
             shot.size = (monitor["width"], monitor["height"])
             shot.bgra = img.convert("RGBA").tobytes("raw", "BGRA")
             return shot
 
     return MagicMock(return_value=_Cm())
+
+
+@contextmanager
+def _patch_mss(monitors):
+    """Apply the fake to whichever mss entry point the library uses."""
+    fake = _fake_mss(monitors)
+    target = "mss.MSS" if hasattr(mss, "MSS") else "mss.mss"
+    with patch(target, fake):
+        yield fake
 
 
 class TestMonitorDataclass:
@@ -67,7 +79,7 @@ class TestGetMonitors:
             {"left": 0, "top": 0, "width": 1920, "height": 1080},  # primary
             {"left": 1920, "top": 0, "width": 1920, "height": 1080},  # secondary
         ]
-        with patch("mss.mss", _fake_mss(monitors)):
+        with _patch_mss(monitors):
             result = get_monitors()
         # Index 0 (the virtual screen) is dropped; physical monitors are 1, 2.
         assert len(result) == 2
@@ -86,7 +98,7 @@ class TestTakeScreenshotMonitor:
             {"left": 0, "top": 0, "width": 1920, "height": 1080},
             {"left": 1920, "top": 0, "width": 1920, "height": 1080},
         ]
-        with patch("mss.mss", _fake_mss(monitors)):
+        with _patch_mss(monitors):
             img = take_screenshot(monitor=2)
         assert img.size == (1920, 1080)
 
@@ -95,7 +107,7 @@ class TestTakeScreenshotMonitor:
             {"left": 0, "top": 0, "width": 3840, "height": 1080},
             {"left": 0, "top": 0, "width": 1920, "height": 1080},
         ]
-        with patch("mss.mss", _fake_mss(monitors)):
+        with _patch_mss(monitors):
             img = capture_screen(monitor=1)
         assert img.size == (1920, 1080)
 
@@ -104,6 +116,6 @@ class TestTakeScreenshotMonitor:
             {"left": 0, "top": 0, "width": 1920, "height": 1080},
             {"left": 0, "top": 0, "width": 1920, "height": 1080},
         ]
-        with patch("mss.mss", _fake_mss(monitors)):
+        with _patch_mss(monitors):
             with pytest.raises(ValueError, match="monitor"):
                 take_screenshot(monitor=99)

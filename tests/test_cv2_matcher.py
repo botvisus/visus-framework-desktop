@@ -85,12 +85,18 @@ class TestCv2MatcherDirect:
         # Local match at (20, 30) shifts to (520, 430) in screen coords.
         assert box[:2] == (520, 430)
 
-    def test_template_not_on_disk_returns_none(self, tmp_path):
+    def test_template_not_on_disk_raises_matcher_error(self, tmp_path):
+        """M2 regression -- missing template is an *error* (cannot attempt),
+        not a "no match". Allows safe_locate_on_screen to fall back."""
+        import pytest
+
+        from visus.desktop.core.locate import _Cv2MatcherError
+
         with patch("visus.desktop.core.screen.capture_screen") as cap:
-            box = locate_template_cv2(
-                str(tmp_path / "nonexistent.png"), confidence=0.9
-            )
-        assert box is None
+            with pytest.raises(_Cv2MatcherError):
+                locate_template_cv2(
+                    str(tmp_path / "nonexistent.png"), confidence=0.9
+                )
         cap.assert_not_called()
 
 
@@ -117,7 +123,7 @@ class TestSafeLocateDispatch:
         assert box[:2] == (10, 20)
 
     def test_safe_locate_falls_back_to_pyscreeze_on_cv2_error(self, tmp_path):
-        """An OpenCV-level failure should not lose the legacy capability."""
+        """M2 regression -- an OpenCV-level error triggers the fallback."""
         bad_template = tmp_path / "bad.png"
         bad_template.write_bytes(b"not a png")
 
@@ -130,3 +136,31 @@ class TestSafeLocateDispatch:
         with patch("pyautogui.locateOnScreen", side_effect=fake_pyscreeze):
             safe_locate_on_screen(str(bad_template), confidence=0.9)
         assert called["pyscreeze"] is True
+
+    def test_safe_locate_does_not_fallback_on_legitimate_no_match(self, tmp_path):
+        """M2 regression -- a clean "cv2 ran and missed" should NOT trigger
+        a second pyscreeze scan (the original full-screen-scan wasted work)."""
+        import numpy as np
+
+        rng = np.random.default_rng(seed=7)
+        noise = rng.integers(0, 255, (200, 200, 3), dtype=np.uint8)
+        from PIL import Image as _PILImage
+
+        haystack = _PILImage.fromarray(noise, mode="RGB")
+        template_path = tmp_path / "tile.png"
+        _build_template().save(template_path)
+
+        pyscreeze_calls = {"n": 0}
+
+        def counting_pyscreeze(path, **kwargs):
+            pyscreeze_calls["n"] += 1
+            return None
+
+        with patch(
+            "visus.desktop.core.screen.capture_screen", return_value=haystack
+        ), patch("pyautogui.locateOnScreen", side_effect=counting_pyscreeze):
+            box = safe_locate_on_screen(str(template_path), confidence=0.99)
+        assert box is None
+        assert pyscreeze_calls["n"] == 0, (
+            "cv2 cleanly missed; pyscreeze must not be invoked"
+        )

@@ -77,11 +77,11 @@ The server registers **30 tools**, grouped by capability. Every tool's docstring
 * `wait_for_file_stable(path, timeout?, stable_for?, poll_interval?)` → `bool`
 * `get_clipboard()` → `str`
 * `copy_to_clipboard(text)` → `bool`
-* `extract_text_from_region(region, filter_type?, full_data?)` → `list | dict`
+* `extract_text_from_region(region, filter_type?, return_full_data?, confidence_threshold?)` → `list | dict`
 
 ### Process / window
-* `launch(command, args?)` → `int (pid)`
-* `find_process(name)` → `list[int]`
+* `launch(command, args?)` → `{pid, command}`
+* `find_process(name)` → `[{pid, name}]`
 * `kill_process(pid)` → `bool`
 * `focus_window(title_substring)` → `bool`
 * `maximize_window(title_substring)` → `bool`
@@ -98,7 +98,7 @@ The server registers **30 tools**, grouped by capability. Every tool's docstring
 * `render_report(zip_path, html_path)` → `str (absolute path of the html)`
 
 ### Diagnostics + configuration
-* `doctor()` → `int (exit code; 0 = healthy)`
+* `doctor()` → `{exit_code, checks: [{name, ok, detail}], output}` *(captures stdout — never leaks into MCP stdio)*
 * `configure(config)` → `dict (active config after rebuild)`
 
 ## Skills

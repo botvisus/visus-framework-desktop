@@ -53,8 +53,14 @@ def set_screen_cache_ms(ms: int) -> None:
     ``0`` (default) disables caching. Non-zero values let back-to-back
     ``capture_screen`` calls on the same region reuse the previous PIL
     image, useful when several finds run sequentially on the same area.
+
+    No-op when the value matches the current TTL — preserves a long-
+    running MCP server's cache across ``configure`` rebuilds (N3).
     """
-    _cache_state.ttl_ms = max(0, int(ms))
+    new_ttl = max(0, int(ms))
+    if new_ttl == getattr(_cache_state, "ttl_ms", 0):
+        return
+    _cache_state.ttl_ms = new_ttl
     _cache_state.entries = {}
 
 
@@ -127,7 +133,12 @@ def _capture_with_mss(
     import mss
     from PIL import Image
 
-    with mss.mss() as sct:
+    # ``mss.mss`` is the legacy alias; ``mss.MSS`` is the canonical class
+    # name in mss>=10. Use whichever is available so we work across
+    # versions without the DeprecationWarning.
+    _MSS = getattr(mss, "MSS", None) or mss.mss
+
+    with _MSS() as sct:
         if region is not None:
             x, y, width, height = region
             monitor = {
@@ -160,7 +171,8 @@ def get_monitors() -> list[Monitor]:
     """
     import mss
 
-    with mss.mss() as sct:
+    _MSS = getattr(mss, "MSS", None) or mss.mss
+    with _MSS() as sct:
         raw = list(sct.monitors)
     physical: list[Monitor] = []
     for idx, m in enumerate(raw):
@@ -263,6 +275,14 @@ def capture_screen(
         # are not silently swallowed by the pyautogui fallback below.
         raise
     except Exception as exc:
+        # The pyautogui fallback cannot honour a specific monitor index;
+        # refuse to silently downgrade to the primary monitor instead
+        # of what the caller asked for.
+        if monitor is not None:
+            raise RuntimeError(
+                f"mss capture for monitor={monitor} failed ({exc}); "
+                "pyautogui fallback only captures the primary monitor."
+            ) from exc
         logger.debug("mss capture failed (%s); falling back to pyautogui", exc)
         import pyautogui
 

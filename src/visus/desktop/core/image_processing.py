@@ -242,9 +242,9 @@ class ImageProcessor:
             except Exception as e:
                 logger.debug(f"Error processing one of the images: {e}")
 
-        logger.info(f"🔬 Processing complete: {len(valid_images)} variations generated")
-        print(
-            f"Generating {len(valid_images)} optimized preprocessing variations for OCR"
+        logger.info(
+            "Processing complete: %d optimized preprocessing variations generated",
+            len(valid_images),
         )
 
         return valid_images

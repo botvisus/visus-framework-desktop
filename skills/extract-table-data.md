@@ -9,7 +9,7 @@ when_to_use: Activate when the user wants to read data off a visible grid / tabl
 ## Steps
 
 1. `take_screenshot()` — see the table; identify the bounding box of the entire grid area.
-2. `extract_text_from_region(region=[x, y, w, h], full_data=true)` — returns every detected text fragment with its absolute box and confidence.
+2. `extract_text_from_region(region=[x, y, w, h], return_full_data=true)` — returns every detected text fragment with its absolute box and confidence.
 3. Group the fragments into rows: items whose `y` is within ~½ row height belong to the same row.
 4. Within each row, sort by `x` to recover the column order.
 5. If columns are misaligned, use the table header bounding boxes as anchors: read the headers first, then bucket each fragment whose `x` overlaps the header column into that column name.
