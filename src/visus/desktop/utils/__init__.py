@@ -5,6 +5,7 @@ This module contains utilities for Visus Desktop.
 """
 
 from .config import BotVisionConfig, create_config_from_file, get_default_config
+from .retry import retry
 from .text_filters import (
     clean_text,
     extract_letters_from_text,
@@ -26,4 +27,6 @@ __all__ = [
     "BotVisionConfig",
     "create_config_from_file",
     "get_default_config",
+    # Reliability helpers
+    "retry",
 ]

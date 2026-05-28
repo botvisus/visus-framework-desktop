@@ -470,6 +470,7 @@ from .utils.clipboard import copy as copy_to_clipboard
 from .utils.clipboard import get_clipboard, paste
 from .utils.config import BotVisionConfig, get_default_config
 from .utils.files import wait_for_file, wait_for_file_stable
+from .utils.retry import retry
 from .utils.text_filters import clean_text, limpar_texto, matches_filter
 
 # Library version
@@ -2962,6 +2963,7 @@ __all__ = [
     "clean_text",
     "limpar_texto",
     "matches_filter",
+    "retry",
     # Standalone processing functions (compatibility)
     "preprocess_image_for_ocr",
     "find_text_with_multiple_preprocessing",

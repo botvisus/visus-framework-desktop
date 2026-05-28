@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `timestamp` (ISO 8601, UTC). Attach a handler to that logger to route
   events to a file, Loki, or any structured sink. The default `text`
   format keeps the existing human-readable `[INFO]` lines unchanged.
+- **`@retry` decorator** (Phase 1, R1): `visus.desktop.retry` (also
+  importable from `visus.desktop.utils.retry`) re-invokes a callable on
+  transient failures with `fixed` or `expo` backoff and an exception
+  allow-list. Complements `backtrack`, which only retries within a task
+  list — `@retry` is the standalone primitive for arbitrary functions
+  (HTTP calls, file I/O, third-party APIs).
 
 ### Fixed
 - **B1 / TS4**: the `cv2` warm-up shim was moved into `tests/conftest.py` so
