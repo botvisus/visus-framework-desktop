@@ -131,6 +131,59 @@ class TaskExecutor:
         }
         task_event_logger.info(json.dumps(event))
 
+    # ------------------------------------------------------------------
+    # Checkpoint / resume (Phase 2 / R3)
+    # ------------------------------------------------------------------
+
+    def _checkpoint_path(self) -> str:
+        artifacts_dir = self.config.get("artifacts_dir", "./visus-artifacts")
+        return os.path.abspath(os.path.join(artifacts_dir, "checkpoint.json"))
+
+    @staticmethod
+    def _tasks_hash(tasks: List[Dict[str, Any]]) -> str:
+        """Stable identifier for a task list, used to invalidate checkpoints."""
+        import hashlib
+
+        canonical = json.dumps(tasks, sort_keys=True, default=str).encode("utf-8")
+        return hashlib.sha256(canonical).hexdigest()
+
+    def _read_checkpoint(self, tasks: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Return the checkpoint dict if it exists and matches ``tasks``."""
+        path = self._checkpoint_path()
+        if not os.path.exists(path):
+            return None
+        try:
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (OSError, ValueError):
+            return None
+        if data.get("tasks_hash") != self._tasks_hash(tasks):
+            return None
+        return data
+
+    def _write_checkpoint(
+        self, tasks: List[Dict[str, Any]], completed_indices: List[int]
+    ) -> None:
+        path = self._checkpoint_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        payload = {
+            "tasks_hash": self._tasks_hash(tasks),
+            "completed_indices": sorted(set(completed_indices)),
+        }
+        try:
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(payload, fh)
+        except OSError as exc:  # pragma: no cover - logged for forensics
+            logger.warning("Failed to write checkpoint: %s", exc)
+
+    def _clear_checkpoint(self) -> None:
+        path = self._checkpoint_path()
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:  # pragma: no cover
+            pass
+
     def _save_failure_screenshot(self, task_index: int) -> Optional[str]:
         """Capture the current screen and save it under ``artifacts_dir``.
 
@@ -188,7 +241,11 @@ class TaskExecutor:
             except Exception as exc:  # pragma: no cover - logged for forensics
                 logger.debug("mouseUp(%s) during cleanup failed: %s", button, exc)
 
-    def execute_tasks(self, tasks: List[Dict[str, Any]]) -> List[TaskResult]:
+    def execute_tasks(
+        self,
+        tasks: List[Dict[str, Any]],
+        resume: bool = False,
+    ) -> List[TaskResult]:
         """
         Executes a list of tasks sequentially.
         Implements backtracking correctly: goes back to the previous task and then returns to the one that failed.
@@ -212,16 +269,44 @@ class TaskExecutor:
 
         logger.info(f"Starting execution of {len(tasks)} tasks")
 
-        results = []
-        i = 0
-        backtrack_stack = []  # Stack to track backtracks
+        # Resume-from-checkpoint (Phase 2 / R3): when ``resume=True`` and a
+        # matching checkpoint exists, pre-fill ``results`` for the already-
+        # completed task indices and start from the first incomplete one.
+        completed_indices: List[int] = []
+        if resume:
+            checkpoint = self._read_checkpoint(tasks)
+            if checkpoint is not None:
+                completed_indices = list(checkpoint.get("completed_indices", []))
+
+        results: List[TaskResult] = []
+        for idx in range(len(tasks)):
+            if idx in completed_indices:
+                placeholder = TaskResult(
+                    idx, True, "(resumed - previously completed)"
+                )
+                placeholder.attempts = 0
+                results.append(placeholder)
+            else:
+                break
+
+        i = len(results)
+        backtrack_stack: List[int] = []  # Stack to track backtracks
 
         try:
-            return self._run_task_loop(tasks, results, i, backtrack_stack)
+            final = self._run_task_loop(
+                tasks, results, i, backtrack_stack, completed_indices
+            )
         except KeyboardInterrupt:
             logger.info("Interrupted by SIGINT/KeyboardInterrupt; cleaning up")
             self._release_held_inputs()
             raise
+
+        # Clean up the checkpoint only when every task in the list succeeded;
+        # otherwise the checkpoint stays so a follow-up ``resume=True`` call
+        # can pick up where this one left off.
+        if all(r.success for r in final):
+            self._clear_checkpoint()
+        return final
 
     def _run_task_loop(
         self,
@@ -229,10 +314,12 @@ class TaskExecutor:
         results: List["TaskResult"],
         i: int,
         backtrack_stack: List[int],
+        completed_indices: Optional[List[int]] = None,
     ) -> List["TaskResult"]:
         """Inner driver for :meth:`execute_tasks` (extracted for cleanup wrap)."""
         breaker_threshold = int(self.config.get("breaker_threshold") or 0)
         consecutive_failures = 0
+        completed = set(completed_indices or [])
 
         while i < len(tasks):
             task = tasks[i]
@@ -249,6 +336,8 @@ class TaskExecutor:
                     f"✓ Task {i + 1}/{len(tasks)}: '{task_result.task_name}' completed successfully"
                 )
                 consecutive_failures = 0
+                completed.add(i)
+                self._write_checkpoint(tasks, sorted(completed))
 
                 # Check whether there are pending backtracks on the stack
                 if backtrack_stack:

@@ -46,6 +46,8 @@ web = ["webdriver-manager>=4.0.0"]
 # Optional OCR backend (Phase 3 / E5): PP-OCR models via ONNX Runtime.
 # Activate with config['ocr_backend'] = 'rapidocr'.
 rapidocr = ["rapidocr>=2.0.0", "onnxruntime>=1.16.0"]
+# pytest-visus fixtures (Phase 2 / TS1): mock_screen, fake_ocr, record_clicks
+test = ["pytest>=7.0.0"]
 
 [dependency-groups]
 dev = [
@@ -65,9 +67,12 @@ Repository = "https://github.com/matheuszwilk/visus-desktop.git"
 [project.scripts]
 visus-doctor = "visus.desktop.doctor:main"
 
+[project.entry-points."pytest11"]
+visus_pytest = "visus_pytest"
+
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["visus*"]
+include = ["visus*", "visus_pytest*"]
 namespaces = true
 
 [tool.setuptools.package-data]

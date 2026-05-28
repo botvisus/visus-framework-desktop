@@ -843,12 +843,16 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
 
             return False
 
-    def execute_tasks(self, tasks):
+    def execute_tasks(self, tasks, resume: bool = False):
         """
         Execute a list of tasks sequentially.
 
         Args:
             tasks (list): List of dictionaries with task settings
+            resume (bool): When True, skip indices already completed in a
+                previous interrupted run (Phase 2 / R3). The checkpoint
+                file ``<artifacts_dir>/checkpoint.json`` is invalidated
+                when the task list changes shape.
 
         Returns:
             list: List of TaskResult objects with the result of each task
@@ -911,7 +915,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             >>>
             >>> results = bot.execute_tasks(advanced_tasks)
         """
-        return self.executor.execute_tasks(tasks)
+        return self.executor.execute_tasks(tasks, resume=resume)
 
     def find_text(
         self,
