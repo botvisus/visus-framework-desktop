@@ -315,6 +315,14 @@ triple_click(x=None, y=None, interval=0.05)
 
 move_random(x, y, max_offset=3, duration=0.2)
     # move to (x, y) with a small random jitter, then settle exactly on the target.
+
+mouse_down(x=None, y=None, button="left")
+    # press a mouse button at (x, y) (or current position) WITHOUT releasing.
+
+mouse_up(x=None, y=None, button="left")
+    # release a previously-pressed mouse button at (x, y) (or current position).
+    # Pair with mouse_down for press-and-hold patterns that drag() (atomic
+    # down->move->up) does not cover.
 ```
 
 ### Coordinate helpers
@@ -605,6 +613,8 @@ scroll(amount, x=None, y=None)
 drag(start_x, start_y, end_x, end_y, duration=0.5, button="left")
 triple_click(x=None, y=None, interval=0.05)
 move_random(x, y, max_offset=3, duration=0.2)
+mouse_down(x=None, y=None, button="left")
+mouse_up(x=None, y=None, button="left")
 
 # Files
 wait_for_file(path, timeout=10.0, poll_interval=0.5)

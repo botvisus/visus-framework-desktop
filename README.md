@@ -410,6 +410,11 @@ bot.scroll(-3, x=400, y=300)           # move to (400, 300) first, then scroll d
 bot.drag(100, 100, 400, 300, duration=0.5, button="left")   # press, drag, release
 bot.triple_click(250, 180, interval=0.05)                   # e.g. select a whole line
 bot.move_random(640, 480, max_offset=3, duration=0.2)       # lightly "human" move
+
+# Separate press/release for custom press-and-hold patterns (drag is atomic):
+bot.mouse_down(200, 200)         # press the left button at (200, 200)
+# ... do other things while holding ...
+bot.mouse_up()                   # release at the current cursor position
 ```
 
 ### Coordinate helpers
@@ -687,6 +692,7 @@ from visus.desktop import (
     launch, find_process, is_process_running, kill_process,  # process
     focus_window, maximize_window, minimize_window, close_window,  # window (Windows)
     scroll, drag, triple_click, move_random,       # mouse extras
+    mouse_down, mouse_up,                          # press-and-hold primitives
     wait_for_file, wait_for_file_stable,           # files
 )
 ```

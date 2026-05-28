@@ -93,3 +93,25 @@ def move_random(x: int, y: int, max_offset: int = 3, duration: float = 0.2) -> N
     pyautogui.moveTo(x + offset_x, y + offset_y, duration=duration)
     # Settle exactly on the requested target.
     pyautogui.moveTo(x, y)
+
+
+def mouse_down(
+    x: int | None = None, y: int | None = None, button: str = "left"
+) -> None:
+    """Press a mouse button at ``(x, y)`` (or the current cursor position) without releasing.
+
+    Pair with :func:`mouse_up` for press-and-hold patterns that :func:`drag`
+    (which combines down -> move -> up atomically) does not cover.
+    """
+    import pyautogui
+
+    pyautogui.mouseDown(x=x, y=y, button=button)
+
+
+def mouse_up(
+    x: int | None = None, y: int | None = None, button: str = "left"
+) -> None:
+    """Release a previously-pressed mouse button at ``(x, y)`` (or current position)."""
+    import pyautogui
+
+    pyautogui.mouseUp(x=x, y=y, button=button)

@@ -159,6 +159,28 @@ class CapabilitiesMixin:
         """Move the cursor to ``(x, y)`` with a small human-like jitter."""
         _mouse.move_random(x, y, max_offset, duration)
 
+    def mouse_down(
+        self,
+        x: int | None = None,
+        y: int | None = None,
+        button: str = "left",
+    ) -> None:
+        """Press a mouse button at ``(x, y)`` (or current position) without releasing.
+
+        Pair with :meth:`mouse_up` for custom press-and-hold patterns. For atomic
+        press → move → release use :meth:`drag` instead.
+        """
+        _mouse.mouse_down(x, y, button)
+
+    def mouse_up(
+        self,
+        x: int | None = None,
+        y: int | None = None,
+        button: str = "left",
+    ) -> None:
+        """Release a previously-pressed mouse button at ``(x, y)`` (or current position)."""
+        _mouse.mouse_up(x, y, button)
+
     # --- Web -------------------------------------------------------------
     def browse(self, url: str) -> None:
         """Open ``url`` in the system default web browser."""
