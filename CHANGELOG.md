@@ -55,6 +55,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `find_image`/`click_image` need a disk template but the MCP surface
   previously only offered base64 `take_screenshot`. The full
   capture → find_image → click_image flow now lives entirely inside MCP.
+- **Native RPA** (`visus.desktop.core.native_rpa` + 6 MCP tools): no-pixel
+  desktop automation through the accessibility tree (pywinauto UIA). Operate
+  accessible apps (Win32 / WPF / WinUI / .NET) by control — immune to theme,
+  DPI, resolution, language and window position. Functions:
+  * `native_dump_tree(window|pid, max_depth)` — the agent *sees* the UI:
+    a flat list of `{depth, control_type, title, auto_id, rect}` walked via
+    `children()` to a depth cap (fast, not a full `descendants()` flood).
+  * `native_click` / `native_set_text` / `native_get_text` /
+    `native_get_state` / `native_wait` — act on a control located by a
+    **directed** selector (`title` / `control_type` / `auto_id` /
+    `found_index`) via `child_window` FindFirst. `native_click` supports
+    `method=invoke|click|auto`; reads expose `get_state`
+    (exists/visible/enabled/checked/value/rect).
+
+  Every call is bounded by a worker-thread `timeout` (UIA can hang) and
+  supports `retries` + `delay` — the native analogue of backtrack.
+  Non-accessible UIs (Java Swing without the Access Bridge, some Electron)
+  return empty/None/False, so callers fall back to OCR / `capture_element`.
+  MCP surface: **39 tools**.
 - **Layered precise locators** (`visus.desktop.core.locators` + MCP):
   precise element location beyond OCR. `capture_element(auto=...)` now
   tries **Win32 classic menu → OCR → UIA directed** in order:

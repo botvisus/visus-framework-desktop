@@ -389,6 +389,159 @@ def capture_element(
     )
 
 
+# ---------------------------------------------------------------------------
+# Native RPA -- operate controls through the accessibility tree (no pixel)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def native_dump_tree(
+    window: str | None = None,
+    pid: int | None = None,
+    max_depth: int = 3,
+    timeout: float = 5.0,
+) -> list[dict]:
+    """Return the accessibility control tree of a window (no pixel).
+
+    Each node is ``{depth, control_type, title, auto_id, rect}``. This is
+    how an agent *sees* a native UI: dump the tree, read the control
+    types / titles / automation_ids, then act on one with
+    ``native_click`` / ``native_set_text``. Target by ``window`` (title
+    substring) or ``pid`` (else the foreground window). Walks ``children()``
+    to ``max_depth`` (fast; not the full subtree).
+
+    Returns ``[]`` for non-accessible apps (Java Swing without the Access
+    Bridge, some Electron) -- use OCR / ``capture_element`` there.
+    """
+    from .core.native_rpa import native_dump_tree as _fn
+
+    return _fn(window=window, pid=pid, max_depth=max_depth, timeout=timeout)
+
+
+@mcp.tool()
+def native_click(
+    window: str | None = None,
+    pid: int | None = None,
+    title: str | None = None,
+    control_type: str | None = None,
+    auto_id: str | None = None,
+    found_index: int | None = None,
+    button: str = "left",
+    double: bool = False,
+    method: str = "auto",
+    timeout: float = 5.0,
+    retries: int = 0,
+    delay: float = 0.3,
+) -> bool:
+    """Click a control by selector -- no coordinates, no image (UIA).
+
+    Select with any of ``title`` / ``control_type`` (Button, MenuItem,
+    Edit, ...) / ``auto_id`` / ``found_index``. ``method``: ``invoke``
+    (UIA, no mouse), ``click`` (real mouse), ``auto`` (invoke then click).
+    ``retries`` + ``delay`` re-attempt a flaky control (backtrack-style).
+    Most robust automation when the app is accessible.
+    """
+    from .core.native_rpa import native_click as _fn
+
+    return _fn(
+        window=window, pid=pid, title=title, control_type=control_type,
+        auto_id=auto_id, found_index=found_index, button=button,
+        double=double, method=method, timeout=timeout, retries=retries,
+        delay=delay,
+    )
+
+
+@mcp.tool()
+def native_set_text(
+    text: str,
+    window: str | None = None,
+    pid: int | None = None,
+    title: str | None = None,
+    control_type: str | None = None,
+    auto_id: str | None = None,
+    found_index: int | None = None,
+    timeout: float = 5.0,
+    retries: int = 0,
+    delay: float = 0.3,
+) -> bool:
+    """Set the text of an editable control by selector (UIA value pattern)."""
+    from .core.native_rpa import native_set_text as _fn
+
+    return _fn(
+        window=window, pid=pid, title=title, control_type=control_type,
+        auto_id=auto_id, found_index=found_index, text=text, timeout=timeout,
+        retries=retries, delay=delay,
+    )
+
+
+@mcp.tool()
+def native_get_text(
+    window: str | None = None,
+    pid: int | None = None,
+    title: str | None = None,
+    control_type: str | None = None,
+    auto_id: str | None = None,
+    found_index: int | None = None,
+    timeout: float = 5.0,
+) -> str | None:
+    """Read a control's text/value by selector. Returns the string or None."""
+    from .core.native_rpa import native_get_text as _fn
+
+    return _fn(
+        window=window, pid=pid, title=title, control_type=control_type,
+        auto_id=auto_id, found_index=found_index, timeout=timeout,
+    )
+
+
+@mcp.tool()
+def native_get_state(
+    window: str | None = None,
+    pid: int | None = None,
+    title: str | None = None,
+    control_type: str | None = None,
+    auto_id: str | None = None,
+    found_index: int | None = None,
+    timeout: float = 5.0,
+) -> dict | None:
+    """Snapshot a control's state by selector.
+
+    ``{exists, visible, enabled, checked, value, control_type, rect}``.
+    ``checked`` is the UIA toggle state for checkboxes (None otherwise).
+    """
+    from .core.native_rpa import native_get_state as _fn
+
+    return _fn(
+        window=window, pid=pid, title=title, control_type=control_type,
+        auto_id=auto_id, found_index=found_index, timeout=timeout,
+    )
+
+
+@mcp.tool()
+def native_wait(
+    window: str | None = None,
+    pid: int | None = None,
+    title: str | None = None,
+    control_type: str | None = None,
+    auto_id: str | None = None,
+    found_index: int | None = None,
+    state: str = "exists",
+    timeout: float = 10.0,
+    poll_interval: float = 0.3,
+) -> bool:
+    """Wait until a control reaches ``state`` by selector.
+
+    ``state``: ``exists`` | ``visible`` | ``enabled`` | ``ready``
+    (ready = exists + visible + enabled). Returns True when satisfied.
+    """
+    from .core.native_rpa import native_wait as _fn
+
+    return _fn(
+        window=window, pid=pid, title=title, control_type=control_type,
+        auto_id=auto_id, found_index=found_index, state=state,
+        timeout=timeout, poll_interval=poll_interval,
+    )
+
+
 @mcp.tool()
 def get_monitors() -> list[dict]:
     """List the connected physical monitors."""
@@ -725,6 +878,8 @@ for _name, _obj in list(globals().items()):
             "click_at", "hybrid_find", "type_text", "keyboard_command",
             "take_screenshot", "save_screenshot", "capture_element",
             "get_window", "get_monitors", "wait_for_stable_screen",
+            "native_dump_tree", "native_click", "native_set_text",
+            "native_get_text", "native_get_state", "native_wait",
             "wait_for_file", "wait_for_file_stable", "get_clipboard",
             "copy_to_clipboard", "extract_text_from_region", "launch",
             "find_process", "kill_process", "focus_window", "maximize_window",

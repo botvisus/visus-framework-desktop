@@ -53,7 +53,7 @@ Restart the host. The 30 `visus-desktop` tools (see below) become discoverable b
 
 ## Tool surface
 
-The server registers **33 tools**, grouped by capability. Every tool's docstring is its MCP description (the agent reads it before deciding when to call). Each tool's type hints become the JSON schema the agent populates.
+The server registers **39 tools**, grouped by capability. Every tool's docstring is its MCP description (the agent reads it before deciding when to call). Each tool's type hints become the JSON schema the agent populates.
 
 ### Find / click
 * `find_text(text, region?, confidence_threshold?, occurrence?)` → `{x, y, width, height} | null`
@@ -90,6 +90,20 @@ The server registers **33 tools**, grouped by capability. Every tool's docstring
 * `maximize_window(title_substring)` → `bool`
 * `minimize_window(title_substring)` → `bool`
 * `close_window(title_substring)` → `bool`
+
+### Native RPA (no-pixel automation via the accessibility tree)
+Operate accessible apps (Win32 / WPF / WinUI / .NET) directly by control,
+with no image/OCR — immune to theme, DPI, resolution, language, position.
+Target by `window` (title) or `pid` (else foreground). Select by
+`title` / `control_type` / `auto_id` / `found_index`. Returns `[]`/`None`/`False`
+for non-accessible UIs (Java Swing w/o Access Bridge, some Electron) — use
+OCR / `capture_element` there.
+* `native_dump_tree(window?, pid?, max_depth?, timeout?)` → `[{depth, control_type, title, auto_id, rect}]` *(the agent reads the UI structure, then acts)*
+* `native_click(window?, pid?, title?, control_type?, auto_id?, found_index?, button?, double?, method?, timeout?, retries?, delay?)` → `bool` *(method: invoke|click|auto; retries+delay = backtrack-style)*
+* `native_set_text(text, window?, pid?, title?, control_type?, auto_id?, found_index?, timeout?, retries?, delay?)` → `bool`
+* `native_get_text(window?, pid?, title?, control_type?, auto_id?, found_index?, timeout?)` → `str | null`
+* `native_get_state(...)` → `{exists, visible, enabled, checked, value, control_type, rect}`
+* `native_wait(..., state?, timeout?, poll_interval?)` → `bool` *(state: exists|visible|enabled|ready)*
 
 ### Task lists
 * `execute_tasks(tasks, resume?)` → `list[{task_index, task_name, success, attempts, duration_ms, error, failure_screenshot}]`
