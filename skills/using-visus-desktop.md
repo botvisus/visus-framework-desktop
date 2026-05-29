@@ -6,7 +6,7 @@ when_to_use: Activate at the start of any visus-desktop automation task to groun
 
 # Using Visus Desktop
 
-You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **32 tools** that cover desktop GUI automation, OCR, image matching, process / window management, clipboard, file waits, session record/replay, and HTML reporting.
+You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **33 tools** that cover desktop GUI automation, OCR, image matching, native (Win32/UIA) targeting, process / window management, clipboard, file waits, session record/replay, and HTML reporting.
 
 ## What this MCP gives you
 
@@ -25,7 +25,7 @@ You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **32 t
 ## The mental model
 
 1. **Targeting**: prefer `hybrid_find(name=…)` first — it tries native (pywinauto), then OCR, then template image, transparently. Only drop to the specific layer (`find_text`, `find_image`) when you know which one fits.
-2. **Prefer `capture_element` for click-by-image steps**: instead of guessing a screenshot region and eyeballing coordinates (error-prone — you can grab the wrong button), call `capture_element(label="...", text="Salvar", click=True)`. It locates the labelled element by OCR (or `native=`/`region=`), saves a tight reusable template to `visus-elements/<label>.png`, saves an annotated screenshot showing exactly what it matched, and clicks the center. Walk a menu step-by-step this way (e.g. `text="Arquivo"` → then `text="Salvar como"`). Never hand-crop a region just to find a button.
+2. **Prefer `capture_element(auto=...)` for click steps**: instead of guessing a screenshot region and eyeballing coordinates (error-prone — you can grab the wrong button), call `capture_element(label="...", auto="Salvar", click=True)`. `auto=` tries **Win32 menu → OCR → UIA directed** in order: native apps get the instant pixel-exact Win32/UIA rect; anything else (Java Swing, Electron, remote desktop) falls back to OCR automatically. It saves a reusable template to `visus-elements/<label>.png` + an annotated screenshot showing exactly what matched, and clicks the center. `located_by` in the result tells you which strategy won. Pass `window="App Title"` to scope to a specific window even when it's not focused. Walk a menu step-by-step this way (`auto="Arquivo"` → `auto="Salvar como"`). Never hand-crop a region just to find a button.
 3. **Verify before clicking** (when not using `capture_element`): call a find tool, inspect the returned `{x, y, width, height}` dict, then click. Never blind-click coordinates unless the user gave them to you.
 3. **Wait deliberately**: between any visible change and the next find, call `wait_for_stable_screen` (UI redraw) or `wait_for_file_stable` (downloads). Hard-coded `sleep` is a smell.
 4. **Record troublesome flows**: `start_recording('out.zip')` → `execute_tasks([...])` → `stop_recording()` → `render_report('out.zip', 'report.html')`. The HTML report has timing + screenshots and is the right artifact to send a human when a flow fails.

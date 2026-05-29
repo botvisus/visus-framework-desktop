@@ -156,6 +156,56 @@ class TestHybridFind:
         with patch("builtins.__import__", side_effect=fake_import):
             assert bot._hybrid_native_lookup("Login") is None
 
+    def test_native_lookup_gives_up_after_timeout(self):
+        """A slow UIA walk must not block past native_timeout -- it returns
+        None so the caller falls back to OCR instead of hanging."""
+        import time
+
+        bot = self._bot()
+
+        def slow_descendants(*args, **kwargs):
+            time.sleep(5)  # simulate a slow descendants() enumeration
+            return []
+
+        top = MagicMock()
+        top.exists = MagicMock(return_value=True)
+        top.descendants = MagicMock(side_effect=slow_descendants)
+        fake_pywinauto = MagicMock()
+        fake_pywinauto.Desktop = MagicMock(
+            return_value=MagicMock(window=MagicMock(return_value=top))
+        )
+        start = time.monotonic()
+        with patch.dict("sys.modules", {"pywinauto": fake_pywinauto}):
+            box = bot._hybrid_native_lookup("Login", native_timeout=0.3)
+        elapsed = time.monotonic() - start
+        assert box is None
+        # Must return promptly (well under the 5s slow walk).
+        assert elapsed < 2.0, f"native lookup blocked {elapsed:.1f}s past its timeout"
+
+    def test_native_lookup_filters_by_control_type_first(self):
+        """The lookup should query descendants(control_type=...) (cheap) before
+        falling back to an unfiltered walk."""
+        bot = self._bot()
+        rect = MagicMock(left=5, top=6, right=45, bottom=26)
+        item = MagicMock()
+        item.element_info.name = "Arquivo"
+        item.element_info.automation_id = ""
+        item.element_info.control_type = "MenuItem"
+        item.rectangle = MagicMock(return_value=rect)
+
+        top = MagicMock()
+        top.exists = MagicMock(return_value=True)
+        top.descendants = MagicMock(return_value=[item])
+        fake_pywinauto = MagicMock()
+        fake_pywinauto.Desktop = MagicMock(
+            return_value=MagicMock(window=MagicMock(return_value=top))
+        )
+        with patch.dict("sys.modules", {"pywinauto": fake_pywinauto}):
+            box = bot._hybrid_native_lookup("Arquivo", native_timeout=3.0)
+        assert box == (5, 6, 40, 20)
+        # The first descendants() call must have been control-type filtered.
+        assert top.descendants.call_args_list[0].kwargs.get("control_type")
+
     def test_region_is_forwarded(self):
         bot = self._bot()
         with patch.object(

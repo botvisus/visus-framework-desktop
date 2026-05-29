@@ -303,56 +303,87 @@ def save_screenshot(
 
 
 @mcp.tool()
+def get_window(title_substring: str) -> dict | None:
+    """Resolve a window by title substring; no focus required.
+
+    Returns ``{title, pid, hwnd, x, y, width, height}`` for the first
+    visible window whose title contains ``title_substring``
+    (case-insensitive), or ``None``. Use it to scope a capture to the
+    right window even when it is behind others -- pass its rect to
+    ``take_screenshot``/``save_screenshot`` as ``region`` or to
+    ``capture_element``/``find_image`` as ``search_region``/``region``.
+    """
+    from .core.locators import get_window as _gw
+
+    return _gw(title_substring)
+
+
+@mcp.tool()
 def capture_element(
     label: str,
+    auto: str | None = None,
     text: str | None = None,
     native: str | None = None,
     region: list[int] | None = None,
+    window: str | None = None,
     search_region: list[int] | None = None,
     click: bool = False,
     mouse_button: str = "left",
     padding: int = 0,
     confidence_threshold: float = 75.0,
+    native_timeout: float = 5.0,
     elements_dir: str = "./visus-elements",
 ) -> dict:
     """Locate a UI element, save a reusable template + annotated shot, click.
 
     The coordinate-free way to build a click-by-image flow. Provide
     EXACTLY ONE locator:
-      * ``text="Arquivo"``   -- locate by on-screen text (OCR). Best for
-        labelled menus/buttons. Optionally narrow with ``search_region``.
-      * ``native="SaveBtn"`` -- locate by the foreground app's UIA tree
-        (title / automation_id / control_type substring).
+      * ``auto="Arquivo"``   -- **recommended**. Tries Win32 menu -> OCR ->
+        UIA directed, in order. Win32 is instant + pixel-exact for native
+        menus; OCR works on anything that renders text (incl. Java Swing,
+        Electron, remote desktop); UIA directed catches accessible controls
+        OCR missed. ``located_by`` in the result tells you which won.
+      * ``text="Arquivo"``   -- OCR only. Optionally narrow with
+        ``search_region``.
+      * ``native="SaveBtn"`` -- targeted UIA only (fast child_window
+        FindFirst, not a full tree walk).
       * ``region=[x,y,w,h]`` -- you already know the box.
+
+    ``window="Bloco de Notas"`` (title substring) scopes the Win32/UIA
+    strategies to that window even when it is NOT focused; without it the
+    foreground window is targeted.
 
     Saves a tight template to ``<elements_dir>/<label>.png`` (reuse it
     later with ``find_image`` / ``click_image``) and an annotated
     full-screen PNG with a rectangle around the match to
-    ``<elements_dir>/trace/<label>_annotated.png`` so you can verify what
-    was located. With ``click=True`` it clicks the element's center.
+    ``<elements_dir>/trace/<label>_annotated.png``. With ``click=True`` it
+    clicks the element's center.
 
     Returns ``{found, label, located_by, box, template_path,
     annotated_path, clicked}``. On a miss ``found`` is False and only the
     annotated screenshot (no rectangle) is written.
 
-    Example -- Notepad save-as, no coordinate guessing::
+    Example -- Notepad save-as, coordinate-free, fastest path first::
 
-        capture_element(label="arquivo",     text="Arquivo",     click=True)
-        capture_element(label="salvar_como", text="Salvar como", click=True)
-        capture_element(label="btn_salvar",  text="Salvar",      click=True)
+        capture_element(label="arquivo",     auto="Arquivo",     click=True)
+        capture_element(label="salvar_como", auto="Salvar como", click=True)
+        capture_element(label="btn_salvar",  auto="Salvar",      click=True)
     """
     from .core import elements as _elements
 
     return _elements.capture_element(
         label,
+        auto=auto,
         text=text,
         native=native,
         region=_coerce_region(region),
+        window=window,
         search_region=_coerce_region(search_region),
         click=click,
         mouse_button=mouse_button,
         padding=padding,
         confidence_threshold=confidence_threshold,
+        native_timeout=native_timeout,
         elements_dir=elements_dir,
         bot=get_bot(),
     )
@@ -693,7 +724,7 @@ for _name, _obj in list(globals().items()):
             "configure", "find_text", "click_text", "find_image", "click_image",
             "click_at", "hybrid_find", "type_text", "keyboard_command",
             "take_screenshot", "save_screenshot", "capture_element",
-            "get_monitors", "wait_for_stable_screen",
+            "get_window", "get_monitors", "wait_for_stable_screen",
             "wait_for_file", "wait_for_file_stable", "get_clipboard",
             "copy_to_clipboard", "extract_text_from_region", "launch",
             "find_process", "kill_process", "focus_window", "maximize_window",

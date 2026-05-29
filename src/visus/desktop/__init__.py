@@ -437,6 +437,7 @@ from .core.image_processing import ImageProcessor, preprocess_image_for_ocr
 from .core.keyboard_commands import KeyboardCommander  # NEW FEATURE
 from .core.keyboard_extra import KeyboardMixin
 from .core.locate import find_all, find_multiple
+from .core.locators import get_window
 from .core.mouse_extra import (
     drag,
     mouse_down,
@@ -859,58 +860,113 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
 
     _IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tiff")
 
-    def _hybrid_native_lookup(self, name, region=None):
+    # Control types queried (in order) before falling back to an
+    # unfiltered descendants() walk. Filtering by control_type at the UIA
+    # level is far cheaper than pulling the whole accessibility tree, so
+    # clickable elements (menu items, buttons, tabs, links) are found fast.
+    _NATIVE_CONTROL_TYPES = (
+        "MenuItem",
+        "Button",
+        "TabItem",
+        "ListItem",
+        "Hyperlink",
+        "Text",
+        "Edit",
+        "CheckBox",
+        "RadioButton",
+        "ComboBox",
+    )
+
+    def _hybrid_native_lookup(self, name, region=None, native_timeout: float = 5.0):
         """Best-effort native UIA lookup used by :meth:`hybrid_find`.
 
-        Walks the foreground window's UIA tree (via ``pywinauto.Desktop``)
-        looking for a control whose **title**, **automation_id**, or
-        **control_type** contains ``name`` (case-insensitive). Returns an
-        ``(x, y, w, h)`` box or ``None`` when the element is not found.
+        Searches the foreground window's UIA tree (via ``pywinauto.Desktop``)
+        for a control whose **title**, **automation_id**, or **control_type**
+        contains ``name`` (case-insensitive). Returns an ``(x, y, w, h)`` box
+        or ``None`` when not found.
 
-        Subclasses / tests can patch this without touching the OCR or
-        image layers. On non-Windows or when ``pywinauto`` is missing,
-        the function returns ``None`` cleanly so the OCR layer takes
-        over -- the hybrid contract still holds.
+        Two safeguards keep UIA's notoriously slow tree enumeration from
+        hanging the caller:
+
+        * **control_type filtering** -- cheap ``descendants(control_type=...)``
+          queries for common clickable types run first; the expensive
+          unfiltered walk is only the last resort.
+        * **``native_timeout``** -- the whole lookup runs in a worker thread
+          and is abandoned (returns ``None``) if it exceeds the timeout, so
+          the hybrid chain falls back to OCR promptly instead of blocking.
+
+        On non-Windows / missing pywinauto it returns ``None`` cleanly.
         """
         try:
-            import pywinauto  # type: ignore[import-not-found]
+            import pywinauto  # type: ignore[import-not-found]  # noqa: F401
         except ImportError:
             return None
-        try:
-            desktop = pywinauto.Desktop(backend="uia")
-            top = desktop.window(active_only=True)
-            if not top.exists(timeout=0.5):
-                return None
-            needle = (name or "").lower()
-            # Walk descendants -- title_re would be regex; iterate so we
-            # can match against title / automation_id / control_type.
-            for descendant in top.descendants():
-                try:
-                    info = descendant.element_info
-                    title = (info.name or "").lower()
-                    auto_id = (getattr(info, "automation_id", "") or "").lower()
-                    ctrl = (getattr(info, "control_type", "") or "").lower()
-                except Exception:
-                    continue
-                if needle and (
-                    needle in title
-                    or needle in auto_id
-                    or needle in ctrl
-                ):
+
+        result: dict = {"box": None}
+
+        def _work() -> None:
+            try:
+                import pywinauto as _pwa
+
+                desktop = _pwa.Desktop(backend="uia")
+                top = desktop.window(active_only=True)
+                if not top.exists(timeout=0.5):
+                    return
+                needle = (name or "").lower()
+                if not needle:
+                    return
+
+                def _match(descendant):
                     try:
-                        r = descendant.rectangle()
+                        info = descendant.element_info
+                        title = (info.name or "").lower()
+                        auto_id = (getattr(info, "automation_id", "") or "").lower()
+                        ctrl = (getattr(info, "control_type", "") or "").lower()
+                    except Exception:
+                        return None
+                    if needle in title or needle in auto_id or needle in ctrl:
+                        try:
+                            r = descendant.rectangle()
+                        except Exception:
+                            return None
+                        return (
+                            int(r.left),
+                            int(r.top),
+                            int(r.right - r.left),
+                            int(r.bottom - r.top),
+                        )
+                    return None
+
+                # Cheap filtered passes first, then the unfiltered fallback.
+                queries = [
+                    {"control_type": ct} for ct in self._NATIVE_CONTROL_TYPES
+                ]
+                queries.append({})  # unfiltered last resort
+                for kwargs in queries:
+                    try:
+                        candidates = top.descendants(**kwargs)
                     except Exception:
                         continue
-                    return (
-                        int(r.left),
-                        int(r.top),
-                        int(r.right - r.left),
-                        int(r.bottom - r.top),
-                    )
-        except Exception as exc:  # any pywinauto-level fault is non-fatal
-            logger.debug("native hybrid lookup failed: %s", exc)
+                    for descendant in candidates:
+                        box = _match(descendant)
+                        if box is not None:
+                            result["box"] = box
+                            return
+            except Exception as exc:  # any pywinauto-level fault is non-fatal
+                logger.debug("native hybrid lookup failed: %s", exc)
+
+        import threading
+
+        worker = threading.Thread(target=_work, daemon=True)
+        worker.start()
+        worker.join(timeout=native_timeout)
+        if worker.is_alive():
+            logger.debug(
+                "native lookup exceeded %.1fs; giving up (falling back to OCR)",
+                native_timeout,
+            )
             return None
-        return None
+        return result["box"]
 
     def hybrid_find(self, name, region=None):
         """Find a target by trying native → OCR → image in order.
@@ -3092,6 +3148,7 @@ __all__ = [
     "Monitor",
     "wait_for_stable_screen",
     "capture_element",
+    "get_window",
     "launch",
     "find_process",
     "is_process_running",

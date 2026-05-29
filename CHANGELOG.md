@@ -55,6 +55,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `find_image`/`click_image` need a disk template but the MCP surface
   previously only offered base64 `take_screenshot`. The full
   capture → find_image → click_image flow now lives entirely inside MCP.
+- **Layered precise locators** (`visus.desktop.core.locators` + MCP):
+  precise element location beyond OCR. `capture_element(auto=...)` now
+  tries **Win32 classic menu → OCR → UIA directed** in order:
+  * Win32 menu (`GetMenu`/`GetMenuItemRect` + `GetMenuStringW`) returns a
+    classic menu item's exact rect instantly — perfect for native menu
+    bars.
+  * OCR (the universal fallback — works on Java Swing, Electron, remote
+    desktop, anything that renders text).
+  * UIA *directed* (`Application.connect(process=pid).child_window(...)`
+    FindFirst) — fast, unlike the old full `descendants()` walk; bounded
+    by a worker-thread timeout so it can never hang.
+  New `get_window(title)` resolves a window's rect/pid/hwnd via win32
+  without requiring focus, and `capture_element(window=...)` scopes the
+  Win32/UIA strategies to a named window even when it is behind others.
+  `native=` now uses the fast directed UIA path. MCP surface: **33 tools**.
 - **`capture_element`** (`visus.desktop.capture_element` + MCP tool):
   coordinate-free element capture. Locate a UI element by exactly one of
   `text=` (OCR), `native=` (UIA), or `region=`, then save a tight

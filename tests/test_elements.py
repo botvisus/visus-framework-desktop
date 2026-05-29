@@ -138,14 +138,88 @@ class TestTextMode:
 
 
 class TestNativeMode:
-    def test_native_uses_hybrid_lookup(self, tmp_path):
-        bot = _bot_with(box=(1, 2, 3, 4))
-        result = _elements.capture_element(
-            "btn", native="SaveButton", bot=bot, elements_dir=str(tmp_path)
-        )
+    def test_native_uses_directed_uia(self, tmp_path):
+        bot = _bot_with(box=None)
+        with patch(
+            "visus.desktop.core.locators.get_foreground_window",
+            return_value={"hwnd": 1, "pid": 42},
+        ), patch(
+            "visus.desktop.core.locators.locate_uia_directed",
+            return_value=(1, 2, 3, 4),
+        ) as uia:
+            result = _elements.capture_element(
+                "btn", native="SaveButton", bot=bot, elements_dir=str(tmp_path)
+            )
         assert result["located_by"] == "native"
         assert result["box"] == {"x": 1, "y": 2, "width": 3, "height": 4}
-        bot._hybrid_native_lookup.assert_called_once_with("SaveButton")
+        # Directed UIA was used (not the slow descendants walk), scoped to pid.
+        uia.assert_called_once()
+        assert uia.call_args.args[0] == "SaveButton"
+        assert uia.call_args.kwargs.get("pid") == 42
+
+    def test_native_window_scopes_to_named_window(self, tmp_path):
+        bot = _bot_with(box=None)
+        with patch(
+            "visus.desktop.core.locators.get_window",
+            return_value={"hwnd": 7, "pid": 99},
+        ) as gw, patch(
+            "visus.desktop.core.locators.locate_uia_directed",
+            return_value=(5, 6, 7, 8),
+        ) as uia:
+            _elements.capture_element(
+                "btn", native="Save", window="MyApp", bot=bot,
+                elements_dir=str(tmp_path),
+            )
+        gw.assert_called_once_with("MyApp")
+        assert uia.call_args.kwargs.get("pid") == 99
+
+
+class TestAutoMode:
+    def test_auto_runs_layered_and_reports_method(self, tmp_path):
+        bot = _bot_with(box=None)
+        with patch(
+            "visus.desktop.core.locators.get_foreground_window",
+            return_value={"hwnd": 1, "pid": 42},
+        ), patch(
+            "visus.desktop.core.locators.locate_layered",
+            return_value=((10, 20, 30, 40), "win32"),
+        ) as layered:
+            result = _elements.capture_element(
+                "arquivo", auto="Arquivo", bot=bot, elements_dir=str(tmp_path)
+            )
+        assert result["found"] is True
+        assert result["located_by"] == "win32"
+        assert result["box"] == {"x": 10, "y": 20, "width": 30, "height": 40}
+        layered.assert_called_once()
+
+    def test_auto_miss_reports_auto(self, tmp_path):
+        bot = _bot_with(box=None)
+        with patch(
+            "visus.desktop.core.locators.get_foreground_window",
+            return_value=None,
+        ), patch(
+            "visus.desktop.core.locators.locate_layered",
+            return_value=(None, None),
+        ):
+            result = _elements.capture_element(
+                "ghost", auto="Ghost", bot=bot, elements_dir=str(tmp_path)
+            )
+        assert result["found"] is False
+        assert result["located_by"] == "auto"
+
+    def test_auto_clicks_center_when_found(self, tmp_path):
+        bot = _bot_with(box=None)
+        with patch(
+            "visus.desktop.core.locators.get_foreground_window",
+            return_value={"hwnd": 1, "pid": 1},
+        ), patch(
+            "visus.desktop.core.locators.locate_layered",
+            return_value=((100, 200, 40, 20), "text"),
+        ):
+            _elements.capture_element(
+                "ok", auto="OK", click=True, bot=bot, elements_dir=str(tmp_path)
+            )
+        bot.click_at.assert_called_once()
 
 
 class TestPadding:

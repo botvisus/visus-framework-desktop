@@ -76,30 +76,47 @@ def capture_element(
     native: str | None = None,
     region: list | None = None,
     search_region: list | None = None,
+    auto: str | None = None,
+    window: str | None = None,
     click: bool = False,
     mouse_button: str = "left",
     padding: int = 0,
     confidence_threshold: float = 75.0,
+    native_timeout: float = 5.0,
     elements_dir: str = "./visus-elements",
     bot: Any = None,
 ) -> dict:
     """Locate an element, save its template + an annotated screenshot, click.
 
-    Exactly one of ``text`` / ``native`` / ``region`` must be given.
+    Exactly one locator is required:
 
-    Returns a dict::
+    * ``auto=`` -- **recommended**. Tries Win32 menu -> OCR -> UIA directed
+      in order (see :func:`visus.desktop.core.locators.locate_layered`).
+      Win32 is instant + pixel-exact for native menus; OCR works on
+      anything that renders text (Java Swing, Electron, remote desktop);
+      UIA directed catches accessible controls OCR missed.
+    * ``text=`` -- OCR only.
+    * ``native=`` -- targeted UIA only (fast ``child_window`` FindFirst).
+    * ``region=`` -- an explicit ``(x, y, w, h)``.
 
-        {found, label, located_by, box, template_path, annotated_path, clicked}
+    ``window=`` (title substring) scopes Win32/UIA to that window even when
+    it is not focused; without it the foreground window is targeted.
 
-    On a miss, ``found`` is False, no template is written, but the annotated
-    full-screen PNG is still saved (no rectangle) so the failure is visible.
+    Returns ``{found, label, located_by, box, template_path,
+    annotated_path, clicked}``. On a miss ``found`` is False and only the
+    annotated full-screen PNG (no rectangle) is written.
     """
-    locators = [("text", text), ("native", native), ("region", region)]
+    locators = [
+        ("auto", auto),
+        ("text", text),
+        ("native", native),
+        ("region", region),
+    ]
     provided = [(name, val) for name, val in locators if val is not None]
     if len(provided) != 1:
         raise ValueError(
-            "capture_element requires exactly one of: text=, native=, region= "
-            f"(got {len(provided)})"
+            "capture_element requires exactly one of: auto=, text=, native=, "
+            f"region= (got {len(provided)})"
         )
     mode, value = provided[0]
 
@@ -108,8 +125,18 @@ def capture_element(
 
         bot = VisusBot()
 
+    # ---- Resolve the target window (for Win32 / UIA strategies) -------
+    hwnd = pid = None
+    if mode in ("auto", "native"):
+        from . import locators as _loc
+
+        win = _loc.get_window(window) if window else _loc.get_foreground_window()
+        if win:
+            hwnd, pid = win["hwnd"], win["pid"]
+
     # ---- Locate -------------------------------------------------------
     box = None
+    located_by = mode
     if mode == "region":
         box = _coerce_region(value)
     elif mode == "text":
@@ -119,7 +146,25 @@ def capture_element(
             confidence_threshold=confidence_threshold,
         )
     elif mode == "native":
-        box = bot._hybrid_native_lookup(value)
+        from . import locators as _loc
+
+        box = _loc.locate_uia_directed(
+            value, pid=pid, title_substring=window, timeout=native_timeout
+        )
+    elif mode == "auto":
+        from . import locators as _loc
+
+        box, method = _loc.locate_layered(
+            value,
+            bot=bot,
+            hwnd=hwnd,
+            pid=pid,
+            title_substring=window,
+            search_region=_coerce_region(search_region),
+            confidence_threshold=confidence_threshold,
+            uia_timeout=native_timeout,
+        )
+        located_by = method or "auto"
 
     # Normalise a located box to a plain (x, y, w, h) int tuple.
     if box is not None:
@@ -140,7 +185,7 @@ def capture_element(
         return {
             "found": False,
             "label": label,
-            "located_by": mode,
+            "located_by": located_by,
             "box": None,
             "template_path": None,
             "annotated_path": annotated_path,
@@ -165,7 +210,7 @@ def capture_element(
     return {
         "found": True,
         "label": label,
-        "located_by": mode,
+        "located_by": located_by,
         "box": {"x": x, "y": y, "width": w, "height": h},
         "template_path": template_path,
         "annotated_path": annotated_path,
