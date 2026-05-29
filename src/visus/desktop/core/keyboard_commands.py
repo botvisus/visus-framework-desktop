@@ -234,6 +234,64 @@ class KeyboardCommander:
             logger.error(error_msg)
             raise TaskExecutionError(error_msg) from e
 
+    _TOKEN_RE = None  # compiled lazily in type_with_tokens
+
+    def type_with_tokens(self, text: str, interval: float = 0.05) -> None:
+        """Type ``text``, expanding key tokens ANYWHERE, robust against drops.
+
+        Tokens (case-insensitive, recognized at any position): ``{enter}``,
+        ``{tab}``, ``{esc}`` / ``{escape}``, ``{backspace}``, ``{del}`` /
+        ``{delete}``, and ``{ctrl}a``. Literal text between tokens is entered
+        via the clipboard (paste) so no characters are dropped under load; if
+        the clipboard is unavailable it falls back to ``typewrite``.
+        """
+        import re
+        import time
+
+        if KeyboardCommander._TOKEN_RE is None:
+            KeyboardCommander._TOKEN_RE = re.compile(
+                r"(\{ctrl\}a|\{enter\}|\{tab\}|\{esc(?:ape)?\}|\{backspace\}|"
+                r"\{del(?:ete)?\})",
+                re.IGNORECASE,
+            )
+        presses = {
+            "{enter}": ("press", "enter"),
+            "{tab}": ("press", "tab"),
+            "{esc}": ("press", "esc"),
+            "{escape}": ("press", "esc"),
+            "{backspace}": ("press", "backspace"),
+            "{del}": ("press", "delete"),
+            "{delete}": ("press", "delete"),
+            "{ctrl}a": ("hotkey", ("ctrl", "a")),
+        }
+        for part in KeyboardCommander._TOKEN_RE.split(text):
+            if not part:
+                continue
+            action = presses.get(part.lower())
+            if action is None:
+                self._type_literal(part, interval)
+                continue
+            kind, arg = action
+            if kind == "press":
+                pyautogui.press(arg)
+            else:
+                pyautogui.hotkey(*arg)
+            time.sleep(0.03)
+
+    def _type_literal(self, text: str, interval: float = 0.05) -> None:
+        """Enter literal ``text`` via clipboard paste; fall back to typewrite."""
+        import time
+
+        from ..utils.clipboard import copy as _copy
+
+        try:
+            _copy(text)
+            pyautogui.hotkey("ctrl", "v")
+            time.sleep(0.05)
+        except Exception as exc:  # clipboard unavailable -> reliable-ish typing
+            logger.debug("Clipboard paste failed (%s); typing instead", exc)
+            pyautogui.typewrite(text, interval=max(interval, 0.02))
+
     def process_sendtext_command(self, full_text_command: str) -> None:
         """
         Processes special commands in sendtext.

@@ -13,40 +13,57 @@ from visus.desktop.core import locators as _loc
 
 
 class TestGetWindow:
-    def _fake_win32(self, hwnd=42, title="Sem título - Bloco de Notas",
-                    rect=(297, 112, 1725, 847), pid=18756, visible=True):
-        win32gui = MagicMock()
-        win32gui.IsWindowVisible = MagicMock(return_value=visible)
-        win32gui.GetWindowText = MagicMock(return_value=title)
-        win32gui.GetWindowRect = MagicMock(return_value=rect)
+    """``get_window`` / ``find_window_handle`` share the single enumeration in
+    ``core.window``, so the tests patch that one source of truth."""
 
-        def enum(cb, _):
-            cb(hwnd, None)
+    def _patch_windows(self, monkeypatch, windows, flags=None):
+        from visus.desktop.core import window as w
 
-        win32gui.EnumWindows = MagicMock(side_effect=enum)
-        win32process = MagicMock()
-        win32process.GetWindowThreadProcessId = MagicMock(return_value=(0, pid))
-        return win32gui, win32process
+        monkeypatch.setattr(w, "_enum_visible_windows", lambda: windows)
+        monkeypatch.setattr(
+            w,
+            "_window_flags",
+            lambda h: flags
+            or {
+                "minimized": False,
+                "maximized": False,
+                "foreground": True,
+                "rect": (297, 112, 1725, 847),
+            },
+        )
 
-    def test_resolves_window_rect_and_pid(self):
-        win32gui, win32process = self._fake_win32()
-        with patch.dict(sys.modules, {"win32gui": win32gui, "win32process": win32process}):
-            out = _loc.get_window("Bloco de Notas")
+    def test_resolves_window_rect_and_pid(self, monkeypatch):
+        self._patch_windows(
+            monkeypatch, [(42, "Sem título - Bloco de Notas", 18756)]
+        )
+        out = _loc.get_window("Bloco de Notas")
         assert out["pid"] == 18756
         assert out["hwnd"] == 42
         assert out["x"] == 297 and out["y"] == 112
         assert out["width"] == 1725 - 297
         assert out["height"] == 847 - 112
 
-    def test_returns_none_when_no_match(self):
-        win32gui, win32process = self._fake_win32(title="Some Other App")
-        with patch.dict(sys.modules, {"win32gui": win32gui, "win32process": win32process}):
-            assert _loc.get_window("Bloco de Notas") is None
+    def test_returns_none_when_no_match(self, monkeypatch):
+        self._patch_windows(monkeypatch, [(42, "Some Other App", 18756)])
+        assert _loc.get_window("Bloco de Notas") is None
 
-    def test_find_window_handle_returns_hwnd(self):
-        win32gui, _ = self._fake_win32(hwnd=99)
-        with patch.dict(sys.modules, {"win32gui": win32gui}):
-            assert _loc.find_window_handle("Bloco") == 99
+    def test_find_window_handle_returns_hwnd(self, monkeypatch):
+        self._patch_windows(monkeypatch, [(99, "Bloco de Notas", 1)])
+        assert _loc.find_window_handle("Bloco") == 99
+
+    def test_minimized_window_has_null_rect(self, monkeypatch):
+        self._patch_windows(
+            monkeypatch,
+            [(42, "Sem título - Bloco de Notas", 18756)],
+            flags={
+                "minimized": True,
+                "maximized": False,
+                "foreground": False,
+                "rect": (-32000, -32000, -31840, -31972),
+            },
+        )
+        out = _loc.get_window("Bloco de Notas")
+        assert out["hwnd"] == 42 and out["x"] is None
 
 
 # ---------------------------------------------------------------------------

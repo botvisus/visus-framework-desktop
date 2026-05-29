@@ -97,19 +97,24 @@ def _write_zip(zip_path: str | os.PathLike[str], event_lines: list[str]) -> None
     target.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(_EVENTS_FILE, "\n".join(event_lines))
+        seen: set[str] = set()
         for line in event_lines:
             try:
                 event = json.loads(line)
             except ValueError:
                 continue
-            shot = event.get("failure_screenshot")
-            if not shot or not os.path.exists(shot):
-                continue
-            entry = f"{_SCREENSHOTS_DIR}/{os.path.basename(shot)}"
-            try:
-                zf.write(shot, arcname=entry)
-            except Exception:  # pragma: no cover - defensive
-                continue
+            # Bundle both per-step screenshots and failure screenshots so the
+            # report can show every step, not just the failures.
+            for key in ("screenshot", "failure_screenshot"):
+                shot = event.get(key)
+                if not shot or shot in seen or not os.path.exists(shot):
+                    continue
+                seen.add(shot)
+                entry = f"{_SCREENSHOTS_DIR}/{os.path.basename(shot)}"
+                try:
+                    zf.write(shot, arcname=entry)
+                except Exception:  # pragma: no cover - defensive
+                    continue
 
 
 def _delegate_write_report(zip_path, html_path):

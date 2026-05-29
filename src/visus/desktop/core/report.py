@@ -253,6 +253,49 @@ footer.site .wordmark {
   letter-spacing: -0.3px;
   margin-bottom: 12px;
 }
+.run-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin: 48px 0 8px;
+  flex-wrap: wrap;
+}
+.run-header h3 {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 22px;
+  letter-spacing: -0.3px;
+  color: var(--ink);
+  margin: 0;
+}
+.run-header .run-sub { font-size: 13px; color: var(--muted); }
+.chip {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--surface-cream-strong);
+  color: var(--body);
+  margin-right: 8px;
+  vertical-align: middle;
+}
+article.task .body h3 code { font-family: var(--mono); font-size: 15px; }
+dl.kv {
+  margin: 8px 0 0;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 16px;
+  font-size: 13px;
+}
+dl.kv dt { color: var(--muted-soft); font-family: var(--mono); }
+dl.kv dd { margin: 0; color: var(--body); font-family: var(--mono); }
+.screenshot-card.step { background: var(--surface-cream-strong); }
+.screenshot-card.step .header { color: var(--muted); }
+.screenshot-card.step img { background: var(--canvas); }
 @media (max-width: 900px) {
   section.kpis { grid-template-columns: repeat(2, 1fr); }
   header.hero h1 { font-size: 44px; letter-spacing: -1px; }
@@ -303,27 +346,67 @@ def _kpis(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
             "total": 0,
             "success_rate_pct": 0,
             "total_duration_ms": 0,
-            "total_attempts": 0,
+            "failed": 0,
         }
     succeeded = sum(1 for e in events if e.get("success"))
     total_duration = sum(int(e.get("duration_ms") or 0) for e in events)
-    total_attempts = sum(int(e.get("attempts") or 0) for e in events)
     return {
         "total": total,
         "success_rate_pct": round(succeeded / total * 100),
         "total_duration_ms": total_duration,
-        "total_attempts": total_attempts,
+        "failed": total - succeeded,
     }
+
+
+def _group_runs(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Group events into runs (by ``run_id``), preserving first-seen order."""
+    runs: list[dict[str, Any]] = []
+    index: dict[str, dict[str, Any]] = {}
+    for e in events:
+        rid = str(e.get("run_id") or "n/a")
+        run = index.get(rid)
+        if run is None:
+            run = {"run_id": rid, "events": []}
+            index[rid] = run
+            runs.append(run)
+        run["events"].append(e)
+    for run in runs:
+        evs = run["events"]
+        run["ts"] = evs[0].get("timestamp", "")
+        run["ok"] = sum(1 for e in evs if e.get("success"))
+        run["total"] = len(evs)
+    return runs
 
 
 def _render_html(
     events: list[dict[str, Any]], screenshots: dict[str, bytes]
 ) -> str:
     kpis = _kpis(events)
-    run_id = events[0]["run_id"] if events else ""
+    runs = _group_runs(events)
     last_ts = events[-1]["timestamp"] if events else ""
+    run_label = f"{len(runs)} run{'s' if len(runs) != 1 else ''}"
 
-    task_rows = "\n".join(_render_task(e, screenshots) for e in events)
+    if runs:
+        sections = []
+        for run in runs:
+            tasks_html = "\n".join(
+                _render_task(e, screenshots, n + 1)
+                for n, e in enumerate(run["events"])
+            )
+            failed = run["total"] - run["ok"]
+            status = (
+                f'{run["ok"]}/{run["total"]} ok'
+                if not failed
+                else f'{run["ok"]}/{run["total"]} ok &middot; {failed} failed'
+            )
+            sections.append(
+                f'<div class="run-header"><h3>Run {escape(run["run_id"])}</h3>'
+                f'<span class="run-sub">{escape(str(run["ts"]))} &middot; {status}</span></div>'
+                f"{tasks_html}"
+            )
+        task_rows = "\n".join(sections)
+    else:
+        task_rows = ""
 
     return f"""<!doctype html>
 <html lang="en">
@@ -339,7 +422,7 @@ def _render_html(
     <p class="lede">A timeline of every task, with durations, attempts and failure
        screenshots embedded inline.</p>
     <div class="run-meta">
-      <span class="badge-pill">run {escape(run_id) or 'n/a'}</span>
+      <span class="badge-pill">{run_label}</span>
       <span class="badge-pill">{escape(last_ts)}</span>
       {('<span class="badge-coral">failures present</span>' if kpis['total'] and kpis['success_rate_pct'] < 100 else '')}
     </div>
@@ -360,8 +443,8 @@ def _render_html(
         <div class="value">{kpis['total_duration_ms']} ms</div>
       </div>
       <div class="kpi-card">
-        <div class="label">Total attempts</div>
-        <div class="value">{kpis['total_attempts']}</div>
+        <div class="label">Failures</div>
+        <div class="value">{kpis['failed']}</div>
       </div>
     </section>
 
@@ -382,28 +465,54 @@ def _render_html(
 """
 
 
-def _render_task(event: dict[str, Any], screenshots: dict[str, bytes]) -> str:
+def _render_task(
+    event: dict[str, Any], screenshots: dict[str, bytes], number: int
+) -> str:
     success = bool(event.get("success"))
     badge = (
         '<span class="badge-success">SUCCESS</span>'
         if success
         else '<span class="badge-failure">FAILED</span>'
     )
-    task_id = event.get("task_id", "?")
-    name = escape(str(event.get("task_name") or "(unnamed task)"))
-    duration = int(event.get("duration_ms") or 0)
-    attempts = int(event.get("attempts") or 0)
+    ttype = escape(str(event.get("type") or "task"))
+    target = event.get("target") or event.get("task_name") or "(unnamed)"
+    title = f'<span class="chip">{ttype}</span><code>{escape(str(target))}</code>'
+
     error = event.get("error")
     error_block = (
-        f'<pre class="error">{escape(str(error))}</pre>' if error else ""
+        f'<div class="kv"><dt>error</dt><dd></dd></div>'
+        f'<pre class="error">{escape(str(error))}</pre>'
+        if error
+        else ""
     )
-    shot_path = event.get("failure_screenshot")
-    shot_block = _render_screenshot(shot_path, screenshots) if shot_path else ""
+
+    # Detail rows that actually help debugging / telemetry.
+    rows: list[tuple[str, str]] = [
+        ("duration", f"{int(event.get('duration_ms') or 0)} ms"),
+        ("attempts", str(int(event.get("attempts") or 0))),
+    ]
+    if event.get("location") not in (None, "skip"):
+        rows.append(("location", str(event.get("location"))))
+    if event.get("region"):
+        rows.append(("region", str(event.get("region"))))
+    if event.get("timestamp"):
+        rows.append(("time", _short_time(str(event.get("timestamp")))))
+    kv = "".join(f"<dt>{escape(k)}</dt><dd>{escape(v)}</dd>" for k, v in rows)
+
+    # Prefer the per-step screenshot; fall back to the failure screenshot.
+    step_shot = event.get("screenshot")
+    fail_shot = event.get("failure_screenshot")
+    shot_block = ""
+    if step_shot:
+        shot_block = _render_screenshot(step_shot, screenshots, kind="step")
+    elif fail_shot:
+        shot_block = _render_screenshot(fail_shot, screenshots, kind="failure")
+
     return f"""<article class="task">
-        <div class="index">#{escape(str(int(task_id) + 1))}</div>
+        <div class="index">#{number}</div>
         <div class="body">
-          <h3>{name}</h3>
-          <div class="meta">{duration} ms &middot; {attempts} attempt(s)</div>
+          <h3>{title}</h3>
+          <dl class="kv">{kv}</dl>
           {error_block}
           {shot_block}
         </div>
@@ -411,15 +520,26 @@ def _render_task(event: dict[str, Any], screenshots: dict[str, bytes]) -> str:
       </article>"""
 
 
-def _render_screenshot(shot_path: str, screenshots: dict[str, bytes]) -> str:
+def _short_time(iso_ts: str) -> str:
+    """Return just HH:MM:SS from an ISO timestamp (fallback: the raw string)."""
+    if "T" in iso_ts and len(iso_ts) >= 19:
+        return iso_ts[11:19]
+    return iso_ts
+
+
+def _render_screenshot(
+    shot_path: str, screenshots: dict[str, bytes], kind: str = "failure"
+) -> str:
     basename = os.path.basename(shot_path)
     data = screenshots.get(basename)
     if data is None:
         return ""
     encoded = base64.b64encode(data).decode("ascii")
+    label = "Step result" if kind == "step" else "Failure screenshot"
+    cls = "screenshot-card step" if kind == "step" else "screenshot-card"
     return (
-        '<div class="screenshot-card">'
-        f'<div class="header">Failure screenshot &middot; {escape(basename)}</div>'
-        f'<img src="data:image/png;base64,{encoded}" alt="failure screenshot" />'
+        f'<div class="{cls}">'
+        f'<div class="header">{label} &middot; {escape(basename)}</div>'
+        f'<img src="data:image/png;base64,{encoded}" alt="{kind} screenshot" />'
         "</div>"
     )

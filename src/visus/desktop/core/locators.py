@@ -40,30 +40,19 @@ def find_window_handle(title_substring: str):
 
     Case-insensitive substring match. ``None`` if none match or win32 is
     unavailable (non-Windows). Does NOT require the window to be focused.
+
+    Delegates to the single window enumeration in
+    :mod:`visus.desktop.core.window` so ``find_window_handle`` / ``get_window``
+    and ``list_windows`` can never disagree about what is visible.
     """
     try:
-        import win32gui
-    except ImportError:
+        from .window import _collect_windows
+
+        matches = _collect_windows(title=title_substring)
+    except Exception as exc:  # non-Windows or win32 unavailable
+        logger.debug("window enumeration failed: %s", exc)
         return None
-
-    needle = (title_substring or "").lower()
-    matches: list = []
-
-    def _cb(hwnd, _extra):
-        if not win32gui.IsWindowVisible(hwnd):
-            return True
-        title = win32gui.GetWindowText(hwnd) or ""
-        if needle and needle in title.lower():
-            matches.append(hwnd)
-            return False
-        return True
-
-    try:
-        win32gui.EnumWindows(_cb, None)
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.debug("EnumWindows failed: %s", exc)
-        return None
-    return matches[0] if matches else None
+    return matches[0][0] if matches else None
 
 
 def _window_dict(hwnd) -> dict | None:
@@ -94,13 +83,31 @@ def _window_dict(hwnd) -> dict | None:
 def get_window(title_substring: str) -> dict | None:
     """Resolve a window by title to ``{title, pid, hwnd, x, y, width, height}``.
 
-    Returns ``None`` when no visible window matches. No focus required --
-    the rectangle is read from the OS even if the window is behind others.
+    Returns ``None`` when no visible window matches. No focus required.
+    Shares the SAME enumeration as ``list_windows`` (so the two never
+    disagree); ``x/y/width/height`` are ``None`` while the window is
+    minimized (its on-screen rect is meaningless then).
     """
-    hwnd = find_window_handle(title_substring)
-    if hwnd is None:
+    try:
+        from .window import list_windows
+
+        rows = list_windows(title=title_substring)
+    except Exception as exc:  # non-Windows or win32 unavailable
+        logger.debug("window enumeration failed: %s", exc)
         return None
-    return _window_dict(hwnd)
+    if not rows:
+        return None
+    win = rows[0]
+    rect = win.get("rect") or {}
+    return {
+        "title": win["title"],
+        "pid": win["pid"],
+        "hwnd": win["hwnd"],
+        "x": rect.get("x"),
+        "y": rect.get("y"),
+        "width": rect.get("width"),
+        "height": rect.get("height"),
+    }
 
 
 def get_foreground_window() -> dict | None:

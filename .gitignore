@@ -85,3 +85,7 @@ docs/
 
 # Demo annotated traces are full-screen desktop captures — keep private
 examples/**/elements/trace/
+
+# Demo run artifacts (session zips + HTML reports) embed full-screen step
+# screenshots of the local desktop — generated output, kept out of the repo.
+examples/**/artifacts/

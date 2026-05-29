@@ -1078,31 +1078,79 @@ def execute_tasks(tasks: list[dict], resume: bool = False) -> list[dict]:
     Each task is a dict. The action is chosen by an explicit ``type`` key, or
     inferred from a ``text`` / ``image`` key. Coordinates are never required.
 
-    TASK SHAPES (copy these):
-      * Click an IMAGE template (the PNG from ``capture_element`` /
-        ``save_screenshot``) -- finds it, then physically clicks its center::
-            {"image": "save.png", "region": [x, y, w, h], "confidence": 0.8}
-        ``region`` is optional but STRONGLY recommended: pass the target
-        window's rect (from ``ensure_window``) so the template cannot match a
-        look-alike on another window.
-      * Click on-screen TEXT (OCR)::
-            {"text": "Save", "region": [x, y, w, h], "char_type": "both"}
-      * Type into the focused field::  {"type": "type_text", "text": "hello"}
-      * Press a key / shortcut (token is CASE-SENSITIVE -- see
-        ``keyboard_command``; it is "Escape", "Enter", "Tab", "Ctrl+S", ...)::
-            {"type": "keyboard_command", "command": "Escape"}
-      * Click absolute coords (only when the user gave them)::
-            {"type": "click", "x": 100, "y": 200}
-      * Read text from a region (no click)::
-            {"type": "extract_text", "region": [x, y, w, h]}
-      * Image relative to an anchor::
-            {"type": "relative_image", "anchor_image": "a.png",
-             "target_image": "b.png"}
+    TASK TYPES (every field; the action is chosen by ``type`` or inferred
+    from a ``text`` / ``image`` key):
 
-    Per-task options: ``backtrack: true`` (on failure, re-run from an earlier
-    step), ``wait_until_found`` / ``wait_until_disappears`` (poll for it),
-    ``mouse_button: "right"``, ``confidence`` (image), ``char_type``
-    ("letters" | "numbers" | "both").
+      IMAGE -- find a template PNG (from ``capture_element`` /
+      ``save_screenshot``) and click its center::
+          {"image": "save.png", "region": [x,y,w,h], "confidence": 0.8,
+           "specific": true, "mouse_button": "left"}
+        ``confidence`` 0-1 (default 0.9); ``specific`` true = search only in
+        ``region`` (fast), false = whole screen allowing scale variation.
+
+      TEXT (OCR) -- find on-screen text and click it::
+          {"text": "Save", "region": [x,y,w,h], "char_type": "both",
+           "occurrence": 1, "sendtext": "admin"}
+        ``region`` is REQUIRED for OCR; ``char_type`` = letters|numbers|both;
+        ``occurrence`` = Nth match (1-based); ``sendtext`` = type this string
+        right after the click (great for filling a field you just clicked).
+
+      TYPE_TEXT -- type into the already-focused field::
+          {"type": "type_text", "text": "hello", "interval": 0.05}
+        Inline tokens expand: {ctrl}a, {tab}, {enter}, {escape}.
+
+      KEYBOARD_COMMAND -- press a key/chord (token CASE-SENSITIVE)::
+          {"type": "keyboard_command", "command": "Ctrl+S"}
+        Valid: Enter, Escape, Tab, Delete, F1..F12, Up/Down/Left/Right,
+        Ctrl+S, Ctrl+C, Ctrl+V, Ctrl+A, Ctrl+Z, Alt+F4, Alt+Tab, Shift+Tab.
+
+      CLICK -- absolute coordinates (ONLY when the user gave them)::
+          {"type": "click", "x": 100, "y": 200, "mouse_button": "left"}
+
+      EXTRACT_TEXT -- OCR a region, no click::
+          {"type": "extract_text", "region": [x,y,w,h], "char_type": "both",
+           "return_full_data": false}
+
+      RELATIVE_IMAGE -- find a target template NEAR a unique anchor, then
+      click the target::
+          {"type": "relative_image", "anchor_image": "cancel.png",
+           "target_image": "save.png", "max_distance": 180, "confidence": 0.8,
+           "specific": true, "target_region": [x,y,w,h]}
+        ``max_distance`` = max px between anchor and target (keep it small to
+        reject a same-text twin far away, e.g. a title vs a button);
+        ``target_region`` (with ``specific``: true) scopes the target search.
+
+    COMMON OPTIONS (on any task): ``mouse_button`` = left|right|double|move_to;
+    ``delay`` = seconds to wait after the action; ``region`` = [x,y,w,h] --
+    ALWAYS scope it to the target window so a match can't land elsewhere.
+
+    WAIT & RETRY OPTIONS (the robustness knobs — use where flaky):
+      * ``backtrack: true`` — if THIS task fails, jump back and re-run the
+        earlier step(s), then retry. For multi-step flows where a later step
+        only works if an earlier one really landed.
+      * ``wait_until_found: true`` — poll until the ``image``/``text`` target
+        APPEARS (up to ``wait_timeout`` s), THEN act on it. Use instead of
+        sleeping after a UI transition (e.g. wait for a dialog's button to
+        render before clicking it).
+      * ``wait_until_disappears: true`` — for a CLICK task: click first, then
+        wait until the target is GONE. The killer use: confirm a dialog
+        actually closed (e.g. click Save, then wait for the dialog to vanish).
+        The disappearance is checked against this task's own ``image``/``text``
+        + ``region``. A find-only task (no click) instead waits for it to
+        vanish before continuing.
+      * ``wait_timeout`` — seconds for the two waits above (default 30).
+
+    GOTCHAS:
+      * ``wait_until_found`` / ``wait_until_disappears`` work on ``image`` /
+        ``text`` tasks. A ``relative_image`` task is located-then-clicked with
+        no find-stage wait — use ``backtrack`` for its retries. To still wait
+        for something to disappear AFTER a relative click, add an explicit
+        ``image`` + ``region`` (+ ``wait_until_disappears``) to that task: the
+        post-click step checks those. (Anchor a disappearance on a UNIQUE
+        element — e.g. the "Cancelar" button — so it can't match a same-text
+        twin elsewhere.)
+      * Always scope ``region`` to the target window/area so a template can't
+        match an identical-looking element elsewhere on screen.
 
     Returns one result per task: ``{task_index, task_name, success, attempts,
     duration_ms, error, failure_screenshot}``. A failed step writes a

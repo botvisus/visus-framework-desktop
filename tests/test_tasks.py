@@ -111,9 +111,9 @@ class TestExecuteTasksDispatch:
         assert kwargs["y"] == 200
 
     def test_type_text_dispatch_via_executor_helper(self, bot):
-        """``_execute_type_text`` delegates to keyboard_commander.type_text and skips click."""
+        """``_execute_type_text`` delegates to the robust token typer, skips click."""
         with patch.object(
-            bot.executor.keyboard_commander, "type_text"
+            bot.executor.keyboard_commander, "type_with_tokens"
         ) as mock_type:
             outcome = bot.executor._execute_type_text(
                 {"type": "type_text", "text": "hello", "interval": 0.01}, 0
@@ -130,7 +130,7 @@ class TestExecuteTasksDispatch:
         intercepted by the OCR branch.
         """
         with patch.object(
-            bot.executor.keyboard_commander, "type_text"
+            bot.executor.keyboard_commander, "type_with_tokens"
         ) as mock_type:
             results = bot.execute_tasks(
                 [{"type": "type_text", "text": "hello", "interval": 0.01}]

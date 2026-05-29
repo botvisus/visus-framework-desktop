@@ -67,6 +67,9 @@ class TaskResult:
         # Excludes ``_perform_action`` (the click/typing happens after this
         # result is built). Zero for tasks created outside the executor.
         self.duration_ms: int = 0
+        # Per-step screenshot path (config['screenshot_steps']=True). Captured
+        # AFTER the action so it shows the result of the step. None otherwise.
+        self.step_screenshot: Optional[str] = None
 
 
 class TaskExecutor:
@@ -121,24 +124,120 @@ class TaskExecutor:
 
         self._setup_pyautogui()
 
-    def _emit_task_event(self, result: "TaskResult", duration_ms: int) -> None:
+    @staticmethod
+    def _task_type(task: Dict[str, Any]) -> str:
+        """Classify a task by its ``type`` key or inferred text/image key."""
+        explicit = task.get("type")
+        if explicit:
+            return str(explicit)
+        if "text" in task:
+            return "text"
+        if "image" in task:
+            return "image"
+        return "unknown"
+
+    def _task_target(self, task: Dict[str, Any]) -> str:
+        """A short human label of WHAT a task acted on (for logs/reports)."""
+        ttype = self._task_type(task)
+        if ttype == "type_text":
+            return str(task.get("text", ""))
+        if ttype == "keyboard_command":
+            return str(task.get("command", ""))
+        if ttype == "click":
+            return f"({task.get('x')}, {task.get('y')})"
+        if ttype == "relative_image":
+            anchor = os.path.basename(str(task.get("anchor_image", "")))
+            target = os.path.basename(str(task.get("target_image", "")))
+            return f"{target} near {anchor}"
+        if ttype == "image":
+            return os.path.basename(str(task.get("image", "")))
+        if ttype == "extract_text":
+            return f"region {task.get('region')}"
+        return str(task.get("text") or task.get("name") or "")
+
+    def _describe_miss(self, task: Dict[str, Any], attempts: int) -> str:
+        """Build a detailed 'why it failed' message for a not-found task."""
+        ttype = self._task_type(task)
+        target = self._task_target(task)
+        region = task.get("region") or task.get("target_region")
+        where = f" in region {list(region)}" if region else " on the full screen"
+        plural = "attempt" if attempts == 1 else "attempts"
+        if ttype == "image":
+            conf = task.get("confidence", self.default_confidence)
+            return (
+                f"Image '{target}' not found{where} at confidence {conf} "
+                f"after {attempts} {plural}"
+            )
+        if ttype == "text":
+            ctype = task.get("char_type", "both")
+            return (
+                f"OCR text '{target}' not found{where} (char_type={ctype}) "
+                f"after {attempts} {plural}"
+            )
+        if ttype == "relative_image":
+            dist = task.get("max_distance", 200)
+            return (
+                f"Relative target not found: {target} within {dist}px "
+                f"after {attempts} {plural}"
+            )
+        return f"Target not found: {ttype} '{target}' after {attempts} {plural}"
+
+    def _capture_step_screenshot(self, task_index: int) -> Optional[str]:
+        """Capture a screenshot for ANY step (config['screenshot_steps']).
+
+        Mirrors ``_save_failure_screenshot`` but is taken after a successful
+        action so the report can show every step, not just failures.
+        """
+        artifacts_dir = self.config.get("artifacts_dir", "./visus-artifacts")
+        run_id = self.current_run_id or uuid.uuid4().hex[:8]
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        filename = f"{run_id}__{task_index}__step__{timestamp}.png"
+        try:
+            os.makedirs(artifacts_dir, exist_ok=True)
+            path = os.path.abspath(os.path.join(artifacts_dir, filename))
+            capture_screen().save(path)
+            return path
+        except Exception as exc:  # pragma: no cover - logged for forensics
+            logger.warning("Failed to save step screenshot: %s", exc)
+            return None
+
+    def _emit_task_event(self, result: "TaskResult", task: Dict[str, Any]) -> None:
         """Emit a structured JSON event for ``result`` when ``log_format='json'``.
 
-        Writes to the dedicated ``visus.desktop.task_events`` logger so users
-        can route structured records independently of the human-readable
-        ``visus.desktop`` log. The text default produces no event here -- the
-        existing ``logger.info`` lines in ``execute_tasks`` remain the
-        human-facing surface.
+        Writes to the dedicated ``visus.desktop.task_events`` logger. The event
+        carries enough telemetry to debug a run without the source: the task
+        ``type`` / ``target`` / ``region`` searched, the ``location`` acted on,
+        ``attempts``, ``duration_ms``, a detailed ``error`` on failure, and the
+        per-step / failure ``screenshot`` paths.
         """
         if self.config.get("log_format", "text") != "json":
             return
+        region = task.get("region") or task.get("target_region")
+        loc = result.location
+        if loc == "skip":
+            loc = None
+
+        def _ints(seq):
+            # Coerce numpy int64 (from cv2 matches) to plain ints so the event
+            # is JSON-serializable.
+            try:
+                return [int(v) for v in seq]
+            except (TypeError, ValueError):
+                return seq
+
         event = {
             "run_id": self.current_run_id,
             "task_id": result.task_index,
             "task_name": result.task_name,
+            "type": self._task_type(task),
+            "target": self._task_target(task),
+            "region": _ints(region) if region else None,
             "success": result.success,
-            "duration_ms": duration_ms,
+            "attempts": result.attempts,
+            "duration_ms": result.duration_ms,
+            "location": _ints(loc) if isinstance(loc, (list, tuple)) else loc,
             "error": result.error,
+            "screenshot": result.step_screenshot,
             "failure_screenshot": result.failure_screenshot,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
@@ -431,6 +530,15 @@ class TaskExecutor:
                         )
                     i += 1
 
+            # Per-step screenshot (success path) + the structured event, both
+            # emitted AFTER the action so a step screenshot reflects its result.
+            # (Failed tasks already captured a failure_screenshot.)
+            if task_result.success and self.config.get("screenshot_steps"):
+                task_result.step_screenshot = self._capture_step_screenshot(
+                    task_result.task_index
+                )
+            self._emit_task_event(task_result, task)
+
         successful_tasks = sum(1 for r in results if r.success)
         logger.info(
             f"Execution complete: {successful_tasks}/{len(results)} tasks successful"
@@ -527,13 +635,18 @@ class TaskExecutor:
         if location:
             result = TaskResult(task_index, True, task_name, location)
         else:
+            # Synthesize a detailed "why" when the find loop ended without a
+            # specific exception (e.g. a plain not-found), so failures always
+            # explain WHERE and WHY, not just "failed".
+            if not last_error:
+                last_error = self._describe_miss(task, attempts)
             result = TaskResult(task_index, False, task_name, error=last_error)
             result.failure_screenshot = self._save_failure_screenshot(task_index)
 
         result.attempts = attempts
-        duration_ms = int((time.monotonic() - start_monotonic) * 1000)
-        result.duration_ms = duration_ms
-        self._emit_task_event(result, duration_ms)
+        result.duration_ms = int((time.monotonic() - start_monotonic) * 1000)
+        # NOTE: the structured event is emitted by the run loop AFTER the
+        # action runs (so a per-step screenshot reflects the step's result).
         if not result.success:
             self._invoke_error_sink(result)
         return result
@@ -1350,7 +1463,10 @@ class TaskExecutor:
         )
 
         try:
-            self.keyboard_commander.type_text(text, interval)
+            # Token-aware + clipboard-robust: expands {enter}/{tab}/{esc}/
+            # {backspace}/{del}/{ctrl}a anywhere in the string and pastes
+            # literal text so characters are never dropped under load.
+            self.keyboard_commander.type_with_tokens(text, interval)
             return "skip"  # Mark to skip the click
         except Exception as e:
             logger.error(f"Error typing text: {e}")

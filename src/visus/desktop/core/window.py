@@ -103,20 +103,62 @@ def _restore(hwnd) -> None:
 
 
 def _bring_to_front(hwnd) -> bool:
-    """Bring ``hwnd`` to the foreground, with a focus-stealing-guard fallback."""
+    """Force ``hwnd`` to the foreground, bypassing the focus-stealing lock.
+
+    Windows refuses ``SetForegroundWindow`` from a process that is not the
+    current foreground process (a background MCP server, a spawned script).
+    The reliable workaround is to ``AttachThreadInput`` to BOTH the current
+    foreground thread and the target window's thread for the duration of the
+    call -- then the OS treats us as part of the active input queue and the
+    activation succeeds. We always detach again, and fall back to a plain
+    Z-order raise if anything errors.
+    """
+    import ctypes
+
     import win32con
     import win32gui
 
     try:
         win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+        if int(win32gui.GetForegroundWindow() or 0) == int(hwnd):
+            return True
+
+        user32 = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        user32.GetWindowThreadProcessId.restype = ctypes.c_ulong
+        user32.GetWindowThreadProcessId.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        user32.AttachThreadInput.argtypes = [
+            ctypes.c_ulong,
+            ctypes.c_ulong,
+            ctypes.c_int,
+        ]
+        for fn in (user32.SetForegroundWindow, user32.BringWindowToTop):
+            fn.argtypes = [ctypes.c_void_p]
+
+        cur = kernel32.GetCurrentThreadId()
+        fg = win32gui.GetForegroundWindow()
+        fg_tid = user32.GetWindowThreadProcessId(fg, None) if fg else 0
+        tgt_tid = user32.GetWindowThreadProcessId(int(hwnd), None)
+
+        attached = []
+        for tid in {fg_tid, tgt_tid}:
+            if tid and tid != cur and user32.AttachThreadInput(cur, tid, True):
+                attached.append(tid)
         try:
-            win32gui.SetForegroundWindow(hwnd)
-        except Exception:
-            # Windows blocks SetForegroundWindow when the caller is not the
-            # foreground process; raising the Z-order is the best-effort fallback.
+            user32.BringWindowToTop(int(hwnd))
+            ok = bool(user32.SetForegroundWindow(int(hwnd)))
+        finally:
+            for tid in attached:
+                user32.AttachThreadInput(cur, tid, False)
+
+        if not ok:
             win32gui.BringWindowToTop(hwnd)
         return True
     except Exception:  # pragma: no cover - defensive
+        try:
+            win32gui.BringWindowToTop(hwnd)
+        except Exception:
+            pass
         return False
 
 

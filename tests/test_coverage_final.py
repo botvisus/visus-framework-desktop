@@ -358,7 +358,7 @@ class TestExecuteSingleTaskTypeDispatch:
 
     def test_type_text_task_returns_skip(self, executor):
         with patch.object(
-            executor.keyboard_commander, "type_text"
+            executor.keyboard_commander, "type_with_tokens"
         ):
             result = executor._execute_single_task(
                 {"type": "type_text", "text": "x", "interval": 0.01}, 0, 1
