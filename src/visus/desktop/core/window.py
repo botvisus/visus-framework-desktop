@@ -153,6 +153,11 @@ def _bring_to_front(hwnd) -> bool:
 
         if not ok:
             win32gui.BringWindowToTop(hwnd)
+        # Let the activation take effect before callers read GetForegroundWindow
+        # (otherwise ensure_window can report a stale foreground=False).
+        import time
+
+        time.sleep(0.06)
         return True
     except Exception:  # pragma: no cover - defensive
         try:
