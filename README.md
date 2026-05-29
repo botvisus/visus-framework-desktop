@@ -201,9 +201,6 @@ Optional extras:
 pip install "visus-desktop[native]"       # pywinauto (native/accessibility + native RPA, Windows)
 pip install "visus-desktop[mcp]"          # MCP server for AI agents (the visus-mcp command)
 pip install "visus-desktop[rapidocr]"     # ONNX OCR backend (no Tesseract install needed)
-pip install "visus-desktop[automation]"   # keyboard, MouseInfo, pandas
-pip install "visus-desktop[ai]"           # openai
-pip install "visus-desktop[web]"          # webdriver-manager
 ```
 
 The `visus` command-line tool (**Visus CLI Pro**) is installed with the core

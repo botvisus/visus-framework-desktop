@@ -20,13 +20,11 @@ REQUIRED_PACKAGES = {
     "Pillow": None,       # >= 10.0.0
 }
 
-# Optional dependencies
+# Optional dependencies (the real install extras)
 OPTIONAL_PACKAGES = {
-    "keyboard": "0.13.5",
-    "MouseInfo": "0.1.3",
-    "pandas": None,
-    "openai": None,
-    "webdriver-manager": None,
+    "pywinauto": None,  # [native] — native/accessibility automation (Windows)
+    "mcp": None,        # [mcp]    — the visus-mcp server
+    "rapidocr": None,   # [rapidocr] — ONNX OCR backend
 }
 
 def check_package(package_name, expected_version=None):
