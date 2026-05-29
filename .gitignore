@@ -69,3 +69,6 @@ docs/superpowers/
 
 # Failure artifacts emitted by execute_tasks (Phase 1 / O1)
 visus-artifacts/
+
+# Temp images written by RelativeImageDetector's scale loop
+temp_scaled_*.png
