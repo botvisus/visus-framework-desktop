@@ -88,6 +88,8 @@ def test_tool_registry_covers_each_capability(server):
         "maximize_window",
         "minimize_window",
         "close_window",
+        "ensure_window",
+        "list_windows",
         "execute_tasks",
         "extract_text_from_region",
         "start_recording",

@@ -68,6 +68,28 @@ for the few Windows‑only features).
 
 ## Features
 
+- **🎯 Fast window targeting** — `ensure_window(process="app.exe")` answers, in
+  milliseconds, "is the app open / minimized / where?" and brings it to the
+  front. Match by **process** (no title false‑positives). Always the first
+  step of a reliable automation. Plus `list_windows` / `get_window`.
+- **🧠 Smart cascade** — `smart_find` / `smart_click` try **native → image →
+  OCR → coordinates** in a single call (order configurable) and report which
+  technique won. The simplest robust way to "find/click this".
+- **📸 Coordinate‑free capture** — `capture_element(auto="Save", window=...)`
+  locates an element (Win32 menu → OCR → UIA), saves a **reusable PNG
+  template + an annotated screenshot**, and can click it — build an
+  image‑based flow without ever eyeballing coordinates.
+- **🌳 Native RPA (no pixels)** *(Windows)* — read the accessibility tree
+  (`native_dump_tree`) and act by control (`native_click`, `native_set_text`,
+  `native_get_text`, `native_get_state`, `native_wait`). Immune to
+  theme/DPI/resolution/language; degrades to OCR on non‑accessible UIs.
+- **🎬 Sessions & HTML reports** — record a run (`Session.start_recording`),
+  replay its events, and render a single‑file HTML report with timings and
+  failure screenshots.
+- **🤖 MCP server** — expose all 43 tools to AI agents (Claude Code/Desktop,
+  Cursor) via the `visus-mcp` command. See [Drive it from any MCP agent](#drive-it-from-any-mcp-agent).
+- **⌨️ Visus CLI Pro** — the `visus` command mirrors the whole surface in the
+  shell (`--json` everywhere, interactive `repl`). See [docs/cli.md](docs/cli.md).
 - **🔎 OCR text search & click** — find on‑screen text with Tesseract and click it, with character
   filtering (`letters` / `numbers` / `both`) and occurrence selection.
 - **🖼️ Image detection & click** — locate UI elements by template image, with adjustable confidence
@@ -176,11 +198,16 @@ pip install visus-desktop
 Optional extras:
 
 ```bash
-pip install "visus-desktop[native]"       # pywinauto (native/accessibility automation, Windows)
+pip install "visus-desktop[native]"       # pywinauto (native/accessibility + native RPA, Windows)
+pip install "visus-desktop[mcp]"          # MCP server for AI agents (the visus-mcp command)
+pip install "visus-desktop[rapidocr]"     # ONNX OCR backend (no Tesseract install needed)
 pip install "visus-desktop[automation]"   # keyboard, MouseInfo, pandas
 pip install "visus-desktop[ai]"           # openai
 pip install "visus-desktop[web]"          # webdriver-manager
 ```
+
+The `visus` command-line tool (**Visus CLI Pro**) is installed with the core
+package — no extra needed. The MCP server needs the `[mcp]` extra.
 
 On **Linux**, also install the system tools the cross‑platform features need:
 
@@ -219,11 +246,29 @@ if bot.find_text("Username", region=(100, 100, 500, 300), filter_type="letters")
 
 ### Drive it from any MCP agent
 
-`visus-desktop` ships a **Model Context Protocol** server. Install the extra and wire it into Claude Desktop / Code / Cursor — your agent can now call `find_text`, `click_image`, `take_screenshot`, `execute_tasks`, `start_recording`, `render_report` and 24 more tools directly.
+`visus-desktop` ships a **Model Context Protocol** server exposing **43 tools**. Install the extra and wire it into Claude Desktop / Code / Cursor — your agent can drive desktop apps end to end. The server also ships an `instructions` preamble and per‑tool docstrings that teach the agent *when and how* to use each tool, so it never has to read source.
 
 ```bash
 pip install 'visus-desktop[mcp]'
 ```
+
+**Tool groups:**
+
+| Group | Tools |
+|---|---|
+| Targeting | `ensure_window` ★, `list_windows`, `get_window` |
+| Find / click | `find_text`, `click_text`, `find_image`, `click_image`, `click_at`, `hybrid_find` |
+| Smart / capture | `smart_find`, `smart_click`, `capture_element` |
+| Native RPA | `native_dump_tree`, `native_click`, `native_set_text`, `native_get_text`, `native_get_state`, `native_wait` |
+| Keyboard | `type_text`, `keyboard_command` |
+| Screen | `take_screenshot`, `save_screenshot`, `get_monitors`, `wait_for_stable_screen` |
+| Files / clipboard | `wait_for_file`, `wait_for_file_stable`, `get_clipboard`, `copy_to_clipboard`, `extract_text_from_region` |
+| Process / window | `launch`, `find_process`, `kill_process`, `focus_window`, `maximize_window`, `minimize_window`, `close_window` |
+| Task lists | `execute_tasks` |
+| Sessions | `start_recording`, `stop_recording`, `replay_session`, `render_report` |
+| Diagnostics | `doctor`, `configure` |
+
+**Recommended agent flow:** `ensure_window(process=…)` → `native_dump_tree` (if accessible, act natively) **or** `capture_element(auto=…, click=True)` / `smart_click` → wrap in `start_recording` / `stop_recording` → `render_report`.
 
 ```jsonc
 // claude_desktop_config.json (or ~/.claude/settings.json for Claude Code)
@@ -235,6 +280,21 @@ pip install 'visus-desktop[mcp]'
 ```
 
 See [`docs/mcp.md`](docs/mcp.md) for the full tool list and [`skills/`](skills/) for ready-to-use playbooks (login forms, table scraping, captchas, downloads, file dialogs, record/replay).
+
+### Or drive it from the shell — Visus CLI Pro
+
+The `visus` command mirrors the automation surface in the terminal (great for
+scripting, cron, and CI). Every command takes `--json` for machine-readable
+output:
+
+```bash
+visus smart click --query "Login" --dry-run     # resolve target, no input
+visus native dump-tree --window "Notepad" --json # see the control tree
+visus capture save --auto "Salvar" --click       # coordinate-free capture+click
+visus repl                                        # interactive shell
+```
+
+See [`docs/cli.md`](docs/cli.md) for the full command reference.
 
 ---
 

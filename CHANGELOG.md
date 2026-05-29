@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Visus CLI Pro** — the `visus` terminal CLI was rebuilt in
+  [Click](https://click.palletsprojects.com/) as an agent-native interface
+  that mirrors the MCP surface in the shell. Every command takes `--json`
+  (human-readable by default, machine-readable on demand). Command groups:
+  * `visus smart find|click` — the cascade (native → image → OCR → coordinates),
+    with `--dry-run` to resolve a target without acting.
+  * `visus native dump-tree|click|set-text|get-text|get-state|wait` — no-pixel
+    RPA by directed selector.
+  * `visus capture <label> --auto|--text|--native|--region` — coordinate-free
+    element capture (saves template + annotated shot, optional `--click`).
+  * `visus screenshot <path>` — disk PNG (the `find_image` template format).
+  * `visus window focus|maximize|minimize|close|get` — window control
+    (`close` is gated by a confirmation / `--yes`).
+  * `visus process launch|find|kill` — process control (`kill` gated likewise).
+  * `visus clipboard get|set`, `visus configure <json|@file>`,
+    `visus doctor`, and the preserved `visus new|run|report`.
+  * `visus repl` — an interactive shell over the same command group.
+
+  Safety: action commands accept `--dry-run`; destructive `kill`/`close`
+  require confirmation (or `--yes`, mandatory in `--json` mode). The CLI is a
+  thin Click shell that reuses the already-tested library functions — no new
+  automation logic. Adds `click>=8.1.0` as a core dependency. See
+  [`docs/cli.md`](docs/cli.md).
 - **Smart cascade** (`visus.desktop.smart_find` / `smart_click` + 2 MCP
   tools): one call tries every targeting technique in a configurable
   order, default **native → image → OCR → coordinates**, and reports

@@ -1,430 +1,240 @@
 r"""
-Visus Desktop - Advanced GUI Automation with OCR
+Visus Desktop — Advanced GUI Automation (OCR + image + native control).
 
-An advanced Python library for graphical interface automation that combines
-optimized optical character recognition (OCR) with image detection
-to run automated tasks on desktop applications.
+A Python library to automate Windows desktop apps by four interchangeable
+techniques: native accessibility control (no pixels), template-image matching,
+OCR text matching, and absolute coordinates. Pick a technique, or let the
+smart cascade try them in order. Everything is also exposed as an MCP server
+(for AI agents) and a terminal CLI (`visus`).
 
-⚠️  IMPORTANT REQUIREMENT: TESSERACT OCR MUST BE INSTALLED! ⚠️
-
-📥 TESSERACT INSTALLATION:
+═══════════════════════════════════════════════════════════════════════════════
+⚠️  REQUIREMENT: TESSERACT OCR (only for the OCR features)
+═══════════════════════════════════════════════════════════════════════════════
     1. Download: https://github.com/UB-Mannheim/tesseract/wiki
     2. Install to: C:\\Program Files\\Tesseract-OCR\\
     3. Add it to the system PATH
-    4. Test: tesseract --version
-
-🚀 COMPLETE FEATURES - INDIVIDUAL METHODS AND LISTS 🚀
+    4. Test:  tesseract --version
+    (Not needed if you set config['ocr_backend']='rapidocr' or only use
+     native / image / coordinate targeting. Run `visus doctor` to check.)
 
 ═══════════════════════════════════════════════════════════════════════════════
+📦 INSTALLATION
+═══════════════════════════════════════════════════════════════════════════════
+    pip install visus-desktop                 # core
+    pip install "visus-desktop[native]"       # + pywinauto (native RPA, Win)
+    pip install "visus-desktop[mcp]"          # + MCP server (visus-mcp)
+    pip install "visus-desktop[rapidocr]"     # + ONNX OCR backend (no Tesseract)
 
-🔥 BACKTRACK BETWEEN INDIVIDUAL METHODS (NEW!):
-
-    >>> from visus.desktop import VisusBot
-    >>>
+═══════════════════════════════════════════════════════════════════════════════
+🚀 QUICKSTART
+═══════════════════════════════════════════════════════════════════════════════
+    >>> from visus.desktop import VisusBot, ensure_window
+    >>> ensure_window(process="notepad.exe")        # open/restore/focus first
     >>> bot = VisusBot()
-    >>>
-    >>> # OPTION 1: Auto-starts a session when backtrack=True
-    >>> success1 = bot.click_image('button1.png', backtrack=True)
-    >>> success2 = bot.click_text('Save', backtrack=True)  # If it fails, goes back to button1
-    >>> success3 = bot.click_text('Confirm', backtrack=True)  # If it fails, goes back to Save
-    >>>
-    >>> # OPTION 2: Manual session control
-    >>> bot.start_task_session()  # Starts a backtrack session
-    >>> bot.click_image('button1.png', backtrack=True)
-    >>> bot.click_text('agent', backtrack=True)
-    >>> bot.click_text('Claude Sonnet 4', backtrack=True)
-    >>> successful, total = bot.end_task_session()  # Ends and shows statistics
+    >>> bot.click_text("Login")                      # OCR-find text and click
+    >>> bot.type_text("admin")                        # type into focused field
+    >>> bot.click_image("save_button.png")           # template-match and click
 
 ═══════════════════════════════════════════════════════════════════════════════
-
-📋 TASK LIST EXECUTION (Original Method + NEW FEATURES):
-
-    >>> from visus.desktop import VisusBot, execute_tasks
-    >>>
-    >>> # Tasks with ALL features (including the NEW ones!)
-    >>> tasks = [
-    ...     # 1. Traditional image search
-    ...     {
-    ...         'image': 'button.png',
-    ...         'region': (100, 100, 200, 50),
-    ...         'confidence': 0.9,
-    ...         'specific': False,       # Allows scale variations
-    ...         'backtrack': True,       # Automatic retry
-    ...         'delay': 1,
-    ...         'mouse_button': 'left'   # 'left', 'right', 'double', 'move_to'
-    ...     },
-    ...     # 2. OCR text search
-    ...     {
-    ...         'text': 'Login',
-    ...         'region': (50, 50, 300, 100),
-    ...         'occurrence': 1,         # First occurrence
-    ...         'char_type': 'letters',  # Character filter
-    ...         'backtrack': True,       # Automatic retry
-    ...         'delay': 0.5,
-    ...         'sendtext': 'usuario123' # Types after clicking
-    ...     },
-    ...     # 3. NEW! Relative image search (anchor + target)
-    ...     {
-    ...         'type': 'relative_image',
-    ...         'anchor_image': 'warning_icon.png',    # Unique anchor image
-    ...         'target_image': 'ok_button.png',       # Nearby target image
-    ...         'max_distance': 200,                   # Maximum distance in pixels
-    ...         'confidence': 0.9,
-    ...         'target_region': (0, 0, 800, 600),     # Region to search for the target (optional)
-    ...         'specific': True,
-    ...         'backtrack': True,
-    ...         'delay': 1
-    ...     },
-    ...     # 4. NEW! Click on specific coordinates
-    ...     {
-    ...         'type': 'click',
-    ...         'x': 500,                              # X coordinate
-    ...         'y': 300,                              # Y coordinate
-    ...         'mouse_button': 'right',               # 'left', 'right', 'double', 'move_to'
-    ...         'delay': 0.5,
-    ...         'backtrack': False
-    ...     },
-    ...     # 5. NEW! Direct text typing
-    ...     {
-    ...         'type': 'type_text',
-    ...         'text': 'Hello World!',               # Text to type
-    ...         'interval': 0.05,                     # Interval between characters
-    ...         'delay': 1
-    ...     },
-    ...     # 6. NEW! Keyboard command
-    ...     {
-    ...         'type': 'keyboard_command',
-    ...         'command': 'Ctrl+S',                  # Command to run
-    ...         'delay': 1
-    ...     }
-    ... ]
-    >>>
-    >>> # Simple execution
-    >>> execute_tasks(tasks)
-    >>>
-    >>> # Advanced execution with control
-    >>> bot = VisusBot()
-    >>> results = bot.execute_tasks(tasks)
-
+🧱 THE API — every public name, by category
 ═══════════════════════════════════════════════════════════════════════════════
 
-🎯 INDIVIDUAL METHODS WITH ALL FEATURES:
+▶ MAIN CLASS
+    VisusBot(config=None)
+        The central automation object. Key methods:
+          .find_text(text, region=None, confidence_threshold=75, occurrence=1)
+          .click_text(text, region=None, mouse_button="left", sendtext=None,
+                      occurrence=1, backtrack=False)
+          .find_image(image_path, region=None, confidence=0.9)
+          .click_image(image_path, region=None, confidence=0.9,
+                       mouse_button="left", backtrack=False)
+          .click_at((x, y, w, h), mouse_button="left")
+          .type_text(text, interval=0.05)
+          .keyboard_command(command)          # "Enter", "Ctrl+S", ... (case-sensitive)
+          .extract_text_from_region(region, filter_type="both", ...)
+          .execute_tasks(tasks, resume=False)
+          .start_task_session() / .end_task_session()   # manual backtrack scope
+    BotVision   — backward-compatibility alias for VisusBot.
 
-📸 IMAGE SEARCH AND CLICK (FULL DETAILS):
+▶ TASK-LIST EXECUTION (run a whole flow, with retry/backtrack)
+    execute_tasks(tasks, resume=False)
+        tasks is a list of dicts. Shapes:
+          {"image": "btn.png", "region": (x,y,w,h), "confidence": 0.9,
+           "mouse_button": "left", "backtrack": True}
+          {"text": "Login", "region": (x,y,w,h), "char_type": "letters",
+           "sendtext": "user", "occurrence": 1}
+          {"type": "type_text", "text": "hello", "interval": 0.05}
+          {"type": "keyboard_command", "command": "Escape"}   # case-sensitive token
+          {"type": "click", "x": 500, "y": 300, "mouse_button": "right"}
+          {"type": "relative_image", "anchor_image": "icon.png",
+           "target_image": "ok.png", "max_distance": 200}
+          {"type": "extract_text", "region": (x,y,w,h)}
+        Any task: backtrack, wait_until_found, wait_until_disappears, delay.
+    click_images(...)        — legacy task-list helper (compatibility).
+    run_automation(...)      — legacy `__main__` entry helper (compatibility).
 
-    >>> bot = VisusBot()
-    >>>
-    >>> # Basic image search
-    >>> location = bot.find_image('button.png',
-    ...                          region=(100, 100, 300, 200),
-    ...                          confidence=0.9)
-    >>>
-    >>> # Click an image WITH ALL PARAMETERS:
-    >>> success = bot.click_image('element_1_2.png',
-    ...                          region=(3, 664, 41, 46),      # x, y, width, height
-    ...                          confidence=0.9,               # 0.0 to 1.0 (90% accuracy)
-    ...                          delay=1,                      # Pause 1 sec after clicking
-    ...                          mouse_button='left',          # 'left', 'right', 'double', 'move_to'
-    ...                          backtrack=True,               # Smart retry
-    ...                          specific=False,               # False = allows variations
-    ...                          max_attempts=3)               # Maximum 3 attempts
-    >>>
-    >>> # DETAILED PARAMETERS:
-    >>> # region:       Defines the search area (x, y, width, height)
-    >>> # confidence:   Detection accuracy (0.8=80%, 0.95=95%)
-    >>> # delay:        Pause in seconds after the action
-    >>> # mouse_button: Type of click to perform
-    >>> # backtrack:    If it fails, re-runs the previous task
-    >>> # specific:     True=searches in the region, False=searches the whole screen + variations
-    >>> # max_attempts: How many times to try before giving up
+▶ FIND / CLICK CONVENIENCE (one-shot, builds a temp bot internally)
+    find_text(text, region=None, confidence_threshold=75, occurrence=1) -> box|None
+    click_text(text, region=None, mouse_button="left", sendtext=None, ...) -> bool
+    find_image(image_path, region=None, confidence=0.9) -> box|None
+    click_image(image_path, region=None, confidence=0.9, ...) -> bool
+    click_at(x, y, mouse_button="left") -> bool      # absolute coords (last resort)
+    type_text(text) -> bool
 
-📝 OCR TEXT SEARCH AND CLICK (FULL DETAILS):
+▶ RELATIVE-IMAGE (find a target near a unique anchor)
+    find_relative_image(anchor_image, target_image, max_distance=200, ...) -> box|None
+    click_relative_image(anchor_image, target_image, ...) -> bool
 
-    >>> # Basic text search
-    >>> location = bot.find_text('Login',
-    ...                         region=(0, 0, 800, 600),
-    ...                         filter_type='letters',        # 'letters', 'numbers', 'both'
-    ...                         confidence_threshold=75.0,
-    ...                         occurrence=1)                 # Which occurrence
-    >>>
-    >>> # Click text WITH ALL PARAMETERS:
-    >>> success = bot.click_text('Claude Sonnet 4',
-    ...                         region=(1363, 965, 85, 23),   # x, y, width, height
-    ...                         filter_type='letters',        # Letters only (no numbers)
-    ...                         delay=1,                       # Pause 1 sec after clicking
-    ...                         mouse_button='left',           # Left click
-    ...                         occurrence=1,                  # First occurrence
-    ...                         backtrack=True,                # Smart retry
-    ...                         max_attempts=3,                # Maximum 3 attempts
-    ...                         sendtext=None)                 # Text to type afterwards
-    >>>
-    >>> # DETAILED PARAMETERS:
-    >>> # region:               Defines the search area on screen
-    >>> # filter_type:          'letters'=letters only, 'numbers'=numbers only, 'both'=both
-    >>> # delay:                Pause after the click
-    >>> # mouse_button:         Type of click ('left', 'right', 'double', 'move_to')
-    >>> # occurrence:           Which occurrence to click (1=first, 2=second, etc.)
-    >>> # backtrack:            Smart retry that re-runs previous tasks
-    >>> # max_attempts:         Number of attempts before giving up
-    >>> # sendtext:             Text to type after the click (None=does not type)
-    >>> # confidence_threshold: OCR accuracy (75.0=75%, 90.0=90%)
+▶ COORDINATES / KEYBOARD
+    click_coordinates(x, y, mouse_button="left") -> bool
+    type_text_standalone(text) -> bool
+    keyboard_command_standalone(command) -> bool   # e.g. "Ctrl+S", "Escape"
+    get_available_keyboard_commands() -> list[str]  # the valid, case-sensitive tokens
 
-🖱️ CLICKS AND ACTIONS (FULL DETAILS):
+▶ TEXT EXTRACTION (OCR a region, no click)
+    extract_text_from_region_standalone(region, filter_type="both",
+        return_full_data=False, confidence_threshold=50) -> list|dict
 
-    >>> # Click on specific coordinates WITH ALL PARAMETERS:
-    >>> bot.click_at((100, 200, 50, 30),              # x, y, width, height
-    ...              mouse_button='left',              # 'left', 'right', 'double', 'move_to'
-    ...              delay=1)                          # Pause after clicking
-    >>>
-    >>> # Type text WITH SPECIAL COMMANDS:
-    >>> bot.type_text('Hello World')                   # Plain text
-    >>> bot.type_text('{ctrl}a{del}New Text{enter}')   # Special commands
-    >>>
-    >>> # SUPPORTED SPECIAL COMMANDS:
-    >>> # {ctrl}a     = Ctrl+A (select all)
-    >>> # {del}       = Delete
-    >>> # {tab}       = Tab
-    >>> # {enter}     = Enter
-    >>> # Normal text = Typed via the clipboard for greater reliability
+▶ SMART CASCADE & COORDINATE-FREE CAPTURE (recommended for robustness)
+    smart_find(query=None, image=None, coordinates=None, window=None,
+        control_type=None, order=None, ...) -> {found, box, method, tried}
+    smart_click(...) -> {clicked, method, tried}
+        One call tries native → image → OCR → coordinates (configurable order)
+        and reports which won. The simplest robust "find/click this".
+    capture_element(label, auto=None, text=None, native=None, region=None,
+        window=None, click=False, elements_dir="./visus-elements")
+        -> {found, located_by, box, template_path, annotated_path, clicked}
+        Locate an element (Win32 menu → OCR → UIA), save a reusable PNG
+        template + an annotated screenshot, optionally click it. The
+        coordinate-free way to build a click-by-image flow step by step.
 
-🎯 RELATIVE IMAGES (NEW! - Search a Target near an Anchor):
+▶ NATIVE RPA (no pixels — accessibility tree; needs the [native] extra)
+    Import from visus.desktop.core.native_rpa:
+      native_dump_tree(window=None, pid=None, max_depth=3) -> [ {depth,
+          control_type, title, auto_id, rect} ]   # "see" the UI structure
+      native_click(window/pid, title=, control_type=, auto_id=, method="auto")
+      native_set_text(text, ...selector...) ; native_get_text(...) -> str|None
+      native_get_state(...) -> {exists,visible,enabled,checked,value,rect}
+      native_wait(..., state="ready", timeout=10)
+    Immune to theme/DPI/resolution/language; empty on non-accessible UIs
+    (Java Swing without Access Bridge) — fall back to OCR/image there.
 
-    >>> # Locates a target image near a specific anchor image
-    >>> location = bot.find_relative_image(
-    ...     anchor_image='menu_button.png',     # Anchor image (unique on screen)
-    ...     target_image='option.png',          # Target image (there may be several)
-    ...     max_distance=150,                   # Maximum distance in pixels
-    ...     confidence=0.9,                     # Detection confidence
-    ...     target_region=(0, 0, 800, 600)      # Region to search for the target (optional)
-    ... )
-    >>>
-    >>> # Click a relative image WITH ALL PARAMETERS:
-    >>> success = bot.click_relative_image(
-    ...     anchor_image='anchor.png',          # Reference anchor
-    ...     target_image='target.png',          # Target to click
-    ...     max_distance=200,                   # At most 200px from the anchor
-    ...     confidence=0.9,                     # 90% accuracy
-    ...     target_region=None,                 # None = searches the whole screen
-    ...     delay=1,                           # Pause after clicking
-    ...     mouse_button='left',               # Type of click
-    ...     backtrack=True,                    # Smart retry
-    ...     max_attempts=3                     # Maximum attempts
-    ... )
-    >>>
-    >>> # PRACTICAL USE: Useful when there are multiple identical options on screen
-    >>> # Example: Several "OK" images but you want the one near "Warning"
+▶ WINDOWS / PROCESSES  (fast win32; target the right app first)
+    ensure_window(title=None, process=None, show=True, foreground=True)
+        -> {found, running, hwnd, pid, title, minimized, maximized,
+            foreground, rect, shown, matches}
+        ★ CALL THIS FIRST. Is the app open / minimized / where? — and brings
+        it to the front. Prefer process= (avoids title false-positives).
+    list_windows(title=None, process=None) -> [ {hwnd,title,pid,minimized,...} ]
+    get_window(title_substring) -> {title,pid,hwnd,x,y,width,height}|None
+    focus_window / maximize_window / minimize_window / close_window(title) -> bool
+    launch(command, args=None) -> pid     ;  find_process(name) -> [Process]
+    is_process_running(name) -> bool      ;  kill_process(pid) -> bool
 
-⌨️ COMPLETE KEYBOARD COMMANDS (NEW! - Expanded List):
+▶ SCREEN / MONITORS
+    take_screenshot(region=None, monitor=None)   # PIL.Image
+    save_screenshot(path, region=None, monitor=None) -> {path,width,height}
+    capture_screen(region=None, monitor=None)    ;  get_display_size() -> (w,h)
+    get_monitors() -> [Monitor]   ;  Monitor(index,x,y,width,height,is_primary)
+    wait_for_stable_screen(region=None, stable_for=0.5, timeout=15) -> bool
 
-    >>> # Runs a specific keyboard command
-    >>> bot.keyboard_command('Ctrl+S')          # Save
-    >>> bot.keyboard_command('F7')              # Clear Block (Oracle Forms)
-    >>> bot.keyboard_command('Alt+Tab')         # Switch window
-    >>>
-    >>> # FULL LIST OF SUPPORTED COMMANDS:
-    >>> #
-    >>> # === SYSTEM COMMANDS (Oracle Forms, etc.) ===
-    >>> # F5, F6, F7, F8, F12 - Specific functions
-    >>> # Ctrl+S, Ctrl+E, Ctrl+F11 - Commit, Edit, Enter Query
-    >>> # Shift+F5, Shift+F6 - Duplicate Field/Record
-    >>> # Ctrl+Up, Ctrl+Down - Delete/Insert Record
-    >>> #
-    >>> # === GENERAL COMMANDS ===
-    >>> # Ctrl+C, Ctrl+V, Ctrl+X - Copy, Paste, Cut
-    >>> # Ctrl+A, Ctrl+Z, Ctrl+Y - Select All, Undo, Redo
-    >>> # Tab, Enter, Escape, Delete, Backspace
-    >>> # Arrow Up/Down/Left/Right, Home, End
-    >>> # Page Up, Page Down
-    >>> #
-    >>> # === BROWSER COMMANDS ===
-    >>> # Ctrl+T, Ctrl+W, Ctrl+R - New Tab, Close Tab, Refresh
-    >>> # Ctrl+Shift+T - Reopen Closed Tab
-    >>> #
-    >>> # === SYSTEM COMMANDS ===
-    >>> # Alt+Tab, Alt+F4 - Switch/Close Window
-    >>> # Windows+D, Windows+L - Desktop, Lock
-    >>> #
-    >>> # See the full list with: bot.get_available_keyboard_commands()
+▶ FILES / CLIPBOARD
+    wait_for_file(path, timeout=10) -> bool
+    wait_for_file_stable(path, timeout=30, stable_for=1.0) -> bool   # downloads
+    copy_to_clipboard(text) / paste() / get_clipboard() -> str
 
-📍 CLICK ON SPECIFIC COORDINATES (NEW!):
+▶ MOUSE (low-level gestures)
+    scroll(clicks)   drag(x1,y1,x2,y2)   triple_click(x,y)
+    move_random(...)   mouse_down(button)   mouse_up(button)
 
-    >>> # Direct click on coordinates (without searching for an image or text)
-    >>> success = bot.click_coordinates(x=100, y=200,
-    ...                                delay=1,
-    ...                                mouse_button='left',
-    ...                                backtrack=False)
-    >>>
-    >>> # Useful when you know exactly where to click
+▶ IMAGE MAP / MULTI-MATCH
+    ImageMap(mapping)            # named templates -> reuse by key
+    find_all(image, region=None) ;  find_multiple(images)
+
+▶ SESSIONS / REPORTS
+    Session.start_recording(zip)  # context manager around execute_tasks
+    Session.replay(zip) -> [events]            # reads events; does NOT re-run
+    Session.write_report(zip, html)            # styled HTML report
+
+▶ CORE CLASSES (advanced)
+    TaskExecutor, TaskResult, OCREngine, OCRResult, ImageProcessor,
+    VisualOverlay, RelativeImageDetector, KeyboardCommander, Backend
+
+▶ CONFIG / UTILITIES
+    BotVisionConfig(**opts)      get_default_config() -> dict
+    config keys: confidence_threshold, show_overlay, log_format ("text"|"json"),
+        screenshot_on_failure, artifacts_dir, ocr_backend ("tesseract"|"rapidocr"),
+        matcher ("cv2"|"pyscreeze"), screen_cache_ms, use_virtual_mouse, ...
+    retry(...)            # decorator: re-run a callable on transient failure
+    clean_text(s) / limpar_texto(s)      matches_filter(text, filter_type)
+    preprocess_image_for_ocr(img)        find_text_with_multiple_preprocessing(...)
+    show_overlay(region)                 locate_image_with_retry(image, ...)
+
+▶ EXCEPTIONS
+    BotVisionError (base), ImageNotFoundError, TextNotFoundError,
+    TaskExecutionError, ImageProcessingError, OCRProcessingError,
+    TesseractNotFoundError, InvalidRegionError, ConfigurationError,
+    NotSupportedOnThisOS, NativeError
 
 ═══════════════════════════════════════════════════════════════════════════════
+🤖 USING THE MCP SERVER (drive everything from an AI agent)
+═══════════════════════════════════════════════════════════════════════════════
+    Install + run:
+        pip install "visus-desktop[mcp]"
+        visus-mcp                       # stdio transport (what hosts expect)
 
-🔧 CONVENIENCE FUNCTIONS (Quick Use WITHOUT Instantiating the Class):
+    Wire into Claude Code / Desktop / Cursor (settings.json):
+        { "mcpServers": { "visus-desktop": { "command": "visus-mcp" } } }
+    Restart the host; 43 tools become available to the agent.
 
-    >>> from visus.desktop import (find_text, click_text, find_image, click_image,
-    ...                         find_relative_image, click_relative_image,     # NEW!
-    ...                         click_coordinates, type_text_standalone,        # NEW!
-    ...                         keyboard_command_standalone)                    # NEW!
-    >>>
-    >>> # Quick search (traditional standalone functions)
-    >>> location = find_text("Login", region=(100, 100, 500, 300))
-    >>> location = find_image("button.png", confidence=0.9)
-    >>>
-    >>> # Quick click (traditional standalone functions)
-    >>> success = click_text("Confirmar", region=(200, 200, 600, 400))
-    >>> success = click_image("button.png", backtrack=True)
-    >>>
-    >>> # NEW FEATURES - Standalone
-    >>> # Relative image
-    >>> location = find_relative_image("anchor.png", "target.png", max_distance=150)
-    >>> success = click_relative_image("anchor.png", "target.png", backtrack=True)
-    >>>
-    >>> # Specific coordinates
-    >>> success = click_coordinates(100, 200, delay=1, backtrack=True)
-    >>>
-    >>> # Typing and keyboard commands
-    >>> success = type_text_standalone("Hello World!", backtrack=True)
-    >>> success = keyboard_command_standalone("Ctrl+S", delay=1, backtrack=True)
-    >>>
-    >>> # List of available commands
-    >>> commands = get_available_keyboard_commands()
-    >>> print(f"Total commands: {len(commands)}")
-    >>>
-    >>> # NOTE: These functions create a temporary VisusBot instance
+    Tool groups (each tool's docstring tells the agent when/how to use it):
+      • Targeting:   ensure_window ★, list_windows, get_window
+      • Find/click:  find_text, click_text, find_image, click_image,
+                     click_at, hybrid_find
+      • Smart/capture: smart_find, smart_click, capture_element
+      • Native RPA:  native_dump_tree, native_click, native_set_text,
+                     native_get_text, native_get_state, native_wait
+      • Keyboard:    type_text, keyboard_command
+      • Screen:      take_screenshot, save_screenshot, get_monitors,
+                     wait_for_stable_screen
+      • Files/clip:  wait_for_file, wait_for_file_stable, get_clipboard,
+                     copy_to_clipboard, extract_text_from_region
+      • Process/win: launch, find_process, kill_process, focus_window,
+                     maximize_window, minimize_window, close_window
+      • Task lists:  execute_tasks
+      • Sessions:    start_recording, stop_recording, replay_session, render_report
+      • Diagnostics: doctor, configure
+
+    Recommended agent flow:
+        ensure_window(process="app.exe")           # open/focus, get rect
+        native_dump_tree(window="App")             # if accessible -> act natively
+        capture_element(label="save", auto="Save", window="App", click=True)
+        # or smart_click(query="Save", window="App")
+        start_recording("run.zip"); execute_tasks([...]); stop_recording()
+        render_report("run.zip", "run.html")
+    Full reference: docs/mcp.md. Agent playbooks: skills/.
 
 ═══════════════════════════════════════════════════════════════════════════════
-
-📋 SUPPORTED TASK TYPES (For use in lists):
-
-    🔸 TYPE: 'text' (Search and click text via OCR)
-       Fields: text, region, char_type, occurrence, confidence, backtrack, delay, sendtext
-
-    🔸 TYPE: 'image' (Search and click an image)
-       Fields: image, region, confidence, specific, backtrack, delay, mouse_button
-
-    🔸 TYPE: 'relative_image' (NEW! - Search a target near an anchor)
-       Fields: anchor_image, target_image, max_distance, confidence, target_region,
-               specific, backtrack, delay, mouse_button
-
-    🔸 TYPE: 'click' (NEW! - Click on specific coordinates)
-       Fields: x, y, mouse_button, delay, backtrack
-
-    🔸 TYPE: 'type_text' (NEW! - Direct text typing)
-       Fields: text, interval, delay
-
-    🔸 TYPE: 'keyboard_command' (NEW! - Keyboard command)
-       Fields: command, delay
-
-    🔸 TYPE: 'extract_text' (NEW! - Extract text from a specific region)
-       Fields: region, filter_type, confidence_threshold, return_full_data, backtrack, delay
+⌨️  TERMINAL CLI — "Visus CLI Pro" (the `visus` command)
+═══════════════════════════════════════════════════════════════════════════════
+    Mirrors the MCP surface in the shell (great for scripts/CI). --json on any:
+        visus window ensure --process notepad.exe
+        visus smart click --query "Login" --dry-run
+        visus capture save --auto "Save" --click
+        visus native dump-tree --window "Notepad" --json
+        visus repl                  # interactive shell
+        visus doctor                # environment health check
+    Full reference: docs/cli.md.
 
 ═══════════════════════════════════════════════════════════════════════════════
-
-⚙️ ADVANCED CONFIGURATION (Customize the Behavior):
-
-    >>> # FULL custom configuration:
-    >>> config = {
-    ...     "confidence_threshold": 80.0,        # Default OCR threshold (75-95)
-    ...     "tesseract_lang": "por",             # Language: 'eng', 'por', 'spa'
-    ...     "tesseract_path": r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-    ...     "tessdata_path": r"C:\Program Files\Tesseract-OCR\tessdata",
-    ...     "preprocessing_enabled": True,        # Improves OCR (recommended)
-    ...     "retry_attempts": 5,                 # Default attempts
-    ...     "default_delay": 1.5,               # Default delay between actions
-    ...     "show_overlay": False,               # Disables the red overlay globally
-    ...     "screenshot_delay": 0.1              # Delay for screen capture
-    ... }
-    >>>
-    >>> bot = VisusBot(config=config)
-    >>>
-    >>> # CONFIGURATION PARAMETERS EXPLAINED:
-    >>> # confidence_threshold: Minimum accuracy to recognize text
-    >>> # tesseract_lang:       Language for OCR ('eng'=English, 'por'=Portuguese)
-    >>> # tesseract_path:       Path to the Tesseract executable
-    >>> # tessdata_path:        Folder with language data
-    >>> # preprocessing_enabled: Improves the image before OCR
-    >>> # retry_attempts:       Default attempts when not specified
-    >>> # default_delay:        Default pause between actions
-    >>> # show_overlay:         Controls displaying the red marker before clicks
-
+💡 TIPS & TROUBLESHOOTING
 ═══════════════════════════════════════════════════════════════════════════════
-
-🌟 ADVANCED FEATURES (DETAILED EXPLANATION):
-
-✅ BACKTRACK: A smart retry system that, when a task fails,
-              re-runs the previous task and tries again. It works both
-              in task lists and between individual methods.
-
-✅ OCCURRENCE: Lets you choose which text occurrence to click on screen.
-               occurrence=1 = first occurrence found
-               occurrence=2 = second occurrence found, etc.
-
-✅ SPECIFIC: Controls where to search for images on screen.
-             specific=True  = searches only in the defined region (faster)
-             specific=False = searches the whole screen + allows scale variations
-                             (ignores the region, more flexible)
-
-✅ FILTER_TYPE/CHAR_TYPE: Filters characters during OCR.
-                          'letters' = letters only (A-Z, a-z)
-                          'numbers' = numbers only (0-9)
-                          'both'    = letters and numbers
-
-✅ SENDTEXT: Automatically types text after a successful click.
-             Supports special commands: {ctrl}a, {del}, {tab}, {enter}
-             Uses the clipboard for greater reliability.
-
-✅ CONFIDENCE: Controls accuracy for OCR and image detection.
-               0.7 = 70% (more permissive, may have false positives)
-               0.9 = 90% (stricter, fewer false positives)
-               0.95 = 95% (very strict, may miss valid elements)
-
-✅ DELAY: Customizable pauses between actions in seconds.
-          Useful for waiting for interfaces to load.
-          delay=0.5 = half a second, delay=2 = two seconds
-
-✅ SHOW_OVERLAY: Controls displaying the red marker before clicks.
-                 show_overlay=True  = shows the marker (default, useful for debugging)
-                 show_overlay=False = no marker (faster, for production)
-                 show_overlay=None  = uses the bot's global configuration
-
-✅ MOUSE_BUTTON: Full support for different click types.
-                 • "left" - Simple left click (default)
-                 • "right" - Right click (context menu)
-                 • "double" or "double left" - Double left click (open/run)
-                 • "move_to" - Just moves the mouse without clicking (hover)
-
-                 Usage examples:
-                 bot.click_image('file.png', mouse_button="double")  # Open file
-                 bot.click_text('Menu', mouse_button="right")       # Context menu
-                 bot.click_image('hover_btn.png', mouse_button="move_to")  # Hover only
-                 bot.click_relative_image('anchor.png', 'target.png', mouse_button="left")
-
-✅ REGION: Defines a specific screen area to search.
-           region=(x, y, width, height)
-           x, y = coordinates of the top-left corner
-           width, height = width and height of the area
-           Improves performance and avoids false positives.
-
-✅ MAX_ATTEMPTS: Controls how many attempts to make before giving up.
-                 max_attempts=1 = tries only once
-                 max_attempts=3 = tries up to 3 times (default)
-                 max_attempts=5 = tries up to 5 times (more persistent)
-
-🎯 USAGE TIPS:
-   • Use region whenever possible for better performance
-   • confidence between 0.8-0.9 is ideal for most cases
-   • specific=False searches the whole screen and allows scale variations
-   • specific=True searches only in the defined region (faster)
-   • backtrack=True is recommended for complex automations
-   • filter_type='letters' improves OCR when you are searching only for text
-   • an appropriate delay avoids issues with slow interfaces
-
-🚨 TROUBLESHOOTING:
-   • Element not found: Lower confidence or increase region
-   • Inaccurate OCR: Use preprocessing_enabled=True in the configuration
-   • Click in the wrong place: Check the region coordinates
-   • Backtrack not working: Make sure backtrack=True on all methods
-
-═══════════════════════════════════════════════════════════════════════════════
+    • Always ensure_window(process=) first; scope find/click with region=.
+    • backtrack=True for fragile multi-step flows; retry() for arbitrary calls.
+    • Element not found → lower confidence / widen region / re-capture template.
+    • Inaccurate OCR → narrow region, filter_type="letters", or try rapidocr.
+    • Wrong window clicked → match by process, not title; pass the window rect.
+    • Run `visus doctor` (or the doctor MCP tool) to diagnose the environment.
 """
 
 import logging
@@ -465,7 +275,14 @@ from .core.smart import smart_click, smart_find
 
 # Import the main classes
 from .core.task_executor import TaskExecutor, TaskResult
-from .core.window import close_window, focus_window, maximize_window, minimize_window
+from .core.window import (
+    close_window,
+    ensure_window,
+    focus_window,
+    list_windows,
+    maximize_window,
+    minimize_window,
+)
 from .exceptions import (
     BotVisionError,
     ConfigurationError,
@@ -3160,6 +2977,8 @@ __all__ = [
     "maximize_window",
     "minimize_window",
     "close_window",
+    "ensure_window",
+    "list_windows",
     "scroll",
     "drag",
     "triple_click",

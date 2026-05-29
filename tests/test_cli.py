@@ -1,10 +1,8 @@
-"""Tests for the ``visus`` CLI (Phase 5, D2).
+"""Tests for the ``visus`` CLI root + project commands (Visus CLI Pro).
 
-Subcommands covered:
-  * ``visus new <name>``    -- scaffold a new project directory.
-  * ``visus report <zip>``  -- render a session zip to HTML.
-  * ``visus doctor``        -- delegate to the existing diagnostic.
-  * ``visus run <script>``  -- execute a Python script in a subprocess.
+Covers the back-compatible programmatic ``main(argv)`` contract and the
+``new`` / ``run`` / ``report`` / ``doctor`` commands. Command groups for the
+automation surface live in the ``test_cli_*`` siblings.
 """
 
 from __future__ import annotations
@@ -13,9 +11,9 @@ import json
 import zipfile
 from unittest.mock import patch
 
-import pytest
+from click.testing import CliRunner
 
-from visus.desktop.cli import main
+from visus.desktop.cli import cli, main
 
 
 def _make_session_zip(path):
@@ -52,7 +50,6 @@ class TestNewSubcommand:
         target.mkdir()
         rc = main(["new", str(target)])
         assert rc != 0
-        # With --force the command proceeds.
         rc = main(["new", str(target), "--force"])
         assert rc == 0
         assert (target / "tasks.py").exists()
@@ -76,6 +73,20 @@ class TestDoctorSubcommand:
         assert rc == 0
         doctor.assert_called_once()
 
+    def test_doctor_propagates_failure_code(self):
+        with patch("visus.desktop.doctor.main", return_value=3):
+            rc = main(["doctor"])
+        assert rc == 3
+
+    def test_doctor_json_payload(self):
+        runner = CliRunner()
+        with patch("visus.desktop.doctor.main", return_value=0):
+            result = runner.invoke(cli, ["doctor", "--json"])
+        assert result.exit_code == 0
+        payload = json.loads(result.output)
+        assert payload["exit_code"] == 0
+        assert "output" in payload
+
 
 class TestRunSubcommand:
     def test_run_invokes_subprocess(self, tmp_path):
@@ -87,17 +98,32 @@ class TestRunSubcommand:
         cmd = call.call_args[0][0]
         assert cmd[-1] == str(script)
 
+    def test_run_propagates_script_exit_code(self, tmp_path):
+        script = tmp_path / "boom.py"
+        script.write_text("raise SystemExit(2)")
+        with patch("subprocess.call", return_value=2):
+            rc = main(["run", str(script)])
+        assert rc == 2
 
-class TestHelpAndUnknown:
-    def test_no_args_shows_help_and_exits_nonzero(self, capsys):
+
+class TestRootBehaviour:
+    def test_no_args_shows_help_and_exits_nonzero(self):
         rc = main([])
-        out = capsys.readouterr().out + capsys.readouterr().err
         assert rc != 0
-        # argparse may have printed usage; either way the command
-        # surface should mention the available subcommands.
-        assert "new" in out or "report" in out or "doctor" in out
 
     def test_unknown_subcommand_exits_nonzero(self):
-        with pytest.raises(SystemExit) as exc:
-            main(["xyz"])
-        assert exc.value.code != 0
+        rc = main(["definitely-not-a-command"])
+        assert rc != 0
+
+    def test_version_flag(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["--version"])
+        assert result.exit_code == 0
+        assert "Visus CLI Pro" in result.output
+
+    def test_help_lists_command_groups(self):
+        runner = CliRunner()
+        result = runner.invoke(cli, ["--help"])
+        assert result.exit_code == 0
+        for group in ("smart", "native", "capture", "window", "process"):
+            assert group in result.output

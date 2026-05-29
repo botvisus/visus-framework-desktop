@@ -51,6 +51,234 @@ def find_window(title_substring: str) -> int | None:
     return matches[0] if matches else None
 
 
+# ---------------------------------------------------------------------------
+# Fast window-state primitive (win32 + psutil only -- no UIA, no OCR)
+#
+# These thin helpers are the ONLY win32-touching surface; `ensure_window` /
+# `list_windows` orchestrate them and stay unit-testable by patching them.
+# ---------------------------------------------------------------------------
+
+
+def _enum_visible_windows() -> list:
+    """Return ``[(hwnd, title, pid)]`` for every visible top-level window."""
+    _require_windows()
+    import win32gui
+    import win32process
+
+    out: list = []
+
+    def _cb(hwnd: int, _extra: object) -> bool:
+        if win32gui.IsWindowVisible(hwnd):
+            title = win32gui.GetWindowText(hwnd) or ""
+            _, pid = win32process.GetWindowThreadProcessId(hwnd)
+            out.append((hwnd, title, int(pid)))
+        return True
+
+    win32gui.EnumWindows(_cb, None)
+    return out
+
+
+def _window_flags(hwnd) -> dict:
+    """Read live state for ``hwnd``: minimized / maximized / foreground / rect."""
+    import ctypes
+
+    import win32gui
+
+    # pywin32's win32gui lacks IsZoomed on some builds -- call user32 directly.
+    is_zoomed = ctypes.windll.user32.IsZoomed
+    return {
+        "minimized": bool(win32gui.IsIconic(hwnd)),
+        "maximized": bool(is_zoomed(int(hwnd))),
+        "foreground": bool(win32gui.GetForegroundWindow() == hwnd),
+        "rect": tuple(win32gui.GetWindowRect(hwnd)),
+    }
+
+
+def _restore(hwnd) -> None:
+    """Un-minimize ``hwnd`` to its previous (non-minimized) size/position."""
+    import win32con
+    import win32gui
+
+    win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+
+
+def _bring_to_front(hwnd) -> bool:
+    """Bring ``hwnd`` to the foreground, with a focus-stealing-guard fallback."""
+    import win32con
+    import win32gui
+
+    try:
+        win32gui.ShowWindow(hwnd, win32con.SW_SHOW)
+        try:
+            win32gui.SetForegroundWindow(hwnd)
+        except Exception:
+            # Windows blocks SetForegroundWindow when the caller is not the
+            # foreground process; raising the Z-order is the best-effort fallback.
+            win32gui.BringWindowToTop(hwnd)
+        return True
+    except Exception:  # pragma: no cover - defensive
+        return False
+
+
+def _process_name(pid) -> str:
+    """Return the process name for ``pid`` (cheap single lookup), or ''."""
+    import psutil
+
+    try:
+        return psutil.Process(int(pid)).name() or ""
+    except Exception:
+        return ""
+
+
+def _process_running(name: str) -> bool:
+    """Full process scan -- True if any process name contains ``name``.
+
+    Only used as a fallback when no matching *window* was found (e.g. an app
+    running without a top-level window), so the common path never pays for it.
+    """
+    import psutil
+
+    needle = (name or "").lower()
+    for proc in psutil.process_iter(["name"]):
+        try:
+            pname = proc.info.get("name") or ""
+            if needle and needle in pname.lower():
+                return True
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+    return False
+
+
+def _rect_dict(rect) -> dict:
+    left, top, right, bottom = rect
+    return {
+        "x": int(left),
+        "y": int(top),
+        "width": int(right - left),
+        "height": int(bottom - top),
+    }
+
+
+def _state_of(hwnd, title, pid) -> dict:
+    flags = _window_flags(hwnd)
+    return {
+        "hwnd": int(hwnd),
+        "title": title,
+        "pid": int(pid),
+        "minimized": flags["minimized"],
+        "maximized": flags["maximized"],
+        "foreground": flags["foreground"],
+        "rect": None if flags["minimized"] else _rect_dict(flags["rect"]),
+    }
+
+
+def _collect_windows(title=None, process=None) -> list:
+    """Filter visible windows by title substring and/or process name.
+
+    Process filtering resolves each candidate window's process name on demand
+    (cheap), so it never scans the whole process table.
+    """
+    needle_t = (title or "").lower()
+    needle_p = (process or "").lower()
+    out = []
+    for hwnd, wtitle, pid in _enum_visible_windows():
+        if title and needle_t not in wtitle.lower():
+            continue
+        if process and needle_p not in _process_name(pid).lower():
+            continue
+        out.append((hwnd, wtitle, pid))
+    return out
+
+
+def list_windows(title: str | None = None, process: str | None = None) -> list:
+    """List visible windows matching ``title`` (substring) and/or ``process``.
+
+    Each entry is ``{hwnd, title, pid, minimized, maximized, foreground, rect}``.
+    Fast (pure win32) and read-only -- nothing is focused or moved.
+    """
+    return [
+        _state_of(hwnd, wtitle, pid)
+        for hwnd, wtitle, pid in _collect_windows(title=title, process=process)
+    ]
+
+
+def ensure_window(
+    title: str | None = None,
+    process: str | None = None,
+    *,
+    show: bool = True,
+    foreground: bool = True,
+) -> dict:
+    """Quickly resolve a window's state and (optionally) bring it to the front.
+
+    Match by ``title`` (substring, case-insensitive), ``process`` (name
+    substring, e.g. ``"notepad.exe"``), or both. Matching by process avoids
+    title false-positives (e.g. ``"Notepad"`` matching an editor showing a
+    file named ``notepad_demo.py``).
+
+    With ``show=True`` a minimized window is restored; with ``foreground=True``
+    it is brought to the front. Returns a single dict::
+
+        {found, running, hwnd, pid, title, minimized, maximized,
+         foreground, rect, shown, matches}
+
+    ``running`` reflects the process check (``None`` when ``process`` was not
+    given). ``rect`` is ``None`` while the window stays minimized. ``shown`` is
+    True when this call restored and/or raised the window. ``matches`` is how
+    many windows matched (use it to detect ambiguity).
+
+    Pure win32 + psutil -- milliseconds, no UIA/OCR. Raises ``ValueError`` if
+    neither ``title`` nor ``process`` is given.
+    """
+    if not title and not process:
+        raise ValueError("ensure_window requires `title` and/or `process`.")
+
+    candidates = _collect_windows(title=title, process=process)
+    running = None
+    if process is not None:
+        running = True if candidates else _process_running(process)
+
+    if not candidates:
+        return {
+            "found": False,
+            "running": running,
+            "hwnd": None,
+            "pid": None,
+            "title": None,
+            "minimized": False,
+            "maximized": False,
+            "foreground": False,
+            "rect": None,
+            "shown": False,
+            "matches": 0,
+        }
+
+    hwnd, wtitle, pid = candidates[0]
+    initial = _window_flags(hwnd)
+    shown = False
+    if show:
+        if initial["minimized"]:
+            _restore(hwnd)
+            shown = True
+        if foreground and _bring_to_front(hwnd):
+            shown = True
+
+    final = _window_flags(hwnd)
+    return {
+        "found": True,
+        "running": running if process is not None else True,
+        "hwnd": int(hwnd),
+        "pid": int(pid),
+        "title": wtitle,
+        "minimized": final["minimized"],
+        "maximized": final["maximized"],
+        "foreground": final["foreground"],
+        "rect": None if final["minimized"] else _rect_dict(final["rect"]),
+        "shown": shown,
+        "matches": len(candidates),
+    }
+
+
 def _dispatch_or_raise(win_impl, linux_fn, *args):
     """Pick the OS backend; raise NotSupportedOnThisOS otherwise."""
     if sys.platform == "win32":
