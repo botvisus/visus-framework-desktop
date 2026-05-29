@@ -7,7 +7,6 @@ biggest blocks of __init__.py (VisusBot wrappers).
 
 from __future__ import annotations
 
-import json
 import zipfile
 from unittest.mock import MagicMock, patch
 

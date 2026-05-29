@@ -10,6 +10,7 @@ Test configuration and fixtures for the visus.desktop test suite.
 # Importing eagerly here resolves it once, cleanly, for the whole session.
 try:  # pragma: no cover - environment shim, not part of the tested code
     import cv2  # noqa: F401
+
     # Touch every lazy submodule cv2.typing references during partial
     # imports. Under pytest-cov with multiple --cov targets the lazy
     # resolution order can hit a half-initialized state.

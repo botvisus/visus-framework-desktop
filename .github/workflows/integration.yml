@@ -1,0 +1,100 @@
+name: Integration tests
+
+# Runs the ``tests/integration/`` suite against a real (or virtual)
+# display. Opt-in by design -- triggered on manual dispatch and on a
+# nightly cron, NOT on every push, because each run is slow and
+# touches real OS state.
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Nightly at 04:13 UTC -- offset off the hour so we don't pile up
+    # against every other project's "00:00" cron jobs.
+    - cron: "13 4 * * *"
+  pull_request:
+    # Trigger only when integration-relevant code or the suite itself
+    # changes -- avoids spending 5+ minutes on every doc-only PR.
+    paths:
+      - "tests/integration/**"
+      - "src/visus/desktop/core/screen.py"
+      - "src/visus/desktop/core/task_executor.py"
+      - "src/visus/desktop/core/overlay.py"
+      - "src/visus/desktop/core/process.py"
+      - "src/visus/desktop/core/window*.py"
+      - "src/visus/desktop/mcp_server.py"
+      - ".github/workflows/integration.yml"
+
+jobs:
+  integration:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        # Only run integration on a single representative Python version
+        # to keep wall-clock and runner minutes bounded.
+        python-version: ["3.12"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Linux system deps (Tesseract, X utils, Xvfb)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            tesseract-ocr \
+            scrot \
+            xclip \
+            xdotool \
+            wmctrl \
+            python3-tk \
+            xvfb
+
+      - name: Install Tesseract OCR (Windows)
+        if: runner.os == 'Windows'
+        run: choco install --no-progress -y tesseract
+
+      - name: Install package and dev deps
+        run: |
+          python -m pip install --upgrade pip
+          # The [native] extra carries pywinauto behind sys_platform=='win32',
+          # so this works unchanged on both OS matrices.
+          pip install -e ".[native,mcp]"
+          pip install pytest pyyaml
+
+      # VISUS_INTEGRATION_REAL_INPUT=1 unlocks the real-input tests
+      # (keystrokes / window-close / overlay). Safe here because the
+      # runner is a throwaway VM with no human session -- NEVER set this
+      # on a developer's working machine.
+      - name: Run integration suite (Linux, Xvfb)
+        if: runner.os == 'Linux'
+        env:
+          VISUS_INTEGRATION_REAL_INPUT: "1"
+        run: |
+          xvfb-run -a --server-args="-screen 0 1920x1080x24" \
+            pytest tests/integration --integration -v --tb=short
+
+      - name: Run integration suite (Windows, real display)
+        if: runner.os == 'Windows'
+        env:
+          VISUS_INTEGRATION_REAL_INPUT: "1"
+        run: pytest tests/integration --integration -v --tb=short
+
+      - name: Upload artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-artifacts-${{ matrix.os }}
+          path: |
+            visus-artifacts/
+            **/screenshots/
+          retention-days: 7
+          if-no-files-found: ignore

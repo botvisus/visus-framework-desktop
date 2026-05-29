@@ -11,7 +11,6 @@ __setattr__ branches), 352-375 (create_config_from_file branches).
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -191,7 +190,7 @@ class TestAttributeAccess:
         cfg = _cfg.BotVisionConfig.__new__(_cfg.BotVisionConfig)
         cfg.config = {}
         with pytest.raises(AttributeError, match="not found"):
-            cfg.not_a_real_setting
+            _ = cfg.not_a_real_setting  # noqa: B018 - triggers __getattr__
 
     def test_setattr_writes_to_config_when_key_known(self):
         cfg = _cfg.BotVisionConfig.__new__(_cfg.BotVisionConfig)

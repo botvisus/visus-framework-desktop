@@ -10,8 +10,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from visus.desktop.core.overlay import (
     VisualOverlay,
     show_multiple_overlays,
@@ -144,9 +142,7 @@ class TestShowMultiple:
         overlay = _make_overlay()
         with patch.object(
             overlay, "_create_multiple_overlays"
-        ) as create, patch(
-            "threading.Thread"
-        ) as Thread:
+        ), patch("threading.Thread") as Thread:
             overlay.show_multiple([(0, 0, 1, 1)])
         Thread.assert_called_once()
         # The .start() must have been issued on the constructed thread.

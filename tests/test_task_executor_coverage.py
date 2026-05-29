@@ -17,14 +17,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import visus.desktop as vd
 from tests import tesseract_available
 from visus.desktop.core.task_executor import (
     TaskExecutor,
     TaskResult,
     click_images,
-    execute_tasks as module_execute_tasks,
     summarize,
+)
+from visus.desktop.core.task_executor import (
+    execute_tasks as module_execute_tasks,
 )
 from visus.desktop.exceptions import (
     TaskExecutionError,
@@ -299,7 +300,7 @@ class TestProcessSendtext:
         press.assert_any_call("enter")
 
     def test_no_special_commands_just_pastes(self, executor):
-        with patch("pyautogui.hotkey") as hk, patch("pyperclip.copy") as cp, patch(
+        with patch("pyautogui.hotkey"), patch("pyperclip.copy") as cp, patch(
             "time.sleep"
         ):
             executor._process_sendtext("plain text")
