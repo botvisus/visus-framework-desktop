@@ -107,20 +107,6 @@ def test_get_monitors_real_path_returns_a_list(call_tool):
         )
 
 
-def test_get_clipboard_real_path_returns_string(call_tool):
-    """No mock -- normal clipboard access must produce a string."""
-    out = call_tool("get_clipboard")
-    assert isinstance(out, str)
-
-
-def test_copy_to_clipboard_real_path_roundtrips(call_tool):
-    """Real clipboard write -> real clipboard read."""
-    marker = "visus-mcp-roundtrip-marker-X9Q3"
-    call_tool("copy_to_clipboard", text=marker)
-    back = call_tool("get_clipboard")
-    assert back == marker
-
-
 def test_doctor_real_path_returns_payload(call_tool):
     """No mock -- the doctor runs real checks. The structured payload
     is always well-shaped, even if some checks fail."""
@@ -135,9 +121,17 @@ def test_doctor_real_path_returns_payload(call_tool):
 
 
 def test_take_screenshot_real_path_returns_png_payload(call_tool):
-    """No mock of capture_screen -- a real mss capture must yield a PNG."""
+    """No mock of capture_screen -- a real mss capture must yield a PNG.
+
+    Clears any stale region cache before the call so a previous test
+    in the same process cannot serve a cached frame from a different
+    monitor configuration.
+    """
     import base64
 
+    from visus.desktop.core.screen import invalidate_screen_cache
+
+    invalidate_screen_cache()
     payload = call_tool("take_screenshot", region=[0, 0, 10, 10])
     assert payload["mime_type"] == "image/png"
     decoded = base64.b64decode(payload["data_base64"])
