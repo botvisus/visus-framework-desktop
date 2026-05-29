@@ -38,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`left`, `middle`, `right`) before the exception propagates. Prevents
   stuck buttons after an interrupted `drag` / `mouse_down`.
 - **MCP server + Skills bundle**: new `visus-mcp` console script
-  exposes 30 tools (find/click/screenshot/keyboard/process/window/
+  exposes 31 tools (find/click/screenshot/keyboard/process/window/
   task-list/session/report/doctor/configure) via FastMCP for any
   MCP-aware agent (Claude Desktop, Claude Code, Cursor, custom
   clients). Install with `pip install 'visus-desktop[mcp]'`. The
@@ -47,6 +47,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   wait-for-download, solve-image-captcha, file-dialog-automation,
   record-and-replay) referenced by name in the host's settings.json.
   Full docs at `docs/mcp.md`.
+- **`save_screenshot` tool/helper**: `core.screen.save_screenshot` now
+  accepts `monitor=` (parity with `capture_screen`/`take_screenshot`)
+  and auto-creates parent directories. Exposed as the MCP
+  `save_screenshot(path, region?, monitor?)` tool — it writes a PNG to
+  disk (returns `{path, width, height}`), closing the gap where
+  `find_image`/`click_image` need a disk template but the MCP surface
+  previously only offered base64 `take_screenshot`. The full
+  capture → find_image → click_image flow now lives entirely inside MCP.
 - **Pluggable OCR backend** (Phase 3, E5 — early): set
   `config['ocr_backend'] = 'rapidocr'` to swap Tesseract for the
   ONNX-runtime-based PP-OCR pipeline. Default stays `'tesseract'` so no

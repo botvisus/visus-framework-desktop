@@ -64,7 +64,9 @@ def test_save_screenshot_writes_file_and_returns_path(monkeypatch, tmp_path):
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write("fake-image")
 
-    monkeypatch.setattr(screen, "capture_screen", lambda region=None: FakeImage())
+    monkeypatch.setattr(
+        screen, "capture_screen", lambda region=None, monitor=None: FakeImage()
+    )
 
     target = os.path.join(str(tmp_path), "shot.png")
     returned = screen.save_screenshot(target)

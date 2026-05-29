@@ -72,3 +72,7 @@ visus-artifacts/
 
 # Temp images written by RelativeImageDetector's scale loop
 temp_scaled_*.png
+
+# Live MCP demo trace screenshots (session-local)
+mcp_automation_trace/
+examples/automation_trace/

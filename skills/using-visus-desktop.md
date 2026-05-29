@@ -6,7 +6,7 @@ when_to_use: Activate at the start of any visus-desktop automation task to groun
 
 # Using Visus Desktop
 
-You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **30 tools** that cover desktop GUI automation, OCR, image matching, process / window management, clipboard, file waits, session record/replay, and HTML reporting.
+You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **31 tools** that cover desktop GUI automation, OCR, image matching, process / window management, clipboard, file waits, session record/replay, and HTML reporting.
 
 ## What this MCP gives you
 
@@ -14,7 +14,7 @@ You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **30 t
 |---|---|
 | **Find / click** | `find_text`, `click_text`, `find_image`, `click_image`, `click_at`, `hybrid_find` |
 | **Keyboard** | `type_text`, `keyboard_command` |
-| **Screen / monitors** | `take_screenshot`, `get_monitors`, `wait_for_stable_screen` |
+| **Screen / monitors** | `take_screenshot` (base64), `save_screenshot` (to disk — for find_image templates), `get_monitors`, `wait_for_stable_screen` |
 | **Files / clipboard** | `wait_for_file`, `wait_for_file_stable`, `get_clipboard`, `copy_to_clipboard`, `extract_text_from_region` *(use `return_full_data=true` for boxes + scores)* |
 | **Process / window** | `launch`, `find_process`, `kill_process`, `focus_window`, `maximize_window`, `minimize_window`, `close_window` |
 | **Task lists** | `execute_tasks` |

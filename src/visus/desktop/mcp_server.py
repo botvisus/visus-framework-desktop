@@ -270,6 +270,39 @@ def take_screenshot(
 
 
 @mcp.tool()
+def save_screenshot(
+    path: str,
+    region: list[int] | None = None,
+    monitor: int | None = None,
+) -> dict:
+    """Capture the screen and save it to ``path`` on disk as a PNG.
+
+    Unlike ``take_screenshot`` (which returns base64), this writes a real
+    file -- exactly what ``find_image`` / ``click_image`` need as a
+    template. Parent directories are created automatically. Returns
+    ``{path, width, height}`` with ``path`` resolved to an absolute path.
+
+    Pass ``region=[x, y, w, h]`` to crop, or ``monitor=N`` (1-based) to
+    target a specific physical monitor.
+
+    Typical capture-then-locate flow, fully inside MCP::
+
+        save_screenshot(path="btn.png", region=[740, 589, 78, 30])
+        find_image(image_path="btn.png")
+        click_image(image_path="btn.png")
+    """
+    from .core.screen import save_screenshot as _save
+
+    written = _save(path, region=_coerce_region(region), monitor=monitor)
+    abspath = os.path.abspath(written)
+    from PIL import Image
+
+    with Image.open(abspath) as img:
+        width, height = img.size
+    return {"path": abspath, "width": int(width), "height": int(height)}
+
+
+@mcp.tool()
 def get_monitors() -> list[dict]:
     """List the connected physical monitors."""
     from .core.screen import get_monitors as _get_monitors
@@ -603,7 +636,8 @@ for _name, _obj in list(globals().items()):
         and _name in {
             "configure", "find_text", "click_text", "find_image", "click_image",
             "click_at", "hybrid_find", "type_text", "keyboard_command",
-            "take_screenshot", "get_monitors", "wait_for_stable_screen",
+            "take_screenshot", "save_screenshot", "get_monitors",
+            "wait_for_stable_screen",
             "wait_for_file", "wait_for_file_stable", "get_clipboard",
             "copy_to_clipboard", "extract_text_from_region", "launch",
             "find_process", "kill_process", "focus_window", "maximize_window",

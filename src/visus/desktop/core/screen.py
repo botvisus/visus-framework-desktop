@@ -289,9 +289,22 @@ def capture_screen(
         return pyautogui.screenshot(region=region)
 
 
-def save_screenshot(path: str, region: tuple[int, int, int, int] | None = None) -> str:
-    """Capture a screenshot and save it to ``path``; return ``path``."""
-    image = capture_screen(region=region)
+def save_screenshot(
+    path: str,
+    region: tuple[int, int, int, int] | None = None,
+    monitor: int | None = None,
+) -> str:
+    """Capture a screenshot and save it to ``path``; return ``path``.
+
+    Mirrors :func:`capture_screen` -- pass ``region=(x, y, w, h)`` to crop
+    or ``monitor=N`` (1-based) to target a specific physical monitor.
+    Parent directories are created if missing so callers don't have to
+    pre-make the output folder.
+    """
+    parent = os.path.dirname(os.path.abspath(path))
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    image = capture_screen(region=region, monitor=monitor)
     image.save(path)
     return path
 

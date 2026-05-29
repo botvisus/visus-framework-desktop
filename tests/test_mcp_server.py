@@ -64,6 +64,7 @@ def test_tool_registry_covers_each_capability(server):
         "type_text",
         "keyboard_command",
         "take_screenshot",
+        "save_screenshot",
         "get_monitors",
         "wait_for_stable_screen",
         "wait_for_file",
