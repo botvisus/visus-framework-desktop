@@ -55,6 +55,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `find_image`/`click_image` need a disk template but the MCP surface
   previously only offered base64 `take_screenshot`. The full
   capture → find_image → click_image flow now lives entirely inside MCP.
+- **`capture_element`** (`visus.desktop.capture_element` + MCP tool):
+  coordinate-free element capture. Locate a UI element by exactly one of
+  `text=` (OCR), `native=` (UIA), or `region=`, then save a tight
+  reusable template to `<elements_dir>/<label>.png`, save an annotated
+  full-screen PNG (rectangle around the match) to
+  `<elements_dir>/trace/`, and optionally `click=True` the center. Lets
+  an agent build a robust click-by-image flow step-by-step (e.g.
+  `text="Arquivo"` → `text="Salvar como"`) without guessing
+  coordinates. On a miss returns `{"found": false}` with the annotated
+  screenshot for diagnosis. MCP surface is now **32 tools**.
 - **Pluggable OCR backend** (Phase 3, E5 — early): set
   `config['ocr_backend'] = 'rapidocr'` to swap Tesseract for the
   ONNX-runtime-based PP-OCR pipeline. Default stays `'tesseract'` so no

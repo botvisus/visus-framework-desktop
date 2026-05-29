@@ -303,6 +303,62 @@ def save_screenshot(
 
 
 @mcp.tool()
+def capture_element(
+    label: str,
+    text: str | None = None,
+    native: str | None = None,
+    region: list[int] | None = None,
+    search_region: list[int] | None = None,
+    click: bool = False,
+    mouse_button: str = "left",
+    padding: int = 0,
+    confidence_threshold: float = 75.0,
+    elements_dir: str = "./visus-elements",
+) -> dict:
+    """Locate a UI element, save a reusable template + annotated shot, click.
+
+    The coordinate-free way to build a click-by-image flow. Provide
+    EXACTLY ONE locator:
+      * ``text="Arquivo"``   -- locate by on-screen text (OCR). Best for
+        labelled menus/buttons. Optionally narrow with ``search_region``.
+      * ``native="SaveBtn"`` -- locate by the foreground app's UIA tree
+        (title / automation_id / control_type substring).
+      * ``region=[x,y,w,h]`` -- you already know the box.
+
+    Saves a tight template to ``<elements_dir>/<label>.png`` (reuse it
+    later with ``find_image`` / ``click_image``) and an annotated
+    full-screen PNG with a rectangle around the match to
+    ``<elements_dir>/trace/<label>_annotated.png`` so you can verify what
+    was located. With ``click=True`` it clicks the element's center.
+
+    Returns ``{found, label, located_by, box, template_path,
+    annotated_path, clicked}``. On a miss ``found`` is False and only the
+    annotated screenshot (no rectangle) is written.
+
+    Example -- Notepad save-as, no coordinate guessing::
+
+        capture_element(label="arquivo",     text="Arquivo",     click=True)
+        capture_element(label="salvar_como", text="Salvar como", click=True)
+        capture_element(label="btn_salvar",  text="Salvar",      click=True)
+    """
+    from .core import elements as _elements
+
+    return _elements.capture_element(
+        label,
+        text=text,
+        native=native,
+        region=_coerce_region(region),
+        search_region=_coerce_region(search_region),
+        click=click,
+        mouse_button=mouse_button,
+        padding=padding,
+        confidence_threshold=confidence_threshold,
+        elements_dir=elements_dir,
+        bot=get_bot(),
+    )
+
+
+@mcp.tool()
 def get_monitors() -> list[dict]:
     """List the connected physical monitors."""
     from .core.screen import get_monitors as _get_monitors
@@ -636,8 +692,8 @@ for _name, _obj in list(globals().items()):
         and _name in {
             "configure", "find_text", "click_text", "find_image", "click_image",
             "click_at", "hybrid_find", "type_text", "keyboard_command",
-            "take_screenshot", "save_screenshot", "get_monitors",
-            "wait_for_stable_screen",
+            "take_screenshot", "save_screenshot", "capture_element",
+            "get_monitors", "wait_for_stable_screen",
             "wait_for_file", "wait_for_file_stable", "get_clipboard",
             "copy_to_clipboard", "extract_text_from_region", "launch",
             "find_process", "kill_process", "focus_window", "maximize_window",

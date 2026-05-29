@@ -431,6 +431,7 @@ import logging
 import time
 
 from .core.capabilities import CapabilitiesMixin
+from .core.elements import capture_element
 from .core.image_map import ImageMap
 from .core.image_processing import ImageProcessor, preprocess_image_for_ocr
 from .core.keyboard_commands import KeyboardCommander  # NEW FEATURE
@@ -3090,6 +3091,7 @@ __all__ = [
     "get_monitors",
     "Monitor",
     "wait_for_stable_screen",
+    "capture_element",
     "launch",
     "find_process",
     "is_process_running",

@@ -53,7 +53,7 @@ Restart the host. The 30 `visus-desktop` tools (see below) become discoverable b
 
 ## Tool surface
 
-The server registers **31 tools**, grouped by capability. Every tool's docstring is its MCP description (the agent reads it before deciding when to call). Each tool's type hints become the JSON schema the agent populates.
+The server registers **32 tools**, grouped by capability. Every tool's docstring is its MCP description (the agent reads it before deciding when to call). Each tool's type hints become the JSON schema the agent populates.
 
 ### Find / click
 * `find_text(text, region?, confidence_threshold?, occurrence?)` → `{x, y, width, height} | null`
@@ -70,6 +70,7 @@ The server registers **31 tools**, grouped by capability. Every tool's docstring
 ### Screen / monitors / waits
 * `take_screenshot(region?, monitor?)` → `{mime_type, data_base64, width, height}` *(base64 PNG inline)*
 * `save_screenshot(path, region?, monitor?)` → `{path, width, height}` *(writes a PNG to disk — the template format `find_image`/`click_image` need; parent dirs auto-created)*
+* `capture_element(label, text?|native?|region?, search_region?, click?, mouse_button?, padding?, confidence_threshold?, elements_dir?)` → `{found, label, located_by, box, template_path, annotated_path, clicked}` *(coordinate-free: locate by OCR text / UIA native / explicit region → save a reusable template + an annotated full-screen → optionally click. The recommended way to build a click-by-image flow.)*
 * `get_monitors()` → `[{index, x, y, width, height, is_primary}]`
 * `wait_for_stable_screen(region?, stable_for?, timeout?, poll_interval?)` → `bool`
 
