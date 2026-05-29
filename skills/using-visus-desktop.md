@@ -6,7 +6,7 @@ when_to_use: Activate at the start of any visus-desktop automation task to groun
 
 # Using Visus Desktop
 
-You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **39 tools** that cover desktop GUI automation, OCR, image matching, native (Win32/UIA) targeting, **no-pixel native RPA** (operate controls directly via the accessibility tree), process / window management, clipboard, file waits, session record/replay, and HTML reporting.
+You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **41 tools** that cover desktop GUI automation, OCR, image matching, native (Win32/UIA) targeting, **no-pixel native RPA**, a **smart cascade** (`smart_click`/`smart_find` — try native → image → OCR → coordinates, configurable order), process / window management, clipboard, file waits, session record/replay, and HTML reporting.
 
 ## What this MCP gives you
 
@@ -17,6 +17,7 @@ You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **39 t
 | **Screen / monitors** | `take_screenshot` (base64), `save_screenshot` (to disk — for find_image templates), `capture_element` (locate-by-text/native/region → save template + annotated → optional click), `get_monitors`, `wait_for_stable_screen` |
 | **Files / clipboard** | `wait_for_file`, `wait_for_file_stable`, `get_clipboard`, `copy_to_clipboard`, `extract_text_from_region` *(use `return_full_data=true` for boxes + scores)* |
 | **Process / window** | `launch`, `find_process`, `kill_process`, `focus_window`, `maximize_window`, `minimize_window`, `close_window` |
+| **Smart cascade** | `smart_click` / `smart_find` — one call tries **native → image → OCR → coordinates** in order (pass `order=[...]` to force/reorder). The simplest robust way to click something when you're not sure which technique fits. |
 | **Native RPA (no pixel)** | `native_dump_tree` (read the UI structure), `native_click`, `native_set_text`, `native_get_text`, `native_get_state`, `native_wait` — operate accessible apps by control, immune to theme/DPI/resolution/language. Falls flat on non-accessible UIs (Java Swing) → use OCR there. |
 | **Task lists** | `execute_tasks` |
 | **Sessions / reports** | `start_recording`, `stop_recording`, `replay_session`, `render_report` |

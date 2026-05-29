@@ -53,7 +53,7 @@ Restart the host. The 30 `visus-desktop` tools (see below) become discoverable b
 
 ## Tool surface
 
-The server registers **39 tools**, grouped by capability. Every tool's docstring is its MCP description (the agent reads it before deciding when to call). Each tool's type hints become the JSON schema the agent populates.
+The server registers **41 tools**, grouped by capability. Every tool's docstring is its MCP description (the agent reads it before deciding when to call). Each tool's type hints become the JSON schema the agent populates.
 
 ### Find / click
 * `find_text(text, region?, confidence_threshold?, occurrence?)` → `{x, y, width, height} | null`
@@ -90,6 +90,16 @@ The server registers **39 tools**, grouped by capability. Every tool's docstring
 * `maximize_window(title_substring)` → `bool`
 * `minimize_window(title_substring)` → `bool`
 * `close_window(title_substring)` → `bool`
+
+### Smart cascade (try everything, in order)
+The "do whatever works" layer — tries each technique and reports which won.
+Default precedence **native → image → OCR → coordinates**; pass `order=[...]`
+to force one method (`["native"]`) or reorder. Skips a method when its input
+is missing. Provide whatever you have: `query` (native title + OCR text),
+`image` (template PNG), `coordinates` ([x, y]), plus `window`/`control_type`/
+`auto_id` to sharpen the native match.
+* `smart_find(query?, image?, coordinates?, window?, pid?, control_type?, auto_id?, search_region?, confidence?, confidence_threshold?, order?, timeout?)` → `{found, box, method, tried}`
+* `smart_click(query?, image?, coordinates?, window?, pid?, control_type?, auto_id?, search_region?, button?, confidence?, confidence_threshold?, order?, timeout?, retries?, delay?)` → `{clicked, method, tried}`
 
 ### Native RPA (no-pixel automation via the accessibility tree)
 Operate accessible apps (Win32 / WPF / WinUI / .NET) directly by control,

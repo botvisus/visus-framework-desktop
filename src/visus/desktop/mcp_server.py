@@ -390,6 +390,94 @@ def capture_element(
 
 
 # ---------------------------------------------------------------------------
+# Smart cascade -- try every technique in order (native->image->ocr->coords)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def smart_find(
+    query: str | None = None,
+    image: str | None = None,
+    coordinates: list[int] | None = None,
+    window: str | None = None,
+    pid: int | None = None,
+    control_type: str | None = None,
+    auto_id: str | None = None,
+    search_region: list[int] | None = None,
+    confidence: float = 0.9,
+    confidence_threshold: float = 75.0,
+    order: list[str] | None = None,
+    timeout: float = 5.0,
+) -> dict:
+    """Locate a target by cascading native -> image -> ocr -> coordinates.
+
+    The "do whatever works" locator. Provide whatever you have: ``query``
+    (used for native title + OCR text), ``image`` (a template PNG path),
+    ``coordinates`` ([x, y] last resort), plus optional ``window`` /
+    ``control_type`` / ``auto_id`` to sharpen the native match. A method
+    is skipped when its input is missing.
+
+    ``order`` overrides the cascade -- pass e.g. ``["native"]`` to force a
+    single method, or ``["ocr", "image"]`` to reorder. Default:
+    ``["native", "image", "ocr", "coordinates"]``.
+
+    Returns ``{found, box, method, tried}`` -- ``method`` is the winner,
+    ``tried`` lists what was attempted.
+    """
+    from .core import smart as _smart
+
+    return _smart.smart_find(
+        query, image=image, coordinates=coordinates, window=window, pid=pid,
+        control_type=control_type, auto_id=auto_id,
+        search_region=_coerce_region(search_region), confidence=confidence,
+        confidence_threshold=confidence_threshold, order=order, timeout=timeout,
+        bot=get_bot(),
+    )
+
+
+@mcp.tool()
+def smart_click(
+    query: str | None = None,
+    image: str | None = None,
+    coordinates: list[int] | None = None,
+    window: str | None = None,
+    pid: int | None = None,
+    control_type: str | None = None,
+    auto_id: str | None = None,
+    search_region: list[int] | None = None,
+    button: str = "left",
+    confidence: float = 0.9,
+    confidence_threshold: float = 75.0,
+    order: list[str] | None = None,
+    timeout: float = 5.0,
+    retries: int = 0,
+    delay: float = 0.3,
+) -> dict:
+    """Click a target by cascading native -> image -> ocr -> coordinates.
+
+    The most robust single click: each layer uses its own action (native
+    UIA invoke/click, image-template click, OCR click, coordinate click),
+    trying the next only when the previous misses. Same inputs as
+    ``smart_find``; ``order`` forces/reorders methods. Returns
+    ``{clicked, method, tried}``.
+
+    Example -- click "Salvar", native first then image/OCR fallback::
+
+        smart_click(query="Salvar", image="btn_salvar.png", window="Bloco")
+    """
+    from .core import smart as _smart
+
+    return _smart.smart_click(
+        query, image=image, coordinates=coordinates, window=window, pid=pid,
+        control_type=control_type, auto_id=auto_id,
+        search_region=_coerce_region(search_region), button=button,
+        confidence=confidence, confidence_threshold=confidence_threshold,
+        order=order, timeout=timeout, retries=retries, delay=delay,
+        bot=get_bot(),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Native RPA -- operate controls through the accessibility tree (no pixel)
 # ---------------------------------------------------------------------------
 
@@ -880,6 +968,7 @@ for _name, _obj in list(globals().items()):
             "get_window", "get_monitors", "wait_for_stable_screen",
             "native_dump_tree", "native_click", "native_set_text",
             "native_get_text", "native_get_state", "native_wait",
+            "smart_find", "smart_click",
             "wait_for_file", "wait_for_file_stable", "get_clipboard",
             "copy_to_clipboard", "extract_text_from_region", "launch",
             "find_process", "kill_process", "focus_window", "maximize_window",

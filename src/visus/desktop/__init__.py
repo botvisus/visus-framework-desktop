@@ -461,6 +461,7 @@ from .core.screen import (
     wait_for_stable_screen,
 )
 from .core.session import Session
+from .core.smart import smart_click, smart_find
 
 # Import the main classes
 from .core.task_executor import TaskExecutor, TaskResult
@@ -3149,6 +3150,8 @@ __all__ = [
     "wait_for_stable_screen",
     "capture_element",
     "get_window",
+    "smart_find",
+    "smart_click",
     "launch",
     "find_process",
     "is_process_running",

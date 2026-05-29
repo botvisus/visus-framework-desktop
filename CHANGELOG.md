@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Smart cascade** (`visus.desktop.smart_find` / `smart_click` + 2 MCP
+  tools): one call tries every targeting technique in a configurable
+  order, default **native → image → OCR → coordinates**, and reports
+  which won (`{found|clicked, method, tried}`). Provide whatever you have
+  — `query` (native title + OCR text), `image` (template PNG),
+  `coordinates` ([x, y]), plus `window`/`control_type`/`auto_id` to
+  sharpen the native match; a method is skipped when its input is absent.
+  `order=["native"]` forces a single method; `order=["ocr","image"]`
+  reorders. The most robust single "click this" / "find this" primitive.
+  MCP surface: **41 tools**.
 - **Screenshot-on-failure** (Phase 1, O1): when an `execute_tasks` step fails,
   the executor saves a PNG to `config['artifacts_dir']`
   (default `./visus-artifacts/`) and exposes the path on
