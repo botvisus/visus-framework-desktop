@@ -47,6 +47,35 @@ class _MemoryHandler(logging.Handler):
             pass
 
 
+class _LogTailHandler(logging.Handler):
+    """Capture every ``visus.*`` log record alongside its timestamp.
+
+    Sibling of :class:`_MemoryHandler`: the memory one stores task event
+    JSON lines, this one stores the surrounding free-form logs so the
+    zip writer can later associate each task with the noisy debug lines
+    that happened during its window. We skip records emitted by the
+    dedicated ``task_events`` logger to avoid duplicating them under
+    both ``events.jsonl`` and the per-task log list.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.records: list[tuple[float, str, str, str]] = []
+
+    def emit(self, record: logging.LogRecord) -> None:  # noqa: D401
+        if record.name == _EVENTS_LOGGER:
+            return
+        try:
+            self.records.append((
+                record.created,
+                record.levelname,
+                record.name,
+                record.getMessage(),
+            ))
+        except Exception:  # pragma: no cover - defensive
+            pass
+
+
 class Session:
     """Public entry point for recording / replaying a bot run."""
 
@@ -55,24 +84,45 @@ class Session:
     def start_recording(zip_path: str | os.PathLike[str]):
         """Context manager that writes a session zip on exit.
 
+        Captures two streams simultaneously:
+
+        * structured task events on ``visus.desktop.task_events`` (the
+          JSON lines written to ``events.jsonl``);
+        * every other ``visus.*`` log record at whatever level the host
+          configured via ``BotVisionConfig`` -- bundled per task in the
+          ``logs`` array of each event so reports show the step-by-step
+          forensics (``DEBUG`` shows the OCR / matcher decision trail;
+          ``INFO`` only marks the milestones).
+
         Usage::
 
             with Session.start_recording('run.zip'):
                 bot.execute_tasks(...)
         """
-        handler = _MemoryHandler()
-        logger = logging.getLogger(_EVENTS_LOGGER)
-        prior_level = logger.level
-        if prior_level == logging.NOTSET or prior_level > logging.INFO:
-            logger.setLevel(logging.INFO)
-        logger.addHandler(handler)
+        event_handler = _MemoryHandler()
+        log_handler = _LogTailHandler()
+
+        event_logger = logging.getLogger(_EVENTS_LOGGER)
+        prior_event_level = event_logger.level
+        if prior_event_level == logging.NOTSET or prior_event_level > logging.INFO:
+            event_logger.setLevel(logging.INFO)
+        event_logger.addHandler(event_handler)
+
+        # The visus root logger receives every ``visus.*`` propagation.
+        # Don't force a level here -- callers set it via
+        # ``BotVisionConfig({'log_level': 'DEBUG'})`` and we want to
+        # respect that exact choice.
+        visus_logger = logging.getLogger("visus")
+        visus_logger.addHandler(log_handler)
+
         try:
             yield
         finally:
-            logger.removeHandler(handler)
-            if prior_level != logger.level:
-                logger.setLevel(prior_level)
-            _write_zip(zip_path, handler.lines)
+            event_logger.removeHandler(event_handler)
+            visus_logger.removeHandler(log_handler)
+            if prior_event_level != event_logger.level:
+                event_logger.setLevel(prior_event_level)
+            _write_zip(zip_path, event_handler.lines, log_handler.records)
 
     @staticmethod
     def replay(zip_path: str | os.PathLike[str]) -> list[dict[str, Any]]:
@@ -91,14 +141,19 @@ class Session:
         return [json.loads(line) for line in raw.splitlines() if line.strip()]
 
 
-def _write_zip(zip_path: str | os.PathLike[str], event_lines: list[str]) -> None:
-    """Bundle the captured events plus any referenced screenshots."""
+def _write_zip(
+    zip_path: str | os.PathLike[str],
+    event_lines: list[str],
+    log_records: list[tuple[float, str, str, str]] | None = None,
+) -> None:
+    """Bundle captured events (enriched with per-task logs) + screenshots."""
     target = Path(zip_path)
     target.parent.mkdir(parents=True, exist_ok=True)
+    enriched_lines = _attach_logs_to_events(event_lines, log_records or [])
     with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr(_EVENTS_FILE, "\n".join(event_lines))
+        zf.writestr(_EVENTS_FILE, "\n".join(enriched_lines))
         seen: set[str] = set()
-        for line in event_lines:
+        for line in enriched_lines:
             try:
                 event = json.loads(line)
             except ValueError:
@@ -115,6 +170,56 @@ def _write_zip(zip_path: str | os.PathLike[str], event_lines: list[str]) -> None
                     zf.write(shot, arcname=entry)
                 except Exception:  # pragma: no cover - defensive
                     continue
+
+
+def _attach_logs_to_events(
+    event_lines: list[str],
+    log_records: list[tuple[float, str, str, str]],
+) -> list[str]:
+    """Inject a ``logs`` array into each task event.
+
+    Walks event lines in order and claims all log records whose timestamp
+    falls inside ``(previous_event_ts, this_event_ts]`` as belonging to
+    the current task. Lines that aren't valid JSON pass through untouched
+    so callers using a bare ``events.jsonl`` stay compatible.
+    """
+    from datetime import datetime
+
+    if not log_records:
+        return list(event_lines)
+    sorted_logs = sorted(log_records, key=lambda r: r[0])
+    enriched: list[str] = []
+    last_cutoff = 0.0
+    for line in event_lines:
+        try:
+            event = json.loads(line)
+        except ValueError:
+            enriched.append(line)
+            continue
+        ts_iso = event.get("timestamp")
+        cutoff = 0.0
+        if ts_iso:
+            try:
+                cutoff = datetime.fromisoformat(
+                    ts_iso.replace("Z", "+00:00")
+                ).timestamp()
+            except ValueError:
+                cutoff = 0.0
+        if cutoff:
+            # 1ms slack on both ends: ``record.created`` (from ``time.time``)
+            # carries more precision than ``datetime.isoformat`` round-trips,
+            # so a log emitted microseconds before an event can otherwise
+            # fall just past the cutoff once it's been serialised + parsed.
+            window_start = last_cutoff - 0.001
+            window_end = cutoff + 0.001
+            event["logs"] = [
+                f"[{lvl}] {name}: {msg}"
+                for ts, lvl, name, msg in sorted_logs
+                if window_start < ts <= window_end
+            ]
+            last_cutoff = cutoff
+        enriched.append(json.dumps(event))
+    return enriched
 
 
 def _delegate_write_report(zip_path, html_path):

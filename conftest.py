@@ -22,6 +22,20 @@ except Exception:  # pragma: no cover - cv2 is optional at import time
     pass
 
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _isolate_visus_config(tmp_path, monkeypatch):
+    """Point the CLI's persisted-config path at a throwaway temp file.
+
+    The CLI reads ``$VISUS_CONFIG`` (else a per-user config dir). Without
+    this, tests would read/write the developer's real config and leak
+    state between runs. Isolating it per-test keeps the suite hermetic.
+    """
+    monkeypatch.setenv("VISUS_CONFIG", str(tmp_path / "visus.config.json"))
+
+
 def pytest_addoption(parser):
     """Register the integration-suite opt-in flag at the root level.
 

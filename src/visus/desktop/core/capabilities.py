@@ -144,10 +144,7 @@ class CapabilitiesMixin:
         if config is None:
             return False
         try:
-            return bool(
-                config.get("show_overlay", True)
-                and config.get("overlay_enabled", True)
-            )
+            return bool(config.get("show_overlay", True))
         except Exception:
             return False
 

@@ -26,6 +26,7 @@ visus smart find --query "Login" --json   # {"found": true, "box": {...}, "metho
 | Group | Commands |
 |---|---|
 | `visus smart` | `find`, `click` — cascade native → image → OCR → coordinates (`--order` to force/reorder; `--dry-run` to resolve only) |
+| `visus text` | `find-all`, `show` — OCR: list every occurrence / overlay them numbered on screen |
 | `visus native` | `dump-tree`, `click`, `set-text`, `get-text`, `get-state`, `wait` — no-pixel RPA by directed selector |
 | `visus capture` | coordinate-free capture by `--auto`/`--text`/`--native`/`--region` → saves template + annotated, optional `--click` |
 | `visus screenshot` | save a PNG to disk (the `find_image` template format) |
@@ -33,6 +34,28 @@ visus smart find --query "Login" --json   # {"found": true, "box": {...}, "metho
 | `visus process` | `launch`, `find`, `kill` |
 | `visus clipboard` | `get`, `set` |
 | `visus` (root) | `configure`, `doctor`, `new`, `run`, `report`, `repl` |
+
+### `visus text` — find all OCR matches / overlay them
+
+When the same label appears more than once, list every match first, then act
+on the right one by index. Choose the OCR engine with `--ocr`.
+
+```bash
+# List every occurrence (reading order, top-to-bottom). --json for scripts.
+visus text find-all "Confirm" --region 0,0,1920,1080 --json
+#  [{"occurrence": 1, "x": 980, "y": 384, "width": 70, "height": 22, "confidence": 96.0}, ...]
+
+# Pick the OCR backend: 'tesseract' (needs the binary) or 'rapidocr' (bundled ONNX).
+visus text find-all "Total" --ocr rapidocr --filter numbers
+
+# Draw a numbered, click-through overlay over every match (debug / demo).
+visus text show "Login" --duration 4000 --color green --ocr rapidocr
+```
+
+Shared options: `--region X,Y,W,H`, `--filter letters|numbers|both`,
+`--confidence-threshold 0-100`, `--ocr tesseract|rapidocr`. `show` adds
+`--color`, `--duration` (ms), `--width` (px). The overlay is a Win32
+click-through window, so it never blocks a subsequent click.
 
 ## Mental model (same as the MCP skill)
 

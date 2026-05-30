@@ -29,7 +29,6 @@ from visus.desktop.core.task_executor import (
 )
 from visus.desktop.exceptions import (
     TaskExecutionError,
-    TextNotFoundError,
 )
 
 requires_tesseract = pytest.mark.skipif(
@@ -50,9 +49,19 @@ def executor():
 
 @requires_tesseract
 class TestFindTextLocation:
-    def test_no_region_raises_text_not_found(self, executor):
-        with pytest.raises(TextNotFoundError):
+    def test_no_region_falls_back_to_full_screen(self, executor):
+        # Mirrors the direct ``bot.find_text(text, region=None)`` path:
+        # when a task omits ``region``, the executor captures the whole
+        # screen via the mss-backed ``capture_screen`` instead of refusing.
+        with patch(
+            "visus.desktop.core.task_executor.capture_screen"
+        ) as fake_capture, patch.object(
+            executor.ocr_engine, "find_text", return_value=([], [], False)
+        ) as fake_find:
+            fake_capture.return_value = MagicMock(width=1920, height=1080)
             executor._find_text_location({"text": "Login"}, 0)
+            fake_capture.assert_called_once()
+            assert fake_find.call_count == 1
 
     def test_skip_when_all_confidences_below_threshold(self, executor):
         with patch.object(executor, "_capture_region", return_value=MagicMock()), patch.object(

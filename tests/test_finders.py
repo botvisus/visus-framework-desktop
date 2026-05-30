@@ -39,7 +39,7 @@ def _make_bot():
     """Build a VisusBot with overlays disabled (no GUI thread on clicks)."""
     from visus.desktop import VisusBot
 
-    return VisusBot(config={"show_overlay": False, "overlay_enabled": False})
+    return VisusBot(config={"show_overlay": False})
 
 
 class _ClickRecorder:

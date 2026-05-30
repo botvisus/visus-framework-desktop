@@ -41,7 +41,6 @@ class TestBotVisionConfig:
         assert cfg.get("log_level") == "INFO"
         assert cfg.get("ocr_languages") == ["eng"]
         assert cfg.get("show_overlay") is True
-        assert cfg.get("overlay_enabled") is True
 
     def test_defaults_via_attribute_access(self):
         cfg = BotVisionConfig()

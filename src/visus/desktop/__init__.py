@@ -161,10 +161,18 @@ smart cascade try them in order. Everything is also exposed as an MCP server
     VisualOverlay, RelativeImageDetector, KeyboardCommander, Backend
 
 ▶ CONFIG / UTILITIES
-    BotVisionConfig(**opts)      get_default_config() -> dict
-    config keys: confidence_threshold, show_overlay, log_format ("text"|"json"),
-        screenshot_on_failure, artifacts_dir, ocr_backend ("tesseract"|"rapidocr"),
-        matcher ("cv2"|"pyscreeze"), screen_cache_ms, use_virtual_mouse, ...
+    BotVisionConfig(config_dict=None)    get_default_config() -> dict
+        Hover the class for the full reference grouped by topic. Pass a
+        partial dict; everything else uses the defaults. Common keys:
+        confidence_threshold, retry_attempts, default_delay,
+        show_overlay / overlay_color / overlay_duration / overlay_width,
+        default_mouse_button, use_virtual_mouse, click_duration,
+        movement_duration, matcher ("cv2"|"pyscreeze"),
+        ocr_backend ("tesseract"|"rapidocr"), ocr_languages,
+        wait_timeout, screenshot_delay, log_level, log_format
+        ("text"|"json"), artifacts_dir, screenshot_on_failure.
+        ``log_level`` and ``log_format`` take effect immediately on
+        construction; mutate at runtime via cfg.config[key] = value.
     retry(...)            # decorator: re-run a callable on transient failure
     clean_text(s) / limpar_texto(s)      matches_filter(text, filter_type)
     preprocess_image_for_ocr(img)        find_text_with_multiple_preprocessing(...)
@@ -185,12 +193,12 @@ smart cascade try them in order. Everything is also exposed as an MCP server
 
     Wire into Claude Code / Desktop / Cursor (settings.json):
         { "mcpServers": { "visus-desktop": { "command": "visus-mcp" } } }
-    Restart the host; 43 tools become available to the agent.
+    Restart the host; 56 tools become available to the agent.
 
     Tool groups (each tool's docstring tells the agent when/how to use it):
       • Targeting:   ensure_window ★, list_windows, get_window
-      • Find/click:  find_text, click_text, find_image, click_image,
-                     click_at, hybrid_find
+      • Find/click:  find_text, find_all_text, click_text, find_image,
+                     click_image, click_at, hybrid_find
       • Smart/capture: smart_find, smart_click, capture_element
       • Native RPA:  native_dump_tree, native_click, native_set_text,
                      native_get_text, native_get_state, native_wait
@@ -237,6 +245,7 @@ smart cascade try them in order. Everything is also exposed as an MCP server
     • Run `visus doctor` (or the doctor MCP tool) to diagnose the environment.
 """
 
+import functools
 import logging
 import time
 
@@ -312,29 +321,213 @@ __license__ = "MIT"
 logger = logging.getLogger(__name__)
 
 
-class VisusBot(CapabilitiesMixin, KeyboardMixin):
-    """
-    Main class of Visus Desktop.
+# Keys we copy from the wrapped method's kwargs into the recorded event
+# so reports show the relevant context per call (the executor's own
+# ``_emit_task_event`` picks these up via ``_task_type`` / ``_task_target``).
+_RECORDED_KWARGS = (
+    "text", "image", "image_path", "anchor_image", "target_image",
+    "command", "region", "x", "y", "confidence", "confidence_threshold",
+    "mouse_button", "occurrence", "specific", "max_distance", "filter_type",
+)
 
-    Provides a high-level interface for GUI automation with advanced OCR.
+
+def _records_in_session(type_field):
+    """Decorator: emit a structured ``task_event`` for the wrapped call.
+
+    Applied to public ``VisusBot`` action methods (``click_text``,
+    ``click_image``, ``type_text``, …). When the call happens inside a
+    ``with bot.start_task_session()`` scope, the result is forwarded to
+    :meth:`VisusBot._emit_direct_call_event` so a parallel
+    :class:`Session.start_recording` zip contains the same event line +
+    per-step / failure screenshot it would have captured via
+    :meth:`execute_tasks`. Outside a session the wrapper is transparent.
+    """
+    def decorator(method):
+        @functools.wraps(method)
+        def wrapper(self, *args, **kwargs):
+            if not getattr(self, "task_session_active", False):
+                return method(self, *args, **kwargs)
+
+            started = time.monotonic()
+            try:
+                result = method(self, *args, **kwargs)
+            except Exception as exc:
+                self._emit_direct_call_event(
+                    _build_event_task(type_field, method, args, kwargs),
+                    success=False,
+                    started_at=started,
+                    error=str(exc),
+                )
+                raise
+
+            success = bool(result) if isinstance(result, bool) else True
+            self._emit_direct_call_event(
+                _build_event_task(type_field, method, args, kwargs),
+                success=success,
+                started_at=started,
+                error=None if success else f"{method.__name__} returned falsy",
+            )
+            return result
+        return wrapper
+    return decorator
+
+
+def _build_event_task(type_field, method, args, kwargs):
+    """Construct the task dict consumed by ``_emit_task_event``.
+
+    Maps the first positional arg to a sensible task field based on
+    ``type_field`` (so ``click_text("Login")`` ends up as
+    ``{"type": "text", "text": "Login"}``), and folds in any recognized
+    kwargs that add useful context to the event.
+    """
+    task = {"type": type_field}
+    if args:
+        primary_key = {
+            "text": "text",
+            "image": "image",
+            "click": "x",  # click_at / click_coordinates -- args[0] is x or location
+            "relative_image": "anchor_image",
+            "type_text": "text",
+            "keyboard_command": "command",
+        }.get(type_field)
+        if primary_key:
+            task[primary_key] = args[0]
+        else:
+            task["arg"] = args[0]
+    for key in _RECORDED_KWARGS:
+        if key in kwargs and key not in task:
+            task[key] = kwargs[key]
+    return task
+
+
+class VisusBot(CapabilitiesMixin, KeyboardMixin):
+    """High-level GUI automation: native control, image, OCR, coordinates.
+
+    ``VisusBot`` is the single entry point users typically import. It bundles
+    the smart-cascade finder (native → image → OCR → coordinates), a
+    keyboard/mouse driver (physical or virtual), an OCR engine, and a
+    click-through visual overlay for debugging. Every public method is also
+    exposed via the ``visus`` CLI and the ``visus-mcp`` MCP server.
+
+    Built-in capabilities (see method docstrings for full signatures):
+
+        **Finding things on screen**
+
+        * :meth:`find_text` / :meth:`click_text` -- OCR-based text targeting
+          with confidence threshold, character-class filter, and per-region
+          search.
+        * :meth:`find_image` / :meth:`click_image` -- Template matching with
+          ``cv2.matchTemplate`` (falls back to pyscreeze); supports
+          scale-variation search when ``specific=False``.
+        * :meth:`find_relative_image` -- Find a target image near an anchor
+          (good for picking the right row in a repeating grid).
+        * :meth:`hybrid_find` -- Try the smart cascade in order until one
+          method locates the target.
+
+        **Acting on things**
+
+        * :meth:`click_at` -- Click absolute (x, y, w, h) coordinates.
+        * :meth:`type_text` -- Type a string into the focused field.
+        * Mouse extras from :class:`CapabilitiesMixin`: :meth:`drag`,
+          :meth:`triple_click`, :meth:`scroll`, :meth:`move_random`.
+        * Keyboard from :class:`KeyboardMixin`: hotkeys, key presses,
+          special-sequence parsing (``{ctrl}a{del}{tab}``).
+
+        **Robustness primitives**
+
+        * Backtrack: pass ``backtrack=True`` to retry failed steps and
+          re-walk the recent action history (see
+          :meth:`start_task_session`).
+        * Waits: ``wait_until_found`` / ``wait_until_disappears`` /
+          ``wait_timeout`` on find/click methods.
+        * Failure artifacts: when ``screenshot_on_failure=True`` is set in
+          the config, every uncaught failure dumps a PNG + JSON blob into
+          ``artifacts_dir``.
+
+        **Overlay (visual feedback)**
+
+        * :meth:`configure_overlay`, :meth:`get_overlay_config`,
+          :attr:`show_overlay`. On Windows the overlay is a layered
+          click-through window (``WS_EX_TRANSPARENT``), so the click that
+          follows lands on the host below regardless of tech (native,
+          Java, Electron, browsers).
 
     Examples:
-        Basic usage:
-        >>> bot = VisusBot()
-        >>> bot.execute_tasks(tasks)
+        Defaults are usually fine; install Tesseract and go::
 
-        With custom configuration:
-        >>> config = {"confidence_threshold": 80.0}
-        >>> bot = VisusBot(config=config)
-        >>> bot.execute_tasks(tasks)
+            from visus.desktop import VisusBot, ensure_window
+            ensure_window(process="notepad.exe")
+            bot = VisusBot()
+            bot.click_text("File")
+            bot.type_text("hello world")
+
+        Tune via a dict (delegated to :class:`BotVisionConfig`)::
+
+            bot = VisusBot(config={
+                "confidence_threshold": 80.0,
+                "overlay_color": "green",
+                "matcher": "cv2",
+            })
+
+        Or build the config object yourself for finer control::
+
+            from visus.desktop import BotVisionConfig
+            cfg = BotVisionConfig({"show_overlay": False})
+            bot = VisusBot(config=cfg)
     """
 
     def __init__(self, config=None):
-        """
-        Initialize Visus Desktop.
+        """Initialize Visus Desktop.
+
+        Wires the executor, OCR engine, image processor, and overlay
+        master toggle. Construction is cheap apart from auto-detecting
+        Tesseract when ``ocr_backend == "tesseract"`` (the default), which
+        probes the standard install paths.
 
         Args:
-            config (dict or BotVisionConfig, optional): Custom settings
+            config: Custom settings. Three forms are accepted:
+
+                * ``None`` (default) -- use the library defaults.
+                * ``dict`` -- a mapping of any subset of the keys
+                  documented on :class:`BotVisionConfig` (hover that class
+                  for the full reference of every key, type, and default).
+                  Common ones:
+
+                  - ``confidence_threshold`` (float, ``75.0``): OCR cutoff.
+                  - ``retry_attempts`` (int, ``3``): default retries.
+                  - ``default_delay`` (float, ``1.0``): pause between
+                    actions (s).
+                  - ``show_overlay`` (bool, ``True``): master toggle for
+                    the click-through visual overlay.
+                  - ``overlay_color`` (str, ``"red"``) /
+                    ``overlay_duration`` (int ms, ``1000``) /
+                    ``overlay_width`` (int px, ``4``): overlay look.
+                  - ``default_mouse_button`` (str, ``"left"``): one of
+                    ``"left"``, ``"right"``, ``"double"``, ``"move_to"``.
+                  - ``use_virtual_mouse`` (bool, ``False``): click without
+                    moving the physical cursor (Windows, PostMessage).
+                  - ``matcher`` (str, ``"cv2"``): ``"cv2"`` or
+                    ``"pyscreeze"``.
+                  - ``ocr_backend`` (str, ``"tesseract"``): ``"tesseract"``
+                    or ``"rapidocr"``.
+                  - ``ocr_languages`` (list[str], ``["eng"]``).
+                  - ``wait_timeout`` (int s, ``30``): default wait timeout.
+                  - ``log_level`` (str, ``"INFO"``) /
+                    ``log_format`` (str, ``"text"`` or ``"json"``).
+                  - ``artifacts_dir`` (str, ``"./visus-artifacts"``) /
+                    ``screenshot_on_failure`` (bool, ``True``).
+
+                * :class:`BotVisionConfig` -- a pre-built config object,
+                  used as-is. Use this when you want to reuse the same
+                  config across several bots or when you have already
+                  validated it.
+
+        Examples:
+            >>> bot = VisusBot()  # defaults
+            >>> bot = VisusBot(config={"overlay_color": "green"})
+            >>> from visus.desktop import BotVisionConfig
+            >>> cfg = BotVisionConfig({"show_overlay": False})
+            >>> bot = VisusBot(config=cfg)
         """
         if isinstance(config, dict):
             self.config = BotVisionConfig(config)
@@ -353,8 +546,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         self.ocr_engine = OCREngine(self.config)
         self.image_processor = ImageProcessor()
 
-        # Overlay settings - accessible via properties
-        self._overlay_enabled = self.config.get("overlay_enabled", True)
+        # Overlay master toggle - accessible via the ``show_overlay`` property.
         self._show_overlay = self.config.get("show_overlay", True)
 
         # Backtrack system for individual methods
@@ -380,39 +572,92 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         return self.current_task_index
 
     def start_task_session(self):
-        """Start an individual task session for backtracking."""
+        """Open a manual task session.
+
+        While a session is active, direct calls like :meth:`click_text` and
+        :meth:`click_image` emit the same structured ``task_event`` as
+        :meth:`execute_tasks` so they show up in a
+        :class:`~visus.desktop.core.session.Session` recording (events +
+        per-step screenshots in the zip). Also enables the backtrack
+        history for retries between methods.
+        """
+        import uuid
+
         self.task_session_active = True
         self.individual_task_history = []
         self.current_task_index = -1
-        logger.info(
-            "🚀 Individual task session started - backtrack enabled between methods"
+        # Tag every event emitted during this session with a stable run id
+        # so the resulting events.jsonl groups cleanly in reports.
+        self.executor.current_run_id = uuid.uuid4().hex[:8]
+        logger.debug(
+            "Task session started (run_id=%s) -- direct calls will be recorded",
+            self.executor.current_run_id,
         )
 
     def end_task_session(self):
-        """End an individual task session."""
+        """Close the manual task session opened by :meth:`start_task_session`."""
         self.task_session_active = False
         successful_tasks = sum(
             1 for task in self.individual_task_history if task.get("success", False)
         )
         total_tasks = len(self.individual_task_history)
-        logger.info(
-            f"🏁 Session ended: {successful_tasks}/{total_tasks} successful tasks"
+        logger.debug(
+            "Task session ended: %d/%d successful tasks (run_id=%s)",
+            successful_tasks, total_tasks, self.executor.current_run_id,
         )
+        self.executor.current_run_id = None
         return successful_tasks, total_tasks
 
+    def _emit_direct_call_event(
+        self, task_for_event, success, started_at, location=None, error=None
+    ):
+        """Emit a structured ``task_event`` for a direct method call.
+
+        No-op unless a task session is open (so direct calls outside a
+        session keep their original "no zip noise" behavior). Mirrors the
+        shape of :meth:`TaskExecutor._emit_task_event`, including the
+        success / failure screenshot decision driven by
+        ``screenshot_steps`` and ``screenshot_on_failure``.
+        """
+        if not getattr(self, "task_session_active", False):
+            return
+        if self.config.get("log_format", "text") != "json":
+            return
+
+        task_index = len(self.individual_task_history)
+        self.individual_task_history.append({
+            "method": task_for_event.get("type") or task_for_event.get("text") or "direct",
+            "success": bool(success),
+        })
+
+        target = (
+            task_for_event.get("text")
+            or task_for_event.get("image")
+            or task_for_event.get("type", "direct_call")
+        )
+        # If the caller (decorator) didn't pass a location, fall back to
+        # the one stashed by ``TaskExecutor._perform_action`` -- that's
+        # what direct ``click_text`` / ``click_image`` calls landed on,
+        # so the screenshot can be annotated even though the public
+        # method only returned bool.
+        effective_location = location or getattr(
+            self.executor, "last_action_location", None
+        )
+        result = TaskResult(task_index, bool(success), str(target), effective_location)
+        result.attempts = 1
+        result.duration_ms = int((time.monotonic() - started_at) * 1000)
+        result.error = error
+        if success and self.config.get("screenshot_steps"):
+            result.step_screenshot = self.executor._capture_step_screenshot(
+                task_index, location=effective_location
+            )
+        elif not success and self.config.get("screenshot_on_failure", True):
+            result.failure_screenshot = self.executor._save_failure_screenshot(
+                task_index, location=effective_location
+            )
+        self.executor._emit_task_event(result, task_for_event)
+
     # Overlay control properties
-    @property
-    def overlay_enabled(self):
-        """Control whether the overlay system is active."""
-        return self._overlay_enabled
-
-    @overlay_enabled.setter
-    def overlay_enabled(self, value):
-        """Set whether the overlay system is active."""
-        self._overlay_enabled = bool(value)
-        # Also update the configuration
-        self.config.config["overlay_enabled"] = self._overlay_enabled
-
     @property
     def show_overlay(self):
         """Control whether the visual overlay is displayed before clicks."""
@@ -458,7 +703,6 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         ]
 
         if enabled is not None:
-            self.overlay_enabled = enabled
             self.show_overlay = enabled
 
         if color is not None:
@@ -496,8 +740,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             dict: Overlay settings
         """
         return {
-            "enabled": self.overlay_enabled,
-            "show_overlay": self.show_overlay,
+            "enabled": self.show_overlay,
             "color": self.config.config.get("overlay_color", "red"),
             "duration": self.config.config.get("overlay_duration", 1000),
             "width": self.config.config.get("overlay_width", 4),
@@ -993,6 +1236,115 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
 
         return None
 
+    def find_all_text(
+        self,
+        text,
+        region=None,
+        filter_type="both",
+        confidence_threshold=None,
+    ):
+        """List every occurrence of ``text`` visible on screen (or in ``region``).
+
+        Unlike :meth:`find_text` (which stops at the first high-confidence
+        hit), this scans the OCR output exhaustively and returns every
+        distinct match. Use it when the same string appears multiple
+        times and you need to disambiguate by position -- e.g. clicking
+        the second ``"OK"`` on a form, or numbering visible rows.
+
+        Args:
+            text (str): Substring to look for (case-insensitive, after
+                ``filter_type`` normalization).
+            region (tuple, optional): ``(x, y, w, h)`` search area in
+                screen coordinates. ``None`` searches the full screen.
+            filter_type (str): ``"letters"`` / ``"numbers"`` / ``"both"``.
+            confidence_threshold (float, optional): Minimum OCR confidence
+                (0-100). Defaults to ``config.confidence_threshold``.
+
+        Returns:
+            list[tuple]: ``[(x, y, w, h, confidence), ...]`` in screen
+            coordinates, sorted in reading order (top-to-bottom,
+            left-to-right). Spatially overlapping detections collapse
+            to a single entry that keeps the best confidence.
+
+        Examples:
+            >>> matches = bot.find_all_text("Confirm")
+            >>> for i, (x, y, w, h, conf) in enumerate(matches, start=1):
+            ...     print(f"  #{i} at ({x}, {y}) confidence={conf:.1f}%")
+        """
+        import pyautogui
+
+        if region is None:
+            screen = pyautogui.screenshot()
+            region = (0, 0, screen.width, screen.height)
+            region_img = screen
+        else:
+            region_img = self.executor._capture_region(region)
+
+        threshold = (
+            confidence_threshold
+            if confidence_threshold is not None
+            else self.config.confidence_threshold
+        )
+        matches = self.ocr_engine.find_all_text(
+            region_img, text, filter_type, threshold
+        )
+        # Box is relative to the captured region; convert to screen coordinates.
+        return [
+            (region[0] + box[0], region[1] + box[1], box[2], box[3], conf)
+            for conf, box in matches
+        ]
+
+    def show_text_occurrences(
+        self,
+        text,
+        region=None,
+        filter_type="both",
+        confidence_threshold=None,
+        color="red",
+        duration_ms=3000,
+        width=3,
+    ):
+        """Overlay every occurrence of ``text`` on screen, numbered ``1, 2, 3...``.
+
+        Calls :meth:`find_all_text` and draws a click-through Win32
+        overlay around each match with the position number above the
+        top-left corner. Overlays fade after ``duration_ms`` and do not
+        intercept clicks. On non-Windows the overlays are skipped but
+        the match list is still returned.
+
+        Args:
+            text (str): Substring to look for.
+            region (tuple, optional): Search region.
+            filter_type (str): OCR char filter.
+            confidence_threshold (float, optional): Minimum confidence.
+            color (str): Overlay color.
+            duration_ms (int): How long each overlay stays on screen.
+            width (int): Outline thickness in pixels.
+
+        Returns:
+            list[tuple]: Same shape as :meth:`find_all_text`.
+
+        Examples:
+            >>> matches = bot.show_text_occurrences("Login", duration_ms=4000)
+            >>> print(f"Found {len(matches)} occurrence(s)")
+        """
+        from .core.overlay_win32 import show_click_through_overlay
+
+        matches = self.find_all_text(text, region, filter_type, confidence_threshold)
+        for i, (x, y, w, h, _) in enumerate(matches, start=1):
+            show_click_through_overlay(
+                (x, y, w, h),
+                color=color,
+                width=width,
+                duration_ms=duration_ms,
+                label=str(i),
+            )
+        logger.info(
+            f"show_text_occurrences('{text}'): {len(matches)} match(es)"
+        )
+        return matches
+
+    @_records_in_session("text")
     def click_text(
         self,
         text,
@@ -1496,6 +1848,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
 
         return None
 
+    @_records_in_session("image")
     def click_image(
         self,
         image_path,
@@ -1580,6 +1933,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             wait_timeout,
         )
 
+    @_records_in_session("click")
     def click_at(self, location, mouse_button="left", delay=0, show_overlay=None):
         """
         Click on specific screen coordinates.
@@ -1692,6 +2046,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             logger.error(f"Error during relative image search: {e}")
             return None
 
+    @_records_in_session("relative_image")
     def click_relative_image(
         self,
         anchor_image,
@@ -1837,6 +2192,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
 
         return False
 
+    @_records_in_session("click")
     def click_coordinates(self, x, y, delay=0, mouse_button="left", backtrack=False):
         """
         Click on specific screen coordinates.
@@ -1878,6 +2234,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             logger.error(f"Error clicking on coordinates ({x}, {y}): {e}")
             return False
 
+    @_records_in_session("type_text")
     def type_text(self, text, interval=0.05, delay=0, backtrack=False):
         """
         Type text with an interval between characters.
@@ -1925,6 +2282,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             logger.error(f"Error typing text '{text}': {e}")
             return False
 
+    @_records_in_session("keyboard_command")
     def keyboard_command(self, command, delay=0, backtrack=False):
         """
         Run a keyboard command.

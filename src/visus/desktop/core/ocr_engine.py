@@ -28,6 +28,37 @@ from .image_processing import ImageProcessor
 logger = logging.getLogger(__name__)
 
 
+def _iou(box_a: Tuple[int, int, int, int], box_b: Tuple[int, int, int, int]) -> float:
+    """Intersection-over-union of two ``(x, y, w, h)`` boxes."""
+    ax, ay, aw, ah = box_a
+    bx, by, bw, bh = box_b
+    inter_w = max(0, min(ax + aw, bx + bw) - max(ax, bx))
+    inter_h = max(0, min(ay + ah, by + bh) - max(ay, by))
+    inter = inter_w * inter_h
+    union = aw * ah + bw * bh - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _dedupe_in_reading_order(
+    candidates: List[Tuple[float, Tuple[int, int, int, int]]],
+    iou_threshold: float = 0.4,
+) -> List[Tuple[float, Tuple[int, int, int, int]]]:
+    """Collapse overlapping ``(confidence, box)`` candidates.
+
+    Keeps the highest-confidence representative for each spatial cluster
+    (IoU > ``iou_threshold`` counts as the same occurrence), then sorts
+    survivors top-to-bottom, left-to-right so the caller can number them
+    in natural reading order.
+    """
+    by_conf = sorted(candidates, key=lambda c: c[0], reverse=True)
+    kept: List[Tuple[float, Tuple[int, int, int, int]]] = []
+    for conf, box in by_conf:
+        if any(_iou(box, k_box) > iou_threshold for _, k_box in kept):
+            continue
+        kept.append((conf, box))
+    return sorted(kept, key=lambda c: (c[1][1], c[1][0]))
+
+
 class OCRResult:
     """
     Class to store OCR results.
@@ -83,6 +114,17 @@ class OCREngine:
 
     def find_text(self, *args, **kwargs):
         return self._backend.find_text(*args, **kwargs)
+
+    def find_all_text(self, *args, **kwargs):
+        """Return every distinct occurrence of ``target_text``.
+
+        Unlike :meth:`find_text` (which short-circuits on the first
+        high-confidence detection), this enumerates ALL matches across
+        every preprocessing pass and dedupes overlapping boxes (keeping
+        the best confidence per spatial region). Results are sorted in
+        reading order (top-to-bottom, left-to-right).
+        """
+        return self._backend.find_all_text(*args, **kwargs)
 
     def extract_all_text(self, *args, **kwargs):
         return self._backend.extract_all_text(*args, **kwargs)
@@ -311,6 +353,45 @@ class _TesseractBackend:
         except Exception as e:
             logger.error(f"Error during OCR processing: {e}")
             raise OCRProcessingError(f"Text search failed: {e}") from e
+
+    def find_all_text(
+        self,
+        region_img: Image.Image,
+        target_text: str,
+        filter_type: str = "both",
+        min_confidence: float = 0.0,
+    ) -> List[Tuple[float, Tuple[int, int, int, int]]]:
+        """Return every distinct ``target_text`` match in ``region_img``.
+
+        Iterates every preprocessing / config combination without the
+        early-exit optimisation that :meth:`find_text` uses, so multiple
+        on-screen instances of the same string can all be reported. The
+        result is a deduplicated list of ``(confidence, (x, y, w, h))``
+        in reading order (top-to-bottom, left-to-right).
+        """
+        try:
+            processed_images = self.image_processor.preprocess_for_ocr(region_img)
+            candidates: List[Tuple[float, Tuple[int, int, int, int]]] = []
+            high_confidence_bonus = 8.0
+            for img_index, img in enumerate(processed_images):
+                for config_index, config in enumerate(self.ocr_configs):
+                    results = self._process_single_image(
+                        img,
+                        target_text,
+                        filter_type,
+                        config_index,
+                        config,
+                        img_index,
+                        len(processed_images),
+                        high_confidence_bonus,
+                    )
+                    for result in results:
+                        if result.confidence >= min_confidence:
+                            candidates.append((result.confidence, result.box))
+            return _dedupe_in_reading_order(candidates)
+        except Exception as exc:
+            logger.error(f"find_all_text failed: {exc}")
+            raise OCRProcessingError(f"find_all_text failed: {exc}") from exc
 
     def _process_single_image(
         self,
@@ -627,6 +708,40 @@ class _RapidOCRBackend:
                 early_match = True
                 return [box], [score_pct], True
         return matched_boxes, matched_scores, early_match
+
+    def find_all_text(
+        self,
+        region_img: Image.Image,
+        target_text: str,
+        filter_type: str = "both",
+        min_confidence: float = 0.0,
+    ) -> List[Tuple[float, Tuple[int, int, int, int]]]:
+        """RapidOCR equivalent of :meth:`_TesseractBackend.find_all_text`.
+
+        Lists every RapidOCR detection whose cleaned text contains
+        ``target_text``, scored on RapidOCR's own 0--100 confidence,
+        deduplicated by spatial overlap and sorted in reading order.
+        """
+        try:
+            txts, polygons, scores = self._run(region_img)
+        except Exception as exc:
+            raise OCRProcessingError(f"RapidOCR call failed: {exc}") from exc
+
+        target_clean = limpar_texto(target_text, filter_type).lower()
+        if not target_clean:
+            return []
+        candidates: List[Tuple[float, Tuple[int, int, int, int]]] = []
+        for txt, polygon, raw_score in zip(txts, polygons, scores):
+            candidate = limpar_texto(str(txt), filter_type)
+            if not matches_filter(candidate, filter_type):
+                continue
+            if target_clean not in candidate.lower():
+                continue
+            score_pct = float(raw_score) * 100.0
+            if score_pct < min_confidence:
+                continue
+            candidates.append((score_pct, self._poly_to_xywh(polygon)))
+        return _dedupe_in_reading_order(candidates)
 
     def extract_all_text(
         self, img: Image.Image, filter_type: str = "both"

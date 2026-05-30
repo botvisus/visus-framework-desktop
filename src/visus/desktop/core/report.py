@@ -296,6 +296,38 @@ dl.kv dd { margin: 0; color: var(--body); font-family: var(--mono); }
 .screenshot-card.step { background: var(--surface-cream-strong); }
 .screenshot-card.step .header { color: var(--muted); }
 .screenshot-card.step img { background: var(--canvas); }
+details.logs {
+  margin-top: 16px;
+  background: var(--surface-dark);
+  border-radius: 12px;
+  padding: 12px 20px;
+  color: var(--on-dark-soft);
+  font-family: var(--mono);
+}
+details.logs > summary {
+  cursor: pointer;
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--on-dark);
+  padding: 4px 0;
+}
+details.logs > summary::marker { color: var(--primary); }
+details.logs pre.log-output {
+  margin: 12px 0 4px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--on-dark);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 360px;
+  overflow-y: auto;
+}
+details.logs pre.log-output .lvl-DEBUG { color: var(--on-dark-soft); }
+details.logs pre.log-output .lvl-INFO { color: var(--on-dark); }
+details.logs pre.log-output .lvl-WARNING { color: #e2b35a; }
+details.logs pre.log-output .lvl-ERROR { color: #e07171; }
+details.logs pre.log-output .lvl-CRITICAL { color: #e07171; font-weight: 700; }
 @media (max-width: 900px) {
   section.kpis { grid-template-columns: repeat(2, 1fr); }
   header.hero h1 { font-size: 44px; letter-spacing: -1px; }
@@ -508,16 +540,46 @@ def _render_task(
     elif fail_shot:
         shot_block = _render_screenshot(fail_shot, screenshots, kind="failure")
 
+    log_block = _render_logs(event.get("logs") or [])
+
     return f"""<article class="task">
         <div class="index">#{number}</div>
         <div class="body">
           <h3>{title}</h3>
           <dl class="kv">{kv}</dl>
           {error_block}
+          {log_block}
           {shot_block}
         </div>
         <div class="status">{badge}</div>
       </article>"""
+
+
+def _render_logs(lines: list[str]) -> str:
+    """Render the per-task log lines as a collapsible ``<details>`` block.
+
+    Lines come in shaped as ``"[LEVEL] logger.name: message"`` (set by
+    :func:`_attach_logs_to_events`). We wrap each in a ``<span>`` tagged
+    with its level so CSS can colourise DEBUG / INFO / WARNING / ERROR.
+    """
+    if not lines:
+        return ""
+    rendered: list[str] = []
+    for line in lines:
+        level = "INFO"
+        if line.startswith("[") and "]" in line:
+            level = line[1 : line.index("]")] or "INFO"
+        safe_class = "".join(c for c in level if c.isalnum()).upper() or "INFO"
+        rendered.append(
+            f'<span class="lvl-{safe_class}">{escape(line)}</span>'
+        )
+    body = "\n".join(rendered)
+    return (
+        f'<details class="logs">'
+        f"<summary>Logs &middot; {len(lines)} line(s)</summary>"
+        f'<pre class="log-output">{body}</pre>'
+        "</details>"
+    )
 
 
 def _short_time(iso_ts: str) -> str:

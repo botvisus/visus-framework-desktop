@@ -86,7 +86,7 @@ for the few Windows‑only features).
 - **🎬 Sessions & HTML reports** — record a run (`Session.start_recording`),
   replay its events, and render a single‑file HTML report with timings and
   failure screenshots.
-- **🤖 MCP server** — expose all 43 tools to AI agents (Claude Code/Desktop,
+- **🤖 MCP server** — expose all 56 tools to AI agents (Claude Code/Desktop,
   Cursor) via the `visus-mcp` command. See [Drive it from any MCP agent](#drive-it-from-any-mcp-agent).
 - **⌨️ Visus CLI Pro** — the `visus` command mirrors the whole surface in the
   shell (`--json` everywhere, interactive `repl`). See [docs/cli.md](docs/cli.md).
@@ -243,7 +243,7 @@ if bot.find_text("Username", region=(100, 100, 500, 300), filter_type="letters")
 
 ### Drive it from any MCP agent
 
-`visus-desktop` ships a **Model Context Protocol** server exposing **43 tools**. Install the extra and wire it into Claude Desktop / Code / Cursor — your agent can drive desktop apps end to end. The server also ships an `instructions` preamble and per‑tool docstrings that teach the agent *when and how* to use each tool, so it never has to read source.
+`visus-desktop` ships a **Model Context Protocol** server exposing **56 tools**. Install the extra and wire it into Claude Desktop / Code / Cursor — your agent can drive desktop apps end to end. The server also ships an `instructions` preamble and per‑tool docstrings that teach the agent *when and how* to use each tool, so it never has to read source.
 
 ```bash
 pip install 'visus-desktop[mcp]'
@@ -276,7 +276,7 @@ pip install 'visus-desktop[mcp]'
 }
 ```
 
-See [`docs/mcp.md`](docs/mcp.md) for the full tool list and [`skills/`](skills/) for ready-to-use playbooks (login forms, table scraping, captchas, downloads, file dialogs, record/replay).
+See [`docs/mcp.md`](docs/mcp.md) for the full tool reference (all 56 tools, every parameter), and [`skills/`](skills/) for ready-to-use playbooks (login forms, table scraping, captchas, downloads, file dialogs, record/replay). The agent-facing playbook is [`skills/using-visus-desktop.md`](skills/using-visus-desktop.md).
 
 ### Or drive it from the shell — Visus CLI Pro
 
@@ -286,12 +286,125 @@ output:
 
 ```bash
 visus smart click --query "Login" --dry-run     # resolve target, no input
+visus text find-all "Total" --ocr rapidocr --json # every OCR match, pick a backend
 visus native dump-tree --window "Notepad" --json # see the control tree
 visus capture save --auto "Salvar" --click       # coordinate-free capture+click
 visus repl                                        # interactive shell
 ```
 
-See [`docs/cli.md`](docs/cli.md) for the full command reference.
+Run `visus --help` (or `visus <group> --help`) for inline help. The agent-facing
+playbook lives in [`skills/using-visus-cli.md`](skills/using-visus-cli.md) and the
+full reference in [`docs/cli.md`](docs/cli.md).
+
+<details>
+<summary><b>Full command reference — all 50 commands</b> (click to expand)</summary>
+
+Notation: `ARG` = required positional · `ARG?` = optional · `ARG…` = variadic ·
+`--flag` = boolean · `--opt=<type>` = takes a value. Nearly every command also
+accepts `--json` (machine-readable output); exit code is `0` on success, `1` on
+a failed operation, `2` on a usage error.
+
+**`smart` — cascade: native → image → OCR → coordinates**
+
+| Command | Parameters | Description |
+|---|---|---|
+| `smart find` | `--query --image --coords --window --pid --control-type --auto-id --region --confidence --confidence-threshold --order --timeout --json` | Locate a target by trying every technique; report which won (no click). |
+| `smart click` | *(all of the above)* `+ --button --retries --delay --dry-run` | Same cascade, then click the winner. |
+
+**`text` — OCR (find / click text)**
+
+| Command | Parameters | Description |
+|---|---|---|
+| `text find` | `QUERY --region --filter --confidence-threshold --occurrence --max-attempts --backtrack --wait-until-found --wait-until-disappears --wait-timeout --ocr --json` | Find text via OCR; print its box (no click). |
+| `text click` | *(above)* `+ --button --delay --sendtext` | Find text via OCR and click its center. |
+| `text find-all` | `QUERY --region --filter --confidence-threshold --ocr --json` | List **every** occurrence of the text. |
+| `text show` | `QUERY --region --filter --confidence-threshold --color --duration --width --ocr --json` | Draw a numbered overlay over every occurrence. |
+
+**`image` — template-PNG matching**
+
+| Command | Parameters | Description |
+|---|---|---|
+| `image find` | `IMAGE_PATH --region --confidence --specific --backtrack --max-attempts --wait-until-found --wait-until-disappears --wait-timeout --json` | Find a template PNG; print its box (no click). |
+| `image click` | *(above)* `+ --button --delay --sendtext` | Find a template PNG and click its center. |
+| `image find-all` | `IMAGE_PATH --region --confidence --json` | Find **every** occurrence of one template. |
+| `image find-multiple` | `IMAGE_PATHS… --region --confidence --json` | First match of **several** templates in one call. |
+| `image relative` | `ANCHOR_IMAGE TARGET_IMAGE --max-distance --confidence --target-region --click --button --delay --sendtext --backtrack --max-attempts --wait-until-found --wait-until-disappears --wait-timeout --json` | Find/click a target template **near** a unique anchor. |
+
+**`native` — no-pixel RPA (accessibility tree)**
+
+| Command | Parameters | Description |
+|---|---|---|
+| `native dump-tree` | `--window --pid --max-depth --timeout --json` | Print the control tree (how an agent "sees" the UI). |
+| `native click` | `--window --pid --title --control-type --auto-id --found-index --button --double --method --timeout --retries --delay --dry-run --json` | Click a control by selector. |
+| `native set-text` | `TEXT --window --pid --title --control-type --auto-id --found-index --timeout --retries --delay --dry-run --json` | Set an editable control's text. |
+| `native get-text` | `--window --pid --title --control-type --auto-id --found-index --timeout --json` | Read a control's text/value. |
+| `native get-state` | *(selectors)* `--timeout --json` | Snapshot exists/visible/enabled/checked/value/rect. |
+| `native wait` | *(selectors)* `--state --timeout --poll-interval --json` | Wait until a control reaches a state. |
+
+**`mouse` — coordinate-based gestures**
+
+| Command | Parameters | Description |
+|---|---|---|
+| `mouse click` | `X Y --width --height --button --delay --json` | Click absolute coordinates (last resort). |
+| `mouse scroll` | `AMOUNT --x --y --json` | Scroll the wheel (positive = up, negative = down). |
+| `mouse drag` | `X1 Y1 X2 Y2 --duration --button --json` | Drag from (X1,Y1) to (X2,Y2). |
+| `mouse triple-click` | `--x --y --interval --json` | Triple-click (select a line/paragraph). |
+| `mouse move` | `X Y --max-offset --duration --json` | Move the cursor with a light human jitter. |
+| `mouse down` | `--x --y --button --json` | Press a button without releasing (pair with `up`). |
+| `mouse up` | `--x --y --button --json` | Release a held button. |
+
+**Keyboard**
+
+| Command | Parameters | Description |
+|---|---|---|
+| `type` | `TEXT --interval --delay --backtrack --json` | Type into the focused field (tokens `{ctrl}a {tab} {enter}`). |
+| `key` | `COMMAND --delay --backtrack --json` | Press a key/chord (case-sensitive, e.g. `Ctrl+S`). |
+| `keys` | `--json` | List every valid `key` token. |
+
+**`window` — by title substring**
+
+| Command | Parameters | Description |
+|---|---|---|
+| `window ensure` | `--title --process --no-show --no-foreground --json` | **Call first**: is the app open/minimized? + bring it to front. |
+| `window list` | `--title --process --json` | List visible windows (read-only). |
+| `window get` | `TITLE --json` | Resolve a window's rect/pid/hwnd (no focus). |
+| `window focus` | `TITLE --json` | Bring a window to the foreground. |
+| `window maximize` | `TITLE --json` | Maximize a window. |
+| `window minimize` | `TITLE --json` | Minimize a window. |
+| `window close` | `TITLE --yes --json` | Close a window (destructive — needs `--yes`). |
+
+**`process`**
+
+| Command | Parameters | Description |
+|---|---|---|
+| `process launch` | `COMMAND ARGS…? --json` | Launch a process; returns `{pid, command}`. |
+| `process find` | `NAME --json` | List processes whose name contains NAME. |
+| `process is-running` | `NAME --json` | Boolean: is any matching process running? |
+| `process kill` | `PID --yes --json` | Terminate by PID (destructive — needs `--yes`). |
+
+**Screen / clipboard / capture**
+
+| Command | Parameters | Description |
+|---|---|---|
+| `screenshot` | `PATH? --region --monitor --base64 --json` | Capture the screen to a PNG (or base64 with `--base64`). |
+| `monitors` | `--json` | List connected monitors (the `--monitor` index). |
+| `display-size` | `--json` | Primary display size. |
+| `capture` | `LABEL --auto --text --native --region --window --search-region --click --mouse-button --padding --confidence-threshold --native-timeout --elements-dir --dry-run --json` | Locate an element → save template + annotated → optional click. |
+| `clipboard get` | `--json` | Read the clipboard text. |
+| `clipboard set` | `TEXT --json` | Put TEXT on the clipboard. |
+
+**Project / session / diagnostics**
+
+| Command | Parameters | Description |
+|---|---|---|
+| `new` | `PATH --force` | Scaffold a new bot project (`tasks.py`, …). |
+| `run` | `SCRIPT` | Run a Python script with the active interpreter. |
+| `report` | `ZIP_PATH --html=<file>` | Render a recorded session zip to HTML. |
+| `configure` | `CONFIG? --set=<KEY=VALUE>… --dry-run --reset --json` | Show the config, or `--set key=value` (quote-free) to set **and persist** it for later commands (`--dry-run` previews, `--reset` clears). Saved to the per-user config dir (`$VISUS_CONFIG` to override). |
+| `doctor` | `--json` | Check the environment (Tesseract, display, deps, pywinauto). |
+| `repl` | — | Open the interactive Visus CLI Pro shell. |
+
+</details>
 
 ---
 
@@ -326,6 +439,21 @@ bot.click_text(
     delay=1,                 # seconds to pause after the click
     sendtext="my text",      # optional: type after clicking
 )
+```
+
+When the same label appears more than once, list **every** occurrence (instead
+of just the first) and pick the right one by index:
+
+```python
+# find_all_text -> [(x, y, width, height, confidence), ...] in reading order
+for i, (x, y, w, h, conf) in enumerate(bot.find_all_text("Delete"), start=1):
+    print(f"#{i} at ({x}, {y}) conf={conf:.0f}%")
+
+bot.click_text("Delete", occurrence=2)   # click the second match
+
+# show_text_occurrences -> same list, plus a numbered click-through overlay
+# (1, 2, 3 …) drawn on screen for `duration_ms`. Great for debugging a miss.
+bot.show_text_occurrences("Delete", duration_ms=4000, color="green")
 ```
 
 ### Find & click images
@@ -825,8 +953,7 @@ Recognized keys (with defaults):
 | `overlay_duration` | `1000` | Overlay display time (ms). |
 | `overlay_color` | `"red"` | red/blue/green/yellow/purple/orange/cyan/magenta/white/black. |
 | `overlay_width` | `4` | Overlay line width. |
-| `show_overlay` | `True` | Show overlay before clicks. |
-| `overlay_enabled` | `True` | Overlay system active. |
+| `show_overlay` | `True` | Show overlay before clicks (master toggle). |
 | `default_mouse_button` | `"left"` | left/right/double/move_to. |
 | `log_level` | `"INFO"` | Logging level. |
 | `ocr_languages` | `["eng"]` | Tesseract language(s). |

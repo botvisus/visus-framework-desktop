@@ -59,26 +59,187 @@ def get_tesseract_candidate_paths() -> list:
 
 
 class BotVisionConfig:
-    """
-    Main configuration class for Visus Desktop.
+    """Configuration for :class:`VisusBot` -- defaults + every tunable knob.
 
-    Automatically manages:
-    - Tesseract OCR detection
-    - OS-specific settings
-    - Dependency validation
-    - Default settings
+    Holds a dict of settings and validates them at construction:
+
+        * **Auto-detects Tesseract** on the standard install paths when
+          ``ocr_backend == "tesseract"`` (the default). Skip detection by
+          setting ``ocr_backend = "rapidocr"`` or providing
+          ``tesseract_path`` explicitly.
+        * **Validates** overlay color, overlay duration, overlay width,
+          and default mouse button; invalid values fall back with a
+          warning instead of raising.
+        * **Forward-compatible**: unknown keys are accepted silently so
+          configs survive Visus upgrades.
+        * **Back-compat**: the legacy ``overlay_enabled`` key (now
+          deprecated) is folded into ``show_overlay`` via logical AND.
+
+    Pass a partial dict to override only what you care about; everything
+    else uses the library defaults. **For the full key reference grouped
+    by topic (OCR, matching, mouse, overlay, waits, diagnostics) hover
+    or jump to :meth:`__init__` below.**
+
+    Reads / writes:
+
+        * Dict-style: ``cfg.get(key, default)``, ``cfg.config[key] = v``.
+        * Attribute-style: ``cfg.confidence_threshold`` proxies to
+          ``cfg.config["confidence_threshold"]``.
+        * Setattr on a known key writes back into the underlying dict.
+
+    Examples:
+        Defaults::
+
+            from visus.desktop import BotVisionConfig, VisusBot
+            cfg = BotVisionConfig()
+            bot = VisusBot(config=cfg)
+
+        Override a few keys::
+
+            cfg = BotVisionConfig({
+                "overlay_color": "green",
+                "overlay_duration": 1500,
+                "matcher": "cv2",
+                "confidence_threshold": 85.0,
+            })
+
+        Read or mutate after construction::
+
+            cfg.confidence_threshold        # attribute proxy -> 85.0
+            cfg.get("overlay_duration")     # dict-style -> 1500
+            cfg.config["log_level"] = "DEBUG"   # in-place update
+
+        Production preset (no overlay, JSON logs to ingest downstream)::
+
+            cfg = BotVisionConfig({
+                "show_overlay": False,
+                "log_format": "json",
+                "log_level": "WARNING",
+            })
     """
 
     def __init__(self, config_dict: Optional[Dict[str, Any]] = None):
-        """
-        Initialize the configuration.
+        """Initialize the Visus Desktop configuration.
+
+        Pass any subset of the keys below in ``config_dict``; missing keys
+        fall back to the defaults shown. Unknown keys are accepted and
+        ignored, except for the legacy ``overlay_enabled`` which is folded
+        into ``show_overlay`` for back-compat.
 
         Args:
-            config_dict (dict, optional): Dictionary of custom settings
+            config_dict (dict, optional): Custom settings. Recognized keys:
+
+                **OCR / Tesseract**
+
+                * ``tesseract_path`` (str | None, default ``None`` -- auto-detected):
+                  Path to ``tesseract.exe``/``tesseract``. Leave ``None`` to let
+                  Visus probe the standard install locations.
+                * ``tesseract_data_path`` (str | None, default ``None`` -- auto-detected):
+                  Path to the ``tessdata`` directory containing language data.
+                * ``ocr_languages`` (list[str], default ``["eng"]``): Tesseract
+                  language codes to load (e.g. ``["eng", "por"]``).
+                * ``ocr_backend`` (str, default ``"tesseract"``): OCR engine.
+                  ``"tesseract"`` (default; requires the binary) or
+                  ``"rapidocr"`` (PP-OCR via ONNX Runtime, no external binary;
+                  install with ``pip install 'visus-desktop[rapidocr]'``).
+                * ``image_processing_methods`` (str | list, default ``"all"``):
+                  Preprocessing pipeline before OCR. ``"all"`` runs every method,
+                  or pass a list to restrict (e.g. ``["original", "grayscale"]``).
+
+                **Matching / detection**
+
+                * ``confidence_threshold`` (float, default ``75.0``): Default OCR
+                  confidence (0--100). Words below this are discarded.
+                * ``matcher`` (str, default ``"cv2"``): Image-template backend.
+                  ``"cv2"`` (fast: cv2.matchTemplate over mss; falls back to
+                  pyscreeze if it misses) or ``"pyscreeze"`` (legacy).
+                * ``retry_attempts`` (int, default ``3``): Default retry attempts
+                  for find/click methods.
+
+                **Mouse / click**
+
+                * ``default_mouse_button`` (str, default ``"left"``): One of
+                  ``"left"``, ``"right"``, ``"double"``, ``"move_to"``.
+                * ``click_duration`` (float, default ``0.1``): Seconds the click
+                  takes (passed to pyautogui).
+                * ``movement_duration`` (float, default ``0.1``): Seconds to move
+                  the cursor to the target before clicking.
+                * ``use_virtual_mouse`` (bool, default ``False``): If ``True``,
+                  click via ``PostMessage`` so the physical cursor does not move
+                  (Windows; falls back to physical if the target window cannot
+                  receive synthetic input).
+                * ``default_delay`` (float, default ``1.0``): Default pause (s)
+                  between actions in higher-level flows.
+
+                **Overlay (visual feedback)**
+
+                * ``show_overlay`` (bool, default ``True``): Master toggle.
+                  When ``True``, every click first paints a click-through
+                  overlay around the target. On Windows it uses ``WS_EX_LAYERED``
+                  + ``WS_EX_TRANSPARENT`` so the click passes through to the
+                  host below (works over native, Java, Electron, browsers).
+                * ``overlay_color`` (str, default ``"red"``): One of ``red``,
+                  ``blue``, ``green``, ``yellow``, ``purple``, ``orange``,
+                  ``cyan``, ``magenta``, ``white``, ``black``.
+                * ``overlay_duration`` (int, default ``1000``): How long the
+                  overlay stays on screen, in milliseconds.
+                * ``overlay_width`` (int, default ``4``): Outline thickness
+                  in pixels.
+
+                **Waits / timeouts**
+
+                * ``wait_timeout`` (int, default ``30``): Default timeout in
+                  seconds for ``wait_until_found`` / ``wait_until_disappears``.
+                * ``screenshot_delay`` (float, default ``0.1``): Pause before
+                  capturing the screen (lets late repaints settle).
+
+                **Diagnostics / artifacts**
+
+                * ``log_level`` (str, default ``"INFO"``): Standard ``logging``
+                  level (``DEBUG``, ``INFO``, ``WARNING``, ``ERROR``).
+                * ``log_format`` (str, default ``"text"``): Task event format.
+                  ``"text"`` (human-readable ``[INFO]`` lines) or ``"json"``
+                  (one JSON object per task on logger ``visus.desktop.task_events``).
+                * ``artifacts_dir`` (str, default ``"./visus-artifacts"``):
+                  Folder for failure screenshots / diagnostic dumps.
+                * ``screenshot_on_failure`` (bool, default ``True``): If
+                  ``True``, save a screenshot to ``artifacts_dir`` whenever a
+                  task fails.
+
+        Examples:
+            Defaults only::
+
+                config = BotVisionConfig()
+
+            Tune the overlay and matcher::
+
+                config = BotVisionConfig({
+                    "overlay_color": "green",
+                    "overlay_duration": 1500,
+                    "matcher": "cv2",
+                    "confidence_threshold": 85.0,
+                })
+
+            Headless / production (no visual feedback, JSON logs)::
+
+                config = BotVisionConfig({
+                    "show_overlay": False,
+                    "log_level": "WARNING",
+                    "log_format": "json",
+                })
         """
         self.config = self._load_default_config()
 
         if config_dict:
+            # Back-compat: the old ``overlay_enabled`` flag has been folded
+            # into ``show_overlay`` (they were AND-gated, identical effect).
+            # If the caller still passes it, intersect it with show_overlay
+            # so disabling via either key keeps disabling the overlay.
+            if "overlay_enabled" in config_dict:
+                legacy = bool(config_dict.pop("overlay_enabled"))
+                config_dict["show_overlay"] = (
+                    bool(config_dict.get("show_overlay", True)) and legacy
+                )
             self.config.update(config_dict)
 
         # Tesseract is only required when it is the active OCR backend (Phase 3 / E5).
@@ -89,6 +250,11 @@ class BotVisionConfig:
         self._validate_dependencies()
         self._validate_overlay_config()
         self._validate_mouse_button_config()
+        # Apply ``log_level`` to the active logging setup. Without this
+        # call, the config key is stored but never takes effect because
+        # the library installs a default INFO handler at import time and
+        # ``logging.basicConfig`` is a no-op once any handler exists.
+        self.setup_logging()
 
     def _validate_overlay_config(self) -> None:
         """Validate the overlay settings."""
@@ -150,8 +316,7 @@ class BotVisionConfig:
             "overlay_duration": 1000,
             "overlay_color": "red",  # red, blue, green, yellow, purple, orange, cyan, magenta, white
             "overlay_width": 4,
-            "show_overlay": True,  # Controls whether a visual overlay is shown before the click
-            "overlay_enabled": True,  # Controls whether the overlay system is active
+            "show_overlay": True,  # Master toggle: show the overlay before clicks
             "default_mouse_button": "left",  # Default mouse button: 'left', 'right', 'double', 'move_to'
             "log_level": "INFO",
             "ocr_languages": ["eng"],
@@ -165,6 +330,11 @@ class BotVisionConfig:
             # Failure artifacts (Phase 1 / O1)
             "artifacts_dir": "./visus-artifacts",
             "screenshot_on_failure": True,
+            # Draw the matched (x, y, w, h) box + crosshair on saved
+            # step / failure screenshots, in the same overlay_color /
+            # overlay_width style. Independent of the on-screen overlay
+            # timing -- always present in the PNG when a location is known.
+            "screenshot_annotate": True,
             # Structured task event logging (Phase 1 / O2)
             #   'text' -> human-readable [INFO] lines (the default)
             #   'json' -> one JSON object per task on logger
@@ -297,11 +467,31 @@ class BotVisionConfig:
             raise ConfigurationError("pytesseract is not installed") from e
 
     def setup_logging(self) -> None:
-        """Configure the logging system."""
-        log_level = getattr(logging, self.config["log_level"].upper(), logging.INFO)
-        logging.basicConfig(
-            level=log_level, format="[%(levelname)s] %(name)s: %(message)s"
-        )
+        """Apply ``config["log_level"]`` to the active logging setup.
+
+        Idempotent and safe to call any number of times. The library
+        installs an INFO-level root handler at import time (in
+        ``_setup_library``), so by the time ``BotVisionConfig`` is
+        constructed, ``logging.basicConfig`` is already a no-op. To make
+        ``log_level`` actually take effect we have to:
+
+            1. ``basicConfig`` if no handler exists yet (cold start);
+            2. otherwise update the root logger's level **and** the level
+               of every handler attached to it (the root level alone is
+               not enough because each handler has its own filter).
+        """
+        level_name = str(self.config.get("log_level", "INFO")).upper()
+        log_level = getattr(logging, level_name, logging.INFO)
+        root = logging.getLogger()
+        if not root.handlers:
+            logging.basicConfig(
+                level=log_level,
+                format="[%(levelname)s] %(name)s: %(message)s",
+            )
+            return
+        root.setLevel(log_level)
+        for handler in root.handlers:
+            handler.setLevel(log_level)
 
     def __getattr__(self, name):
         """Allow direct access to configuration values as attributes."""
@@ -319,6 +509,8 @@ class BotVisionConfig:
             super().__setattr__(name, value)
         elif name in self.config:
             self.config[name] = value
+            if name == "log_level":
+                self.setup_logging()
         else:
             super().__setattr__(name, value)
 
@@ -329,6 +521,8 @@ class BotVisionConfig:
     def set(self, key, value):
         """Set a configuration value."""
         self.config[key] = value
+        if key == "log_level":
+            self.setup_logging()
 
     def update(self, config_dict):
         """Update multiple settings."""

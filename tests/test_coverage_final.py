@@ -444,12 +444,6 @@ class TestVisusBotWrappers:
         succ, total = bot.end_task_session()
         assert succ == 0 and total == 0
 
-    def test_overlay_enabled_property_setter(self, bot):
-        bot.overlay_enabled = False
-        assert bot.overlay_enabled is False
-        bot.overlay_enabled = True
-        assert bot.overlay_enabled is True
-
     def test_show_overlay_property_setter(self, bot):
         bot.show_overlay = False
         assert bot.show_overlay is False

@@ -16,11 +16,15 @@ from .commands import capture as capture_cmd
 from .commands import clipboard as clipboard_cmd
 from .commands import config as config_cmd
 from .commands import doctor as doctor_cmd
+from .commands import image as image_cmd
+from .commands import keyboard as keyboard_cmd
+from .commands import mouse as mouse_cmd
 from .commands import native as native_cmd
 from .commands import process as process_cmd
 from .commands import project as project_cmd
 from .commands import screen as screen_cmd
 from .commands import smart as smart_cmd
+from .commands import text as text_cmd
 from .commands import window as window_cmd
 from .repl import repl as repl_cmd
 
@@ -50,9 +54,17 @@ def cli():
 
 
 cli.add_command(smart_cmd.smart)
+cli.add_command(text_cmd.text)
+cli.add_command(image_cmd.image)
+cli.add_command(mouse_cmd.mouse)
+cli.add_command(keyboard_cmd.type_cmd)
+cli.add_command(keyboard_cmd.key_cmd)
+cli.add_command(keyboard_cmd.keys_cmd)
 cli.add_command(native_cmd.native)
 cli.add_command(capture_cmd.capture)
 cli.add_command(screen_cmd.screenshot)
+cli.add_command(screen_cmd.monitors)
+cli.add_command(screen_cmd.display_size)
 cli.add_command(window_cmd.window)
 cli.add_command(process_cmd.process)
 cli.add_command(clipboard_cmd.clipboard)

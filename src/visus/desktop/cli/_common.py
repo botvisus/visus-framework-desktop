@@ -2,7 +2,67 @@
 
 from __future__ import annotations
 
+import json as _json
+import os
+import sys
+from pathlib import Path
+
 import click
+
+
+def config_path() -> Path:
+    """Where the CLI persists / reads config — a per-user, OS-appropriate path.
+
+    Precedence:
+      1. ``$VISUS_CONFIG`` — explicit override (any path you choose).
+      2. The platform user-config dir, so it stays out of the project tree
+         and out of sight:
+           * Windows: ``%APPDATA%\\visus\\config.json``
+           * macOS:   ``~/Library/Application Support/visus/config.json``
+           * Linux:   ``$XDG_CONFIG_HOME/visus/config.json`` (else
+             ``~/.config/visus/config.json``)
+    """
+    env = os.environ.get("VISUS_CONFIG")
+    if env:
+        return Path(env)
+
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or os.path.expanduser(r"~\AppData\Roaming")
+    elif sys.platform == "darwin":
+        base = os.path.expanduser("~/Library/Application Support")
+    else:
+        base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    return Path(base) / "visus" / "config.json"
+
+
+def load_persisted_config() -> dict:
+    """Return the persisted CLI config dict, or ``{}`` if none/invalid.
+
+    Each ``visus`` invocation is its own process, so this file is how
+    ``visus configure --save`` settings reach later commands.
+    """
+    path = config_path()
+    if not path.exists():
+        return {}
+    try:
+        data = _json.loads(path.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def build_bot(**overrides):
+    """Build a ``VisusBot`` from the persisted config + explicit overrides.
+
+    Overrides whose value is ``None`` are dropped, so a command's flag
+    default of ``None`` means "use the persisted/library default" rather
+    than forcing a value over a saved config.
+    """
+    from visus.desktop import VisusBot
+
+    cfg = load_persisted_config()
+    cfg.update({k: v for k, v in overrides.items() if v is not None})
+    return VisusBot(config=cfg) if cfg else VisusBot()
 
 
 def _int_csv(expected_len, label):

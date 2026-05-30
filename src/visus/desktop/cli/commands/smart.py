@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import click
 
-from .._common import dry_run_option, json_option, smart_options
+from .._common import build_bot, dry_run_option, json_option, smart_options
 from .._output import done
 
 
@@ -26,7 +26,7 @@ def find(
         query, image=image, coordinates=coordinates, window=window, pid=pid,
         control_type=control_type, auto_id=auto_id, search_region=search_region,
         confidence=confidence, confidence_threshold=confidence_threshold,
-        order=order, timeout=timeout,
+        order=order, timeout=timeout, bot=build_bot(),
     )
     ok = bool(result.get("found"))
     tried = ", ".join(result.get("tried") or [])
@@ -61,6 +61,7 @@ def click_cmd(
             control_type=control_type, auto_id=auto_id,
             search_region=search_region, confidence=confidence,
             confidence_threshold=confidence_threshold, order=order, timeout=timeout,
+            bot=build_bot(),
         )
         ok = bool(result.get("found"))
         tried = ", ".join(result.get("tried") or [])
@@ -77,7 +78,7 @@ def click_cmd(
         control_type=control_type, auto_id=auto_id, search_region=search_region,
         button=button, confidence=confidence,
         confidence_threshold=confidence_threshold, order=order, timeout=timeout,
-        retries=retries, delay=delay,
+        retries=retries, delay=delay, bot=build_bot(),
     )
     ok = bool(result.get("clicked"))
     tried = ", ".join(result.get("tried") or [])

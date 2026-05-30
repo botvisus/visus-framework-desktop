@@ -56,6 +56,8 @@ HOW TO APPROACH ANY TASK (follow in order):
       in one call and report which won.
    d. PRIMITIVES: `find_text`/`click_text` (OCR), `find_image`/`click_image`
       (template PNG), `click_at` (absolute coords — only if the user gave them).
+      If a label repeats on screen, call `find_all_text` first to list every
+      match, then click the right one via `click_text(occurrence=N)`.
 
 3. SCOPE EVERY SEARCH. Pass `region=[x,y,w,h]` (the window rect from
    ensure_window) to find/click/capture so a match cannot land on the wrong
@@ -164,25 +166,39 @@ def configure(config: dict) -> dict:
 def find_text(
     text: str,
     region: list[int] | None = None,
+    filter_type: str = "both",
     confidence_threshold: float = 75.0,
     occurrence: int = 1,
+    max_attempts: int = 3,
+    backtrack: bool = False,
+    wait_until_found: bool = False,
+    wait_until_disappears: bool = False,
+    wait_timeout: int | None = None,
 ) -> dict | None:
     """Find visible on-screen ``text`` via OCR; return its box (do not click).
 
     USE WHEN: you need the location of a text label, or to verify text is
     present, without clicking. To click it instead, use ``click_text``.
     PARAMS: ``region=[x,y,w,h]`` scopes the search (pass the window rect from
-    ``ensure_window`` — strongly recommended); ``occurrence`` picks the Nth
-    match (1-based); ``confidence_threshold`` is 0-100 (lower to ~50 to debug
-    a miss).
-    RETURNS: ``{x, y, width, height}`` of the match, or ``null`` if no match
-    scores above ``confidence_threshold``.
+    ``ensure_window`` — strongly recommended); ``filter_type`` is
+    letters|numbers|both; ``occurrence`` picks the Nth match (1-based);
+    ``confidence_threshold`` is 0-100 (lower to ~50 to debug a miss).
+    ROBUSTNESS: ``wait_until_found`` polls until the text APPEARS (up to
+    ``wait_timeout`` s); ``wait_until_disappears`` waits until it is GONE;
+    ``backtrack`` + ``max_attempts`` retry with adjusted thresholds.
+    RETURNS: ``{x, y, width, height}`` of the match, or ``null``.
     """
     box = get_bot().find_text(
         text,
         region=_coerce_region(region),
+        filter_type=filter_type,
         confidence_threshold=confidence_threshold,
         occurrence=occurrence,
+        max_attempts=max_attempts,
+        backtrack=backtrack,
+        wait_until_found=wait_until_found,
+        wait_until_disappears=wait_until_disappears,
+        wait_timeout=wait_timeout,
     )
     return _box_to_dict(box)
 
@@ -191,27 +207,85 @@ def find_text(
 def click_text(
     text: str,
     region: list[int] | None = None,
+    filter_type: str = "both",
     delay: float = 0,
     mouse_button: str = "left",
     occurrence: int = 1,
+    sendtext: str | None = None,
+    confidence_threshold: float | None = None,
+    max_attempts: int = 3,
+    backtrack: bool = False,
+    wait_until_found: bool = False,
+    wait_until_disappears: bool = False,
+    wait_timeout: int | None = None,
 ) -> bool:
     """Find on-screen ``text`` via OCR and click its center.
 
     USE WHEN: clicking a button/link/menu identified by its visible text on
     any UI that renders text (works on Java Swing, Electron, remote desktop).
-    PARAMS: ``region`` scopes the search (pass the window rect); ``occurrence``
-    picks the Nth match; ``mouse_button`` is "left"|"right"|"middle".
-    RETURNS: True if found and clicked, False if the text was not found.
+    PARAMS: ``region`` scopes the search; ``filter_type`` letters|numbers|both;
+    ``occurrence`` picks the Nth match; ``mouse_button`` left|right|double|
+    move_to; ``sendtext`` types a string right after the click (fill a field
+    you just clicked); ``confidence_threshold`` 0-100 (default = config).
+    ROBUSTNESS: ``wait_until_found`` / ``wait_until_disappears`` (+
+    ``wait_timeout``) and ``backtrack`` + ``max_attempts`` — see ``find_text``.
+    RETURNS: True if found and clicked, False otherwise.
     """
     return bool(
         get_bot().click_text(
             text,
             region=_coerce_region(region),
+            filter_type=filter_type,
             delay=delay,
             mouse_button=mouse_button,
             occurrence=occurrence,
+            sendtext=sendtext,
+            confidence_threshold=confidence_threshold,
+            max_attempts=max_attempts,
+            backtrack=backtrack,
+            wait_until_found=wait_until_found,
+            wait_until_disappears=wait_until_disappears,
+            wait_timeout=wait_timeout,
         )
     )
+
+
+@mcp.tool()
+def find_all_text(
+    text: str,
+    region: list[int] | None = None,
+    filter_type: str = "both",
+    confidence_threshold: float | None = None,
+) -> list[dict]:
+    """List EVERY on-screen occurrence of ``text`` via OCR (do not click).
+
+    USE WHEN: the same label appears more than once and you must pick the
+    right one by position before clicking — e.g. several "OK" buttons, or
+    repeated rows. Unlike ``find_text`` (first match only), this returns
+    all matches so you can choose an ``occurrence`` index for ``click_text``.
+    PARAMS: ``region=[x,y,w,h]`` scopes the search (pass the window rect);
+    ``filter_type`` is "letters"|"numbers"|"both"; ``confidence_threshold``
+    is 0-100 (defaults to the configured threshold).
+    RETURNS: a list of ``{occurrence, x, y, width, height, confidence}`` in
+    reading order (top-to-bottom, left-to-right); empty if nothing matched.
+    """
+    matches = get_bot().find_all_text(
+        text,
+        region=_coerce_region(region),
+        filter_type=filter_type,
+        confidence_threshold=confidence_threshold,
+    )
+    return [
+        {
+            "occurrence": i,
+            "x": int(x),
+            "y": int(y),
+            "width": int(w),
+            "height": int(h),
+            "confidence": round(float(conf), 2),
+        }
+        for i, (x, y, w, h, conf) in enumerate(matches, start=1)
+    ]
 
 
 @mcp.tool()
@@ -219,6 +293,12 @@ def find_image(
     image_path: str,
     region: list[int] | None = None,
     confidence: float = 0.9,
+    specific: bool = True,
+    max_attempts: int = 3,
+    backtrack: bool = False,
+    wait_until_found: bool = False,
+    wait_until_disappears: bool = False,
+    wait_timeout: int | None = None,
 ) -> dict | None:
     """Find a template PNG on screen; return its box (do not click).
 
@@ -228,14 +308,22 @@ def find_image(
     the live screen.
     PARAMS: ``image_path`` is a PNG on disk; ``region`` scopes the search
     (pass the window rect); ``confidence`` is 0-1 (0.9 default; lower to ~0.7
-    if a match is missed).
-    RETURNS: ``{x, y, width, height}`` of the best match, or ``null`` if the
-    best score is below ``confidence``.
+    if a match is missed); ``specific`` true = search the region, false =
+    whole screen + scale variations (helps across resolutions).
+    ROBUSTNESS: ``wait_until_found`` / ``wait_until_disappears`` (+
+    ``wait_timeout``) poll for the template; ``max_attempts`` retries.
+    RETURNS: ``{x, y, width, height}`` of the best match, or ``null``.
     """
     box = get_bot().find_image(
         image_path,
         region=_coerce_region(region),
         confidence=confidence,
+        specific=specific,
+        max_attempts=max_attempts,
+        backtrack=backtrack,
+        wait_until_found=wait_until_found,
+        wait_until_disappears=wait_until_disappears,
+        wait_timeout=wait_timeout,
     )
     return _box_to_dict(box)
 
@@ -247,6 +335,13 @@ def click_image(
     confidence: float = 0.9,
     delay: float = 0,
     mouse_button: str = "left",
+    specific: bool = True,
+    sendtext: str | None = None,
+    max_attempts: int = 3,
+    backtrack: bool = False,
+    wait_until_found: bool = False,
+    wait_until_disappears: bool = False,
+    wait_timeout: int | None = None,
 ) -> bool:
     """Find a template PNG on screen and click its center.
 
@@ -255,8 +350,12 @@ def click_image(
     ``capture_element`` / ``save_screenshot``, then click it here.
     PARAMS: ``image_path`` is a PNG on disk; ``region`` scopes the search
     (pass the window rect — prevents matching a look-alike elsewhere);
-    ``confidence`` 0-1; ``mouse_button`` "left"|"right"|"middle".
-    RETURNS: True if found and clicked, False if the template was not on screen.
+    ``confidence`` 0-1; ``mouse_button`` left|right|double|move_to;
+    ``specific`` true = region, false = whole screen + scales; ``sendtext``
+    types a string right after the click.
+    ROBUSTNESS: ``wait_until_found`` / ``wait_until_disappears`` (+
+    ``wait_timeout``), ``backtrack`` + ``max_attempts``.
+    RETURNS: True if found and clicked, False otherwise.
     """
     return bool(
         get_bot().click_image(
@@ -265,6 +364,13 @@ def click_image(
             confidence=confidence,
             delay=delay,
             mouse_button=mouse_button,
+            specific=specific,
+            sendtext=sendtext,
+            max_attempts=max_attempts,
+            backtrack=backtrack,
+            wait_until_found=wait_until_found,
+            wait_until_disappears=wait_until_disappears,
+            wait_timeout=wait_timeout,
         )
     )
 
@@ -311,28 +417,143 @@ def hybrid_find(name: str, region: list[int] | None = None) -> dict | None:
     return _box_to_dict(box)
 
 
+@mcp.tool()
+def find_relative_image(
+    anchor_image: str,
+    target_image: str,
+    max_distance: int = 200,
+    confidence: float = 0.9,
+    target_region: list[int] | None = None,
+    wait_until_found: bool = False,
+    wait_until_disappears: bool = False,
+    wait_timeout: int | None = None,
+) -> dict | None:
+    """Find a target template NEAR a unique anchor template (no click).
+
+    USE WHEN: the target alone is ambiguous (many identical icons) but there is
+    a unique nearby anchor — e.g. the edit field next to a specific label.
+    PARAMS: ``max_distance`` caps the px gap between anchor and target (keep it
+    small to reject a far-away twin); ``confidence`` is 0-1; ``target_region``
+    scopes the target search.
+    ROBUSTNESS: ``wait_until_found`` / ``wait_until_disappears`` (+
+    ``wait_timeout``) poll for the pair.
+    RETURNS: ``{x, y, width, height}`` of the closest target, or ``null``.
+    """
+    box = get_bot().find_relative_image(
+        anchor_image, target_image, max_distance=max_distance,
+        confidence=confidence, target_region=_coerce_region(target_region),
+        wait_until_found=wait_until_found, wait_until_disappears=wait_until_disappears,
+        wait_timeout=wait_timeout,
+    )
+    return _box_to_dict(box)
+
+
+@mcp.tool()
+def click_relative_image(
+    anchor_image: str,
+    target_image: str,
+    max_distance: int = 200,
+    confidence: float = 0.9,
+    target_region: list[int] | None = None,
+    delay: float = 0,
+    mouse_button: str = "left",
+    sendtext: str | None = None,
+    max_attempts: int = 3,
+    backtrack: bool = False,
+    wait_until_found: bool = False,
+    wait_until_disappears: bool = False,
+    wait_timeout: int | None = None,
+) -> bool:
+    """Find a target template near a unique anchor and click it.
+
+    Same locating logic as ``find_relative_image``; clicks the target's center.
+    ``mouse_button`` is left|right|double|move_to; ``sendtext`` types a string
+    right after the click. ``backtrack`` + ``max_attempts`` and the
+    ``wait_until_*`` (+ ``wait_timeout``) knobs add retry/polling robustness.
+    """
+    return bool(
+        get_bot().click_relative_image(
+            anchor_image, target_image, max_distance=max_distance,
+            confidence=confidence, target_region=_coerce_region(target_region),
+            delay=delay, mouse_button=mouse_button, sendtext=sendtext,
+            max_attempts=max_attempts, backtrack=backtrack,
+            wait_until_found=wait_until_found,
+            wait_until_disappears=wait_until_disappears, wait_timeout=wait_timeout,
+        )
+    )
+
+
+@mcp.tool()
+def find_all(
+    image_path: str,
+    region: list[int] | None = None,
+    confidence: float = 0.9,
+) -> list[dict]:
+    """Find EVERY occurrence of one template PNG on screen (no click).
+
+    USE WHEN: a repeated icon/element appears multiple times and you need all
+    of them (e.g. every row's delete button). For repeated TEXT use
+    ``find_all_text`` instead.
+    RETURNS: a list of ``{x, y, width, height}`` boxes (empty if none).
+    """
+    from .core.locate import find_all as _find_all
+
+    boxes = _find_all(image_path, region=_coerce_region(region), confidence=confidence)
+    return [{"x": b[0], "y": b[1], "width": b[2], "height": b[3]} for b in boxes]
+
+
+@mcp.tool()
+def find_multiple(
+    images: list[str],
+    region: list[int] | None = None,
+    confidence: float = 0.9,
+) -> dict:
+    """Locate the first match of SEVERAL template PNGs in one call (no click).
+
+    USE WHEN: probing which of several possible elements is on screen (e.g. is
+    the "Accept" or the "Decline" dialog showing?).
+    PARAMS: ``images`` is a list of PNG paths; each is searched independently.
+    RETURNS: ``{path: {x, y, width, height} | null}`` for each input path.
+    """
+    from .core.locate import find_multiple as _find_multiple
+
+    found = _find_multiple(images, region=_coerce_region(region), confidence=confidence)
+    return {
+        key: (
+            {"x": box[0], "y": box[1], "width": box[2], "height": box[3]}
+            if box else None
+        )
+        for key, box in found.items()
+    }
+
+
 # ---------------------------------------------------------------------------
 # Keyboard
 # ---------------------------------------------------------------------------
 
 
 @mcp.tool()
-def type_text(text: str, interval: float = 0.05, delay: float = 0) -> bool:
+def type_text(
+    text: str, interval: float = 0.05, delay: float = 0, backtrack: bool = False
+) -> bool:
     """Type ``text`` into the CURRENTLY FOCUSED field (click/focus it first).
 
     USE WHEN: entering free text. Embedded tokens are expanded inline:
     ``{ctrl}a`` (select all), ``{tab}``, ``{enter}``, ``{escape}``. For a
     standalone shortcut prefer ``keyboard_command``.
     PARAMS: ``interval`` is the per-character delay (raise it for apps that
-    drop fast keystrokes).
+    drop fast keystrokes); ``delay`` pauses after typing; ``backtrack`` retries
+    within a task session on failure.
     RETURNS: True once typed. Does NOT move focus — make sure the right field
     is focused (e.g. ``native_click`` / ``click_text`` it first).
     """
-    return bool(get_bot().type_text(text, interval=interval, delay=delay))
+    return bool(
+        get_bot().type_text(text, interval=interval, delay=delay, backtrack=backtrack)
+    )
 
 
 @mcp.tool()
-def keyboard_command(command: str, delay: float = 0) -> bool:
+def keyboard_command(command: str, delay: float = 0, backtrack: bool = False) -> bool:
     """Press a named key or shortcut. Tokens are CASE-SENSITIVE.
 
     USE WHEN: pressing a single key or chord (not typing text).
@@ -344,7 +565,105 @@ def keyboard_command(command: str, delay: float = 0) -> bool:
     RETURNS: True if the token was recognized and sent; False if the token is
     not in the supported set (check the case/spelling above).
     """
-    return bool(get_bot().keyboard_command(command, delay=delay))
+    return bool(get_bot().keyboard_command(command, delay=delay, backtrack=backtrack))
+
+
+# ---------------------------------------------------------------------------
+# Mouse gestures (low-level, coordinate-based)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def scroll(amount: int, x: int | None = None, y: int | None = None) -> bool:
+    """Scroll the mouse wheel. Positive = up, negative = down.
+
+    USE WHEN: a target is off-screen in a scrollable view. Optionally move to
+    ``(x, y)`` first (e.g. hover the pane you want to scroll).
+    RETURNS: True.
+    """
+    from .core.mouse_extra import scroll as _scroll
+
+    _scroll(amount, x=x, y=y)
+    return True
+
+
+@mcp.tool()
+def drag(
+    start_x: int,
+    start_y: int,
+    end_x: int,
+    end_y: int,
+    duration: float = 0.5,
+    button: str = "left",
+) -> bool:
+    """Drag from ``(start_x, start_y)`` to ``(end_x, end_y)`` holding ``button``.
+
+    USE WHEN: sliders, reordering, selection rectangles, drag-and-drop.
+    RETURNS: True.
+    """
+    from .core.mouse_extra import drag as _drag
+
+    _drag(start_x, start_y, end_x, end_y, duration=duration, button=button)
+    return True
+
+
+@mcp.tool()
+def triple_click(
+    x: int | None = None, y: int | None = None, interval: float = 0.05
+) -> bool:
+    """Triple-click at ``(x, y)`` (or the current cursor position).
+
+    USE WHEN: selecting a whole line/paragraph before overtyping it.
+    RETURNS: True.
+    """
+    from .core.mouse_extra import triple_click as _triple
+
+    _triple(x=x, y=y, interval=interval)
+    return True
+
+
+@mcp.tool()
+def move_random(x: int, y: int, max_offset: int = 3, duration: float = 0.2) -> bool:
+    """Move the cursor to ``(x, y)`` with a light human-like jitter.
+
+    USE WHEN: you want a less robotic cursor path (the move settles exactly on
+    the target after a small random offset).
+    RETURNS: True.
+    """
+    from .core.mouse_extra import move_random as _move
+
+    _move(x, y, max_offset=max_offset, duration=duration)
+    return True
+
+
+@mcp.tool()
+def mouse_down(
+    x: int | None = None, y: int | None = None, button: str = "left"
+) -> bool:
+    """Press a mouse button at ``(x, y)`` (or current position) WITHOUT releasing.
+
+    USE WHEN: a press-and-hold pattern ``drag`` doesn't cover. Pair with
+    ``mouse_up``. ``button`` is left|middle|right.
+    RETURNS: True.
+    """
+    from .core.mouse_extra import mouse_down as _down
+
+    _down(x=x, y=y, button=button)
+    return True
+
+
+@mcp.tool()
+def mouse_up(
+    x: int | None = None, y: int | None = None, button: str = "left"
+) -> bool:
+    """Release a previously-pressed mouse button at ``(x, y)`` (or current position).
+
+    RETURNS: True.
+    """
+    from .core.mouse_extra import mouse_up as _up
+
+    _up(x=x, y=y, button=button)
+    return True
 
 
 # ---------------------------------------------------------------------------
@@ -763,6 +1082,19 @@ def get_monitors() -> list[dict]:
 
 
 @mcp.tool()
+def get_display_size() -> dict:
+    """Return the primary display size as ``{width, height}`` (pixels).
+
+    USE WHEN: you need the screen bounds to build a full-screen ``region`` or
+    sanity-check coordinates. For multi-monitor layouts use ``get_monitors``.
+    """
+    from .core.screen import get_display_size as _size
+
+    width, height = _size()
+    return {"width": int(width), "height": int(height)}
+
+
+@mcp.tool()
 def wait_for_stable_screen(
     region: list[int] | None = None,
     stable_for: float = 0.5,
@@ -945,6 +1277,18 @@ def find_process(name: str) -> list[dict]:
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             continue
     return matches
+
+
+@mcp.tool()
+def is_process_running(name: str) -> bool:
+    """Return True if any running process's name contains ``name``.
+
+    USE WHEN: a quick boolean check (is the app up?) without needing the pid
+    list from ``find_process``.
+    """
+    from .core.process import is_process_running as _running
+
+    return bool(_running(name))
 
 
 @mcp.tool()
@@ -1219,7 +1563,9 @@ def replay_session(zip_path: str) -> list[dict]:
     task list.
     USE WHEN: inspecting/asserting what a recorded run did.
     RETURNS: ``[{run_id, task_id, task_name, success, duration_ms, error,
-    failure_screenshot, timestamp}, ...]`` (empty if nothing was recorded).
+    failure_screenshot, timestamp, logs}, ...]`` (empty if nothing was
+    recorded). ``logs`` is the list of ``visus.*`` log lines captured during
+    that task's window (verbosity follows the recorded ``log_level``).
     """
     from .core.session import Session
 

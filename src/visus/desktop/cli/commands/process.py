@@ -74,6 +74,20 @@ def kill(pid, yes, json_mode):
     )
 
 
+@click.command(name="is-running", help="Check whether any process name contains NAME.")
+@click.argument("name")
+@json_option
+def is_running(name, json_mode):
+    from visus.desktop.core.process import is_process_running
+
+    result = bool(is_process_running(name))
+    done(
+        result, json_mode=json_mode, ok=result,
+        human=("running" if result else "not running"),
+    )
+
+
 process.add_command(launch)
 process.add_command(find)
 process.add_command(kill)
+process.add_command(is_running)

@@ -20,12 +20,13 @@ from PIL import Image
 from ..exceptions import (
     CircuitBreakerTrippedError,
     TaskExecutionError,
-    TextNotFoundError,
+    TextNotFoundError,  # noqa: F401  -- kept for back-compat re-export
 )
 from ..utils.config import BotVisionConfig
 from .keyboard_commands import KeyboardCommander
 from .ocr_engine import OCREngine
 from .overlay import show_overlay
+from .overlay_win32 import show_click_through_overlay
 from .relative_image import RelativeImageDetector
 from .screen import (
     capture_screen,
@@ -109,6 +110,11 @@ class TaskExecutor:
         # ``current_run_id`` is rotated at the start of every ``execute_tasks``
         # call so failure screenshots from concurrent runs don't collide.
         self.current_run_id: Optional[str] = None
+        # The last (x, y, w, h) box passed to ``_perform_action``. Lets
+        # ``VisusBot._emit_direct_call_event`` annotate the step screenshot
+        # for a direct ``click_text`` / ``click_image`` call even though
+        # the public method only returns a bool.
+        self.last_action_location: Optional[Tuple] = None
 
         # Test mode (Phase 2 / TS3): config['screen_source'] = 'disk:<path>'
         # makes capture_screen read PNGs from disk instead of grabbing the
@@ -182,11 +188,16 @@ class TaskExecutor:
             )
         return f"Target not found: {ttype} '{target}' after {attempts} {plural}"
 
-    def _capture_step_screenshot(self, task_index: int) -> Optional[str]:
+    def _capture_step_screenshot(
+        self, task_index: int, location: Optional[Tuple] = None
+    ) -> Optional[str]:
         """Capture a screenshot for ANY step (config['screenshot_steps']).
 
         Mirrors ``_save_failure_screenshot`` but is taken after a successful
-        action so the report can show every step, not just failures.
+        action so the report can show every step, not just failures. When
+        ``location`` is provided and ``config['screenshot_annotate']`` is
+        on, the click target is drawn on the PNG so the saved image makes
+        sense even after the on-screen overlay has vanished.
         """
         artifacts_dir = self.config.get("artifacts_dir", "./visus-artifacts")
         run_id = self.current_run_id or uuid.uuid4().hex[:8]
@@ -195,11 +206,38 @@ class TaskExecutor:
         try:
             os.makedirs(artifacts_dir, exist_ok=True)
             path = os.path.abspath(os.path.join(artifacts_dir, filename))
-            capture_screen().save(path)
+            image = capture_screen()
+            if location and self.config.get("screenshot_annotate", True):
+                self._annotate_location(image, location)
+            image.save(path)
             return path
         except Exception as exc:  # pragma: no cover - logged for forensics
             logger.warning("Failed to save step screenshot: %s", exc)
             return None
+
+    def _annotate_location(self, image, location) -> None:
+        """Draw the click target on ``image`` in-place.
+
+        Uses PIL so we don't have to depend on the on-screen overlay being
+        present when the screenshot was captured. Matches the overlay's
+        colour / width so step PNGs look consistent with what was shown
+        on screen during the run.
+        """
+        try:
+            from PIL import ImageDraw
+
+            x, y, w, h = (int(v) for v in location[:4])
+        except (TypeError, ValueError, ImportError):
+            return
+        color = str(self.config.get("overlay_color", "red"))
+        width = max(1, int(self.config.get("overlay_width", 4)))
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((x, y, x + w, y + h), outline=color, width=width)
+        cx = x + w // 2
+        cy = y + h // 2
+        cross = max(2, min(10, w // 4 or 2, h // 4 or 2))
+        draw.line((cx - cross, cy, cx + cross, cy), fill=color, width=width)
+        draw.line((cx, cy - cross, cx, cy + cross), fill=color, width=width)
 
     def _emit_task_event(self, result: "TaskResult", task: Dict[str, Any]) -> None:
         """Emit a structured JSON event for ``result`` when ``log_format='json'``.
@@ -296,13 +334,17 @@ class TaskExecutor:
         except OSError:  # pragma: no cover
             pass
 
-    def _save_failure_screenshot(self, task_index: int) -> Optional[str]:
+    def _save_failure_screenshot(
+        self, task_index: int, location: Optional[Tuple] = None
+    ) -> Optional[str]:
         """Capture the current screen and save it under ``artifacts_dir``.
 
         Called by ``_execute_single_task`` when a task ends unsuccessfully.
         Returns the absolute path of the PNG, or ``None`` when the feature is
         disabled or capture fails (capture failures are swallowed so they
-        never mask the original task failure).
+        never mask the original task failure). When ``location`` is given
+        (e.g. a failed click whose target was located but the click itself
+        broke), the target is drawn on the saved PNG.
         """
         if not self.config.get("screenshot_on_failure", True):
             return None
@@ -316,6 +358,8 @@ class TaskExecutor:
             os.makedirs(artifacts_dir, exist_ok=True)
             path = os.path.abspath(os.path.join(artifacts_dir, filename))
             image = capture_screen()
+            if location and self.config.get("screenshot_annotate", True):
+                self._annotate_location(image, location)
             image.save(path)
             return path
         except Exception as exc:  # pragma: no cover - logged for forensics
@@ -535,7 +579,8 @@ class TaskExecutor:
             # (Failed tasks already captured a failure_screenshot.)
             if task_result.success and self.config.get("screenshot_steps"):
                 task_result.step_screenshot = self._capture_step_screenshot(
-                    task_result.task_index
+                    task_result.task_index,
+                    location=task_result.location,
                 )
             self._emit_task_event(task_result, task)
 
@@ -684,17 +729,21 @@ class TaskExecutor:
         region = task.get("region")
         early_confidence_threshold = task.get("early_confidence", 75.0)
 
-        # Validate region
+        # No region -> match the direct ``bot.find_text`` / ``bot.click_text``
+        # behavior and fall back to the whole screen, instead of refusing
+        # the task. Uses ``capture_screen`` (mss-backed, with the screen
+        # cache) so this is faster than ``pyautogui.screenshot``.
         if not region:
-            raise TextNotFoundError("No region defined for OCR")
+            screen = capture_screen()
+            region = (0, 0, screen.width, screen.height)
+            region_img = screen
+        else:
+            region_img = self._capture_region(region)
 
         logger.debug(
             f"Searching for text '{target_text}' in region {region} "
             f"with filter '{filter_type}' (attempt {attempt + 1} of {self.max_attempts})"
         )
-
-        # Capture a screenshot of the region
-        region_img = self._capture_region(region)
 
         logger.info(f"Area captured for OCR: {region[2]}x{region[3]} pixels")
 
@@ -1104,35 +1153,47 @@ class TaskExecutor:
         # Any physical input invalidates the region cache because the
         # screen contents have just changed.
         invalidate_screen_cache()
+        # Stash the click target so direct callers (VisusBot.click_text /
+        # click_image, etc.) can later read it back via
+        # ``self.last_action_location`` to annotate a screenshot, even
+        # though their public signature only returns bool.
+        self.last_action_location = location
         delay = task.get("delay", 0)
-        show_overlay_enabled = task.get("show_overlay")
 
-        # If not specified in the task, use the global configuration
-        if show_overlay_enabled is None:
-            show_overlay_enabled = self.config.get("show_overlay", True)
+        # Single overlay toggle: per-task ``show_overlay`` wins, otherwise
+        # the global ``config["show_overlay"]`` (default True).
+        show_overlay_flag = task.get("show_overlay")
+        if show_overlay_flag is None:
+            show_overlay_flag = self.config.get("show_overlay", True)
 
-        # Show the visual overlay only if enabled
-        if show_overlay_enabled:
-            # Get overlay settings from the configuration
+        if show_overlay_flag:
             overlay_duration = self.config.get("overlay_duration", 1000)
             overlay_color = self.config.get("overlay_color", "red")
             overlay_width = self.config.get("overlay_width", 4)
 
-            overlay_thread = threading.Thread(
-                target=show_overlay,
-                args=(location,),
-                kwargs={
-                    "duration": overlay_duration,
-                    "color": overlay_color,
-                    "width": overlay_width,
-                },
+            # Win32 layered click-through window: lets the click below
+            # land normally on any host tech (native, Java, Electron,
+            # browsers). Fire-and-forget — no pre-click sleep, no join.
+            scheduled = show_click_through_overlay(
+                location,
+                color=overlay_color,
+                width=overlay_width,
+                duration_ms=overlay_duration,
             )
-            overlay_thread.start()
-
-            # Small delay to display the overlay
-            time.sleep(0.2)
-        else:
-            overlay_thread = None
+            if not scheduled:
+                # Non-Windows fallback: the legacy Tk overlay. It intercepts
+                # clicks, so accept that on platforms where we can't do
+                # click-through cleanly.
+                threading.Thread(
+                    target=show_overlay,
+                    args=(location,),
+                    kwargs={
+                        "duration": overlay_duration,
+                        "color": overlay_color,
+                        "width": overlay_width,
+                    },
+                    daemon=True,
+                ).start()
 
         # Perform the click
         self._perform_click(task, location)
@@ -1145,10 +1206,6 @@ class TaskExecutor:
         ):
             self._process_sendtext(task["sendtext"])
             task["_sendtext_executed"] = True  # Mark as executed to avoid duplication
-
-        # Wait for the overlay to finish if it was created
-        if overlay_thread:
-            overlay_thread.join()
 
         # STEP 3: If it should wait for it to disappear AFTER the click
         wait_until_disappears = task.get("wait_until_disappears", False)

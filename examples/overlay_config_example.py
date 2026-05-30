@@ -20,8 +20,7 @@ def overlay_configuration_example():
         "overlay_duration": 2000,     # 2 seconds
         "overlay_color": "blue",      # Blue
         "overlay_width": 6,           # Thicker line
-        "show_overlay": True,         # Enabled
-        "overlay_enabled": True,      # System active
+        "show_overlay": True,         # Master toggle: show the overlay
         "ocr_languages": ["eng"],
         "log_level": "INFO"
     }
@@ -62,8 +61,7 @@ def overlay_configuration_example():
     print("OPTIONS SUMMARY:")
     print("=" * 50)
     print("AVAILABLE SETTINGS:")
-    print("   - overlay_enabled: True/False - turns the system on/off")
-    print("   - show_overlay: True/False - shows the overlay on clicks")
+    print("   - show_overlay: True/False - master toggle (turns the overlay on/off)")
     print("   - overlay_color: 'red', 'blue', 'green', 'yellow', etc.")
     print("   - overlay_duration: 1000, 2000, 3000... (milliseconds)")
     print("   - overlay_width: 4, 6, 8... (line thickness)")
@@ -74,7 +72,7 @@ def overlay_configuration_example():
     print("   - white, black")
 
     print("\nTIPS:")
-    print("   - For production: set overlay_enabled=False")
+    print("   - For production: set show_overlay=False")
     print("   - For debugging: use vivid colors and a longer duration")
     print("   - For fast automation: shorter duration (500-1000ms)")
 
@@ -107,7 +105,6 @@ def practical_usage_example():
     # Configuration for production
     print("\nFor production (no overlay):")
     prod_config = {
-        "overlay_enabled": False,
         "show_overlay": False,
         "log_level": "ERROR"
     }
@@ -220,7 +217,6 @@ def practical_configurations_example():
         },
 
         "Production": {
-            "overlay_enabled": False,
             "show_overlay": False,
             "desc": "For production - no overlay, maximum speed"
         }

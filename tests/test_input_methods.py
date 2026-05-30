@@ -27,7 +27,7 @@ pytestmark = pytest.mark.skipif(
 def _make_bot():
     from visus.desktop import VisusBot
 
-    return VisusBot(config={"show_overlay": False, "overlay_enabled": False})
+    return VisusBot(config={"show_overlay": False})
 
 
 class _ClickRecorder:
