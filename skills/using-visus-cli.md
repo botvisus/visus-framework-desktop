@@ -23,17 +23,27 @@ visus smart find --query "Login" --json   # {"found": true, "box": {...}, "metho
 
 ## Command groups (mirror of the MCP tools)
 
+50 commands total; `visus <group> <cmd> --help` shows every flag. Full
+reference: `docs/cli.md`.
+
 | Group | Commands |
 |---|---|
 | `visus smart` | `find`, `click` — cascade native → image → OCR → coordinates (`--order` to force/reorder; `--dry-run` to resolve only) |
-| `visus text` | `find-all`, `show` — OCR: list every occurrence / overlay them numbered on screen |
+| `visus text` | `find`, `click`, `find-all`, `show` — OCR find/click a label, list every occurrence, or overlay them numbered (`--ocr tesseract\|rapidocr`) |
+| `visus image` | `find`, `click`, `find-all`, `find-multiple`, `relative` — template-PNG targeting |
 | `visus native` | `dump-tree`, `click`, `set-text`, `get-text`, `get-state`, `wait` — no-pixel RPA by directed selector |
+| `visus mouse` | `click`, `scroll`, `drag`, `triple-click`, `move`, `down`, `up` — coordinate gestures |
+| `visus type` / `key` / `keys` | type text into the focused field / press a key chord / list valid tokens |
 | `visus capture` | coordinate-free capture by `--auto`/`--text`/`--native`/`--region` → saves template + annotated, optional `--click` |
-| `visus screenshot` | save a PNG to disk (the `find_image` template format) |
-| `visus window` | `focus`, `maximize`, `minimize`, `close`, `get` |
-| `visus process` | `launch`, `find`, `kill` |
+| `visus window` | `ensure` (★ call first), `list`, `get`, `focus`, `maximize`, `minimize`, `close` |
+| `visus process` | `launch`, `find`, `is-running`, `kill` |
 | `visus clipboard` | `get`, `set` |
-| `visus` (root) | `configure`, `doctor`, `new`, `run`, `report`, `repl` |
+| `visus` (root) | `screenshot` (`--base64`), `monitors`, `display-size`, `configure`, `doctor`, `new`, `run`, `report`, `repl` |
+
+Find/click commands (`text`/`image`) share the robustness flags
+`--wait-until-found`, `--wait-until-disappears`, `--wait-timeout`,
+`--backtrack`, `--max-attempts`, plus `--sendtext`/`--occurrence`/`--filter`
+where relevant.
 
 ### `visus text` — find all OCR matches / overlay them
 

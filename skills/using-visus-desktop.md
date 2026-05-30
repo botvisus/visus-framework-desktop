@@ -6,23 +6,26 @@ when_to_use: Activate at the start of any visus-desktop automation task to groun
 
 # Using Visus Desktop
 
-You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **41 tools** that cover desktop GUI automation, OCR, image matching, native (Win32/UIA) targeting, **no-pixel native RPA**, a **smart cascade** (`smart_click`/`smart_find` — try native → image → OCR → coordinates, configurable order), process / window management, clipboard, file waits, session record/replay, and HTML reporting.
+You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **56 tools** that cover desktop GUI automation, OCR, image matching, native (Win32/UIA) targeting, **no-pixel native RPA**, a **smart cascade** (`smart_click`/`smart_find` — try native → image → OCR → coordinates, configurable order), low-level mouse gestures, process / window management, clipboard, file waits, session record/replay, and HTML reporting. The full per-parameter reference is `docs/mcp.md`.
 
 ## What this MCP gives you
 
 | Group | Tools |
 |---|---|
-| **Find / click** | `find_text`, `find_all_text` *(every occurrence, to disambiguate repeats)*, `click_text`, `find_image`, `click_image`, `click_at`, `hybrid_find` |
+| **Find / click (text)** | `find_text`, `find_all_text` *(every occurrence, reading order — to disambiguate repeats, then `click_text(occurrence=N)`)*, `click_text` |
+| **Find / click (image)** | `find_image`, `click_image`, `find_all` *(every match of one template)*, `find_multiple` *(first match of several templates)*, `find_relative_image`, `click_relative_image` *(target near a unique anchor)*, `click_at` *(absolute coords, last resort)*, `hybrid_find` |
 | **Keyboard** | `type_text`, `keyboard_command` |
-| **Screen / monitors** | `take_screenshot` (base64), `save_screenshot` (to disk — for find_image templates), `capture_element` (locate-by-text/native/region → save template + annotated → optional click), `get_monitors`, `wait_for_stable_screen` |
+| **Mouse (low-level)** | `scroll`, `drag`, `triple_click`, `move_random`, `mouse_down`, `mouse_up` |
+| **Screen / monitors** | `take_screenshot` (base64), `save_screenshot` (to disk — for find_image templates), `capture_element` (locate-by-text/native/region → save template + annotated → optional click), `get_monitors`, `get_display_size`, `wait_for_stable_screen` |
 | **Files / clipboard** | `wait_for_file`, `wait_for_file_stable`, `get_clipboard`, `copy_to_clipboard`, `extract_text_from_region` *(use `return_full_data=true` for boxes + scores)* |
-| **Process / window** | `launch`, `find_process`, `kill_process`, `focus_window`, `maximize_window`, `minimize_window`, `close_window` |
+| **Process / window** | `launch`, `find_process`, `is_process_running`, `kill_process`, `ensure_window` *(★ call first)*, `list_windows`, `get_window`, `focus_window`, `maximize_window`, `minimize_window`, `close_window` |
 | **Smart cascade** | `smart_click` / `smart_find` — one call tries **native → image → OCR → coordinates** in order (pass `order=[...]` to force/reorder). The simplest robust way to click something when you're not sure which technique fits. |
 | **Native RPA (no pixel)** | `native_dump_tree` (read the UI structure), `native_click`, `native_set_text`, `native_get_text`, `native_get_state`, `native_wait` — operate accessible apps by control, immune to theme/DPI/resolution/language. Falls flat on non-accessible UIs (Java Swing) → use OCR there. |
 | **Task lists** | `execute_tasks` |
 | **Sessions / reports** | `start_recording`, `stop_recording`, `replay_session`, `render_report` |
-| **Diagnostics** | `doctor` |
-| **Configuration** | `configure` |
+| **Diagnostics / config** | `doctor`, `configure` |
+
+The find/click primitives also take the robustness knobs `wait_until_found`, `wait_until_disappears`, `wait_timeout`, `backtrack`, `max_attempts`, plus `sendtext` (type right after a click) and `filter_type` / `specific` where relevant — see `docs/mcp.md` for the exact per-tool parameter list.
 
 ## The mental model
 
@@ -35,9 +38,9 @@ You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **41 t
 
 ## Recommended sequence for any new task
 
-1. `doctor()` — verify Tesseract, display, pywinauto, dependencies are healthy.
-2. `take_screenshot()` once — orient yourself; you have the dimensions and current state.
-3. If the user named a specific window: `focus_window(title)` so subsequent finds operate on the right surface.
+1. `ensure_window(process="app.exe")` — **call this first**. Opens/restores/focuses the target and returns its `rect`; prefer `process=` over `title=`. Scope later searches to that `rect`.
+2. `doctor()` — verify Tesseract, display, pywinauto, dependencies are healthy (once per session).
+3. `take_screenshot()` once — orient yourself; you have the dimensions and current state.
 4. Plan the smallest task list possible:
    * One `find_*` / `hybrid_find` per ambiguous target.
    * One `wait_for_stable_screen` per UI transition you cannot predict.
