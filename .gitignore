@@ -80,9 +80,6 @@ examples/automation_trace/
 # Local scratch — debug screenshots, drafts (may contain desktop captures)
 .tmp/
 
-# Local docs — kept out of the published repo (per request)
-docs/
-
 # Demo annotated traces are full-screen desktop captures — keep private
 examples/**/elements/trace/
 
