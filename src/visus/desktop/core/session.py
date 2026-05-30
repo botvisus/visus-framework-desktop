@@ -47,15 +47,30 @@ class _MemoryHandler(logging.Handler):
             pass
 
 
+# Third-party loggers too noisy to be useful in a run report. Records from
+# these (and their children) are dropped from the captured log tail:
+#   * PIL          -- logs every PNG chunk as it decodes
+#   * RapidOCR     -- repeats "Using engine_name / model" lines per inference
+#   * onnxruntime  -- RapidOCR's backend, chatty about providers/sessions
+#   * pytesseract  -- defensive; the useful OCR narrative is on visus.* anyway
+# The automation's own narrative lives under ``visus.*`` and is kept.
+_NOISY_LOG_PREFIXES = ("PIL", "RapidOCR", "onnxruntime", "pytesseract")
+
+
 class _LogTailHandler(logging.Handler):
-    """Capture every ``visus.*`` log record alongside its timestamp.
+    """Capture log records (with timestamps) emitted during a recording.
 
     Sibling of :class:`_MemoryHandler`: the memory one stores task event
-    JSON lines, this one stores the surrounding free-form logs so the
-    zip writer can later associate each task with the noisy debug lines
-    that happened during its window. We skip records emitted by the
-    dedicated ``task_events`` logger to avoid duplicating them under
-    both ``events.jsonl`` and the per-task log list.
+    JSON lines, this one stores the surrounding free-form logs so the zip
+    writer can associate each task with the lines that happened during its
+    window. Attached to the **root** logger, so it captures the full trail
+    of a run -- ``visus.*`` plus any other library that logs while
+    recording. We drop:
+
+      * the dedicated ``task_events`` logger (its JSON already lives in
+        ``events.jsonl``), and
+      * known-noisy third-party loggers -- PIL, RapidOCR, onnxruntime,
+        pytesseract (see ``_NOISY_LOG_PREFIXES``).
     """
 
     def __init__(self):
@@ -63,13 +78,16 @@ class _LogTailHandler(logging.Handler):
         self.records: list[tuple[float, str, str, str]] = []
 
     def emit(self, record: logging.LogRecord) -> None:  # noqa: D401
-        if record.name == _EVENTS_LOGGER:
+        name = record.name
+        if name == _EVENTS_LOGGER:
+            return
+        if any(name == p or name.startswith(p + ".") for p in _NOISY_LOG_PREFIXES):
             return
         try:
             self.records.append((
                 record.created,
                 record.levelname,
-                record.name,
+                name,
                 record.getMessage(),
             ))
         except Exception:  # pragma: no cover - defensive
@@ -108,18 +126,20 @@ class Session:
             event_logger.setLevel(logging.INFO)
         event_logger.addHandler(event_handler)
 
-        # The visus root logger receives every ``visus.*`` propagation.
-        # Don't force a level here -- callers set it via
-        # ``BotVisionConfig({'log_level': 'DEBUG'})`` and we want to
-        # respect that exact choice.
-        visus_logger = logging.getLogger("visus")
-        visus_logger.addHandler(log_handler)
+        # Attach to the ROOT logger so the recording captures the whole
+        # trail emitted during the window -- ``visus.*`` plus the OCR
+        # backend (``RapidOCR``) and any other library. Don't force a level
+        # here: callers set it via ``BotVisionConfig({'log_level': ...})``
+        # and we respect that exact choice (noisy PIL records are filtered
+        # in the handler).
+        root_logger = logging.getLogger()
+        root_logger.addHandler(log_handler)
 
         try:
             yield
         finally:
             event_logger.removeHandler(event_handler)
-            visus_logger.removeHandler(log_handler)
+            root_logger.removeHandler(log_handler)
             if prior_event_level != event_logger.level:
                 event_logger.setLevel(prior_event_level)
             _write_zip(zip_path, event_handler.lines, log_handler.records)
