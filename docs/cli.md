@@ -33,6 +33,65 @@ visus <group> <cmd> --help   # a command's full flag list
 
 ---
 
+## All commands at a glance (50)
+
+| Command | Parameters | What it does |
+|---|---|---|
+| `visus smart find` | `--query=<text> --image=<text> --coords=<text> --window=<text> --pid=<int> --control-type=<text> --auto-id=<text> --region=<text> --confidence=<float> --confidence-threshold=<float> --order=<text> --timeout=<float> --json` | Locate a target via the cascade (native→image→OCR→coords); report which won. |
+| `visus smart click` | *(smart find opts)* `--button=<choice> --retries=<int> --delay=<float> --dry-run --json` | Same cascade, then click the winner. |
+| `visus text find` | `QUERY --region=<text> --filter=<choice> --confidence-threshold=<float> --occurrence=<int> --max-attempts=<int> --backtrack --wait-until-found --wait-until-disappears --wait-timeout=<int> --ocr=<choice> --json` | Find on-screen text via OCR; print its box (no click). |
+| `visus text click` | *(text find opts)* `--button=<choice> --delay=<float> --sendtext=<text> --json` | Find on-screen text via OCR and click its center. |
+| `visus text find-all` | `QUERY --region=<text> --filter=<choice> --confidence-threshold=<float> --ocr=<choice> --json` | List EVERY occurrence of the text (reading order). |
+| `visus text show` | `QUERY --region=<text> --filter=<choice> --confidence-threshold=<float> --color=<text> --duration=<int> --width=<int> --ocr=<choice> --json` | Overlay every occurrence on screen, numbered. |
+| `visus image find` | `IMAGE_PATH --region=<text> --confidence=<float> --specific/--no-specific --backtrack --max-attempts=<int> --wait-until-found --wait-until-disappears --wait-timeout=<int> --json` | Find a template PNG; print its box (no click). |
+| `visus image click` | *(image find opts)* `--button=<choice> --delay=<float> --sendtext=<text> --json` | Find a template PNG and click its center. |
+| `visus image find-all` | `IMAGE_PATH --region=<text> --confidence=<float> --json` | Find EVERY occurrence of one template PNG. |
+| `visus image find-multiple` | `IMAGE_PATHS… --region=<text> --confidence=<float> --json` | First match of several templates in one call. |
+| `visus image relative` | `ANCHOR_IMAGE TARGET_IMAGE --max-distance=<int> --confidence=<float> --target-region=<text> --click --button=<choice> --delay=<float> --sendtext=<text> --backtrack --max-attempts=<int> --wait-until-found --wait-until-disappears --wait-timeout=<int> --json` | Find/click a target template near a unique anchor. |
+| `visus mouse click` | `X Y --width=<int> --height=<int> --button=<choice> --delay=<float> --json` | Click at absolute coordinates (last resort). |
+| `visus mouse scroll` | `AMOUNT --x=<int> --y=<int> --json` | Scroll the wheel (positive = up, negative = down). |
+| `visus mouse drag` | `X1 Y1 X2 Y2 --duration=<float> --button=<choice> --json` | Drag from (X1,Y1) to (X2,Y2). |
+| `visus mouse triple-click` | `--x=<int> --y=<int> --interval=<float> --json` | Triple-click (select a line/paragraph). |
+| `visus mouse move` | `X Y --max-offset=<int> --duration=<float> --json` | Move the cursor with a light human jitter. |
+| `visus mouse down` | `--x=<int> --y=<int> --button=<choice> --json` | Press a button without releasing (pair with `up`). |
+| `visus mouse up` | `--x=<int> --y=<int> --button=<choice> --json` | Release a held button. |
+| `visus type` | `TEXT --interval=<float> --delay=<float> --backtrack --json` | Type into the focused field (`{ctrl}a {tab} {enter}` tokens). |
+| `visus key` | `COMMAND --delay=<float> --backtrack --json` | Press a key/chord (case-sensitive, e.g. `Ctrl+S`). |
+| `visus keys` | `--json` | List every valid `key` token. |
+| `visus native dump-tree` | `--window=<text> --pid=<int> --max-depth=<int> --timeout=<float> --json` | Print the accessibility control tree. |
+| `visus native click` | `--window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --button=<text> --double --method=<choice> --timeout=<float> --retries=<int> --delay=<float> --dry-run --json` | Click a control by selector (no pixels). |
+| `visus native set-text` | `TEXT --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --timeout=<float> --retries=<int> --delay=<float> --dry-run --json` | Set an editable control's text. |
+| `visus native get-text` | `--window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --timeout=<float> --json` | Read a control's text/value. |
+| `visus native get-state` | *(native selectors)* `--timeout=<float> --json` | Snapshot exists/visible/enabled/checked/value/rect. |
+| `visus native wait` | *(native selectors)* `--state=<choice> --timeout=<float> --poll-interval=<float> --json` | Wait until a control reaches a state. |
+| `visus capture` | `LABEL --auto=<text> --text=<text> --native=<text> --region=<text> --window=<text> --search-region=<text> --click --mouse-button=<text> --padding=<int> --confidence-threshold=<float> --native-timeout=<float> --elements-dir=<text> --dry-run --json` | Locate an element → save template + annotated → optional click. |
+| `visus screenshot` | `PATH? --region=<text> --monitor=<int> --base64 --json` | Capture the screen to a PNG (or base64 with `--base64`). |
+| `visus monitors` | `--json` | List connected monitors (the `--monitor` index). |
+| `visus display-size` | `--json` | Print the primary display size. |
+| `visus window ensure` | `--title=<text> --process=<text> --no-show --no-foreground --json` | **Call first**: is the app open/minimized? + bring to front. |
+| `visus window list` | `--title=<text> --process=<text> --json` | List visible windows (read-only). |
+| `visus window get` | `TITLE --json` | Resolve a window's rect/pid/hwnd (no focus). |
+| `visus window focus` | `TITLE --json` | Bring a window to the foreground. |
+| `visus window maximize` | `TITLE --json` | Maximize a window. |
+| `visus window minimize` | `TITLE --json` | Minimize a window. |
+| `visus window close` | `TITLE --yes --json` | Close a window (destructive — needs `--yes`). |
+| `visus process launch` | `COMMAND ARGS…? --json` | Launch a process; returns `{pid, command}`. |
+| `visus process find` | `NAME --json` | List processes whose name contains NAME. |
+| `visus process is-running` | `NAME --json` | Boolean: is any matching process running? |
+| `visus process kill` | `PID --yes --json` | Terminate by PID (destructive — needs `--yes`). |
+| `visus clipboard get` | `--json` | Read the clipboard text. |
+| `visus clipboard set` | `TEXT --json` | Put TEXT on the clipboard. |
+| `visus configure` | `CONFIG? --set=<KEY=VALUE>… --dry-run --reset --json` | Show / set+persist / reset the CLI config. |
+| `visus doctor` | `--json` | Check the environment (Tesseract, display, deps, pywinauto). |
+| `visus new` | `PATH --force` | Scaffold a new bot project. |
+| `visus run` | `SCRIPT` | Run a Python script with the active interpreter. |
+| `visus report` | `ZIP_PATH --html=<file>` | Render a recorded session zip to HTML. |
+| `visus repl` | — | Open the interactive Visus CLI Pro shell. |
+
+The sections below document each group in detail (defaults + examples).
+
+---
+
 ## `visus smart` — the cascade (native → image → OCR → coordinates)
 
 The "do whatever works" group. Provide whatever you have; each layer is skipped
