@@ -747,6 +747,30 @@ class TaskExecutor:
 
         logger.info(f"Area captured for OCR: {region[2]}x{region[3]} pixels")
 
+        # occurrence > 1: the early-exit find_text returns only the first/best
+        # match, so it can't serve the 2nd/3rd. Enumerate ALL matches (deduped,
+        # reading order) and pick the Nth.
+        occurrence = task.get("occurrence", 1)
+        if occurrence and occurrence > 1:
+            matches = self.ocr_engine.find_all_text(
+                region_img, target_text, filter_type, early_confidence_threshold
+            )
+            if len(matches) >= occurrence:
+                box_rel = matches[occurrence - 1][1]
+                selected = (
+                    region[0] + box_rel[0], region[1] + box_rel[1],
+                    box_rel[2], box_rel[3],
+                )
+                logger.info(
+                    f"Text '{target_text}' occurrence {occurrence} at {box_rel}"
+                )
+                return selected
+            logger.warning(
+                f"Text '{target_text}' occurrence {occurrence} not found "
+                f"({len(matches)} match(es) in region {region})"
+            )
+            return None
+
         # Use the OCR engine to find text
         found_boxes, confidence_scores, early_match = self.ocr_engine.find_text(
             region_img, target_text, filter_type, early_confidence_threshold

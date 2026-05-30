@@ -1202,26 +1202,29 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             else:
                 region_img = self.executor._capture_region(region)
 
-            found_boxes, confidence_scores, _ = self.ocr_engine.find_text(
-                region_img, text, filter_type, confidence_threshold
-            )
+            # Whether the captured image already spans the whole region
+            # (so box coords are already absolute) or needs offsetting.
+            _full = region == (0, 0, region_img.width, region_img.height)
+            _ox, _oy = (0, 0) if _full else (region[0], region[1])
 
-            if found_boxes and len(found_boxes) >= occurrence:
-                # Return the specified occurrence (occurrence-1 since the list is 0-indexed)
-                target_index = occurrence - 1
-                if target_index < len(found_boxes):
-                    best_box_relative = found_boxes[target_index]
-
-                    # Convert to absolute coordinates if needed
-                    if region != (0, 0, region_img.width, region_img.height):
-                        return (
-                            region[0] + best_box_relative[0],
-                            region[1] + best_box_relative[1],
-                            best_box_relative[2],
-                            best_box_relative[3],
-                        )
-                    else:
-                        return best_box_relative
+            if occurrence > 1:
+                # ``ocr_engine.find_text`` early-exits with only the first
+                # high-confidence match, so it can never serve the 2nd/3rd
+                # occurrence. Enumerate ALL matches (deduped, reading order)
+                # and pick the Nth.
+                matches = self.ocr_engine.find_all_text(
+                    region_img, text, filter_type, confidence_threshold
+                )
+                if len(matches) >= occurrence:
+                    bx = matches[occurrence - 1][1]
+                    return (_ox + bx[0], _oy + bx[1], bx[2], bx[3])
+            else:
+                found_boxes, _scores, _ = self.ocr_engine.find_text(
+                    region_img, text, filter_type, confidence_threshold
+                )
+                if found_boxes:
+                    bx = found_boxes[0]
+                    return (_ox + bx[0], _oy + bx[1], bx[2], bx[3])
 
             # If nothing was found and backtrack is enabled, try again
             if backtrack and attempts < max_attempts - 1:

@@ -110,45 +110,34 @@ class TestFindTextLocation:
         # Highest score picks (100,100,20,20) -> absolute (100,100,20,20).
         assert out == (100, 100, 20, 20)
 
-    def test_occurrence_branch_uses_index(self, executor):
+    def test_occurrence_uses_find_all_text(self, executor):
+        # occurrence > 1 enumerates ALL matches (find_all_text), in reading
+        # order, and picks the Nth -- the early-exit find_text only ever
+        # returns the first match, so it cannot serve occurrence 2+.
+        matches = [
+            (99.0, (0, 0, 10, 10)),
+            (98.0, (50, 50, 10, 10)),
+        ]
         with patch.object(executor, "_capture_region", return_value=MagicMock()), patch.object(
-            executor.ocr_engine,
-            "find_text",
-            return_value=(
-                [(0, 0, 10, 10), (50, 50, 10, 10)],
-                [50.0, 50.0],
-                False,
-            ),
+            executor.ocr_engine, "find_all_text", return_value=matches
         ):
             out = executor._find_text_location(
-                {
-                    "text": "x",
-                    "region": (10, 20, 300, 300),
-                    "early_confidence": 30,
-                    "best_confidence": False,
-                    "occurrence": 2,
-                },
+                {"text": "x", "region": (10, 20, 300, 300), "occurrence": 2},
                 0,
             )
+        # 2nd match (50, 50) offset by the region origin (10, 20).
         assert out == (60, 70, 10, 10)
 
-    def test_occurrence_overflow_uses_last(self, executor):
+    def test_occurrence_out_of_range_returns_none(self, executor):
+        # Out-of-range occurrence now returns None (no silent "use last").
         with patch.object(executor, "_capture_region", return_value=MagicMock()), patch.object(
-            executor.ocr_engine,
-            "find_text",
-            return_value=([(0, 0, 10, 10)], [50.0], False),
+            executor.ocr_engine, "find_all_text", return_value=[(50.0, (0, 0, 10, 10))]
         ):
             out = executor._find_text_location(
-                {
-                    "text": "x",
-                    "region": (1, 2, 100, 100),
-                    "early_confidence": 30,
-                    "best_confidence": False,
-                    "occurrence": 99,
-                },
+                {"text": "x", "region": (1, 2, 100, 100), "occurrence": 99},
                 0,
             )
-        assert out == (1, 2, 10, 10)
+        assert out is None
 
     def test_no_boxes_returns_none(self, executor):
         with patch.object(executor, "_capture_region", return_value=MagicMock()), patch.object(

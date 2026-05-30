@@ -388,9 +388,11 @@ class TestFindText:
     def test_occurrence_selects_correct_box(self, monkeypatch):
         bot = _make_bot()
         self._patch_screen(bot, monkeypatch)
-        boxes = [(1, 1, 1, 1), (2, 2, 2, 2), (3, 3, 3, 3)]
+        # occurrence > 1 enumerates ALL matches via find_all_text (reading
+        # order), which returns (confidence, box) tuples.
+        matches = [(90.0, (1, 1, 1, 1)), (90.0, (2, 2, 2, 2)), (90.0, (3, 3, 3, 3))]
         monkeypatch.setattr(
-            bot.ocr_engine, "find_text", lambda *a, **k: (boxes, [90, 90, 90], True)
+            bot.ocr_engine, "find_all_text", lambda *a, **k: matches
         )
         assert bot.find_text("x", occurrence=2) == (2, 2, 2, 2)
 
@@ -398,9 +400,7 @@ class TestFindText:
         bot = _make_bot()
         self._patch_screen(bot, monkeypatch)
         monkeypatch.setattr(
-            bot.ocr_engine,
-            "find_text",
-            lambda *a, **k: ([(1, 1, 1, 1)], [90.0], True),
+            bot.ocr_engine, "find_all_text", lambda *a, **k: [(90.0, (1, 1, 1, 1))]
         )
         assert bot.find_text("x", occurrence=5) is None
 
