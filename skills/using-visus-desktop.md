@@ -27,6 +27,69 @@ You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **56 t
 
 The find/click primitives also take the robustness knobs `wait_until_found`, `wait_until_disappears`, `wait_timeout`, `backtrack`, `max_attempts`, plus `sendtext` (type right after a click) and `filter_type` / `specific` where relevant — see `docs/mcp.md` for the exact per-tool parameter list.
 
+## Every tool (56) at a glance
+
+`?` marks an optional parameter. Full per-parameter detail is in `docs/mcp.md`.
+
+| Tool | Parameters | What it does |
+|---|---|---|
+| `configure` | config | Change global behavior by rebuilding the bot with new config. |
+| `find_text` | text, region?, filter_type?, confidence_threshold?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find visible on-screen `text` via OCR; return its box (do not click). |
+| `click_text` | text, region?, filter_type?, delay?, mouse_button?, occurrence?, sendtext?, confidence_threshold?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find on-screen `text` via OCR and click its center. |
+| `find_all_text` | text, region?, filter_type?, confidence_threshold? | List EVERY on-screen occurrence of `text` via OCR (do not click). |
+| `find_image` | image_path, region?, confidence?, specific?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen; return its box (do not click). |
+| `click_image` | image_path, region?, confidence?, delay?, mouse_button?, specific?, sendtext?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen and click its center. |
+| `click_at` | x, y, width?, height?, mouse_button?, delay? | Click at absolute screen coordinates -- no find step. LAST RESORT. |
+| `hybrid_find` | name, region? | Find `name` trying native -> OCR -> image template, in order (no click). |
+| `find_relative_image` | anchor_image, target_image, max_distance?, confidence?, target_region?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a target template NEAR a unique anchor template (no click). |
+| `click_relative_image` | anchor_image, target_image, max_distance?, confidence?, target_region?, delay?, mouse_button?, sendtext?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a target template near a unique anchor and click it. |
+| `find_all` | image_path, region?, confidence? | Find EVERY occurrence of one template PNG on screen (no click). |
+| `find_multiple` | images, region?, confidence? | Locate the first match of SEVERAL template PNGs in one call (no click). |
+| `type_text` | text, interval?, delay?, backtrack? | Type `text` into the CURRENTLY FOCUSED field (click/focus it first). |
+| `keyboard_command` | command, delay?, backtrack? | Press a named key or shortcut. Tokens are CASE-SENSITIVE. |
+| `scroll` | amount, x?, y? | Scroll the mouse wheel. Positive = up, negative = down. |
+| `drag` | start_x, start_y, end_x, end_y, duration?, button? | Drag from `(start_x, start_y)` to `(end_x, end_y)` holding `button`. |
+| `triple_click` | x?, y?, interval? | Triple-click at `(x, y)` (or the current cursor position). |
+| `move_random` | x, y, max_offset?, duration? | Move the cursor to `(x, y)` with a light human-like jitter. |
+| `mouse_down` | x?, y?, button? | Press a mouse button at `(x, y)` (or current position) WITHOUT releasing. |
+| `mouse_up` | x?, y?, button? | Release a previously-pressed mouse button at `(x, y)` (or current position). |
+| `take_screenshot` | region?, monitor? | Capture the screen and return a base64-encoded PNG. |
+| `save_screenshot` | path, region?, monitor? | Capture the screen and save it to `path` on disk as a PNG. |
+| `get_window` | title_substring | Resolve a window by title substring; no focus required. |
+| `capture_element` | label, auto?, text?, native?, region?, window?, search_region?, click?, mouse_button?, padding?, confidence_threshold?, native_timeout?, elements_dir? | Locate a UI element, save a reusable template + annotated shot, click. |
+| `smart_find` | query?, image?, coordinates?, window?, pid?, control_type?, auto_id?, search_region?, confidence?, confidence_threshold?, order?, timeout? | Locate a target by cascading native -> image -> ocr -> coordinates. |
+| `smart_click` | query?, image?, coordinates?, window?, pid?, control_type?, auto_id?, search_region?, button?, confidence?, confidence_threshold?, order?, timeout?, retries?, delay? | Click a target by cascading native -> image -> ocr -> coordinates. |
+| `native_dump_tree` | window?, pid?, max_depth?, timeout? | Return the accessibility control tree of a window (no pixel). |
+| `native_click` | window?, pid?, title?, control_type?, auto_id?, found_index?, button?, double?, method?, timeout?, retries?, delay? | Click a control by selector -- no coordinates, no image (UIA). |
+| `native_set_text` | text, window?, pid?, title?, control_type?, auto_id?, found_index?, timeout?, retries?, delay? | Set the text of an editable control by selector (UIA value pattern). |
+| `native_get_text` | window?, pid?, title?, control_type?, auto_id?, found_index?, timeout? | Read a control's text/value by selector. Returns the string or None. |
+| `native_get_state` | window?, pid?, title?, control_type?, auto_id?, found_index?, timeout? | Snapshot a control's state by selector. |
+| `native_wait` | window?, pid?, title?, control_type?, auto_id?, found_index?, state?, timeout?, poll_interval? | Wait until a control reaches `state` by selector. |
+| `get_monitors` | — | List connected monitors so you can target one in a multi-screen setup. |
+| `get_display_size` | — | Return the primary display size as `{width, height}` (pixels). |
+| `wait_for_stable_screen` | region?, stable_for?, timeout?, poll_interval? | Block until the screen stops changing -- use INSTEAD of sleeping. |
+| `wait_for_file` | path, timeout?, poll_interval? | Block until `path` exists and is readable, or `timeout` elapses. |
+| `wait_for_file_stable` | path, timeout?, stable_for?, poll_interval? | Block until `path` exists AND its size stops growing -- for downloads. |
+| `get_clipboard` | — | Read the system clipboard text. |
+| `copy_to_clipboard` | text | Put `text` on the system clipboard (e.g. to paste with Ctrl+V). |
+| `extract_text_from_region` | region, filter_type?, return_full_data?, confidence_threshold? | OCR-extract all text from `region`. |
+| `launch` | command, args? | Start an application/process. Returns its pid. |
+| `find_process` | name | List running processes whose name contains `name` (no windows needed). |
+| `is_process_running` | name | Return True if any running process's name contains `name`. |
+| `kill_process` | pid | Terminate a process by pid. DESTRUCTIVE -- confirm with the user first. |
+| `focus_window` | title_substring | Bring a window (matched by title substring) to the foreground. |
+| `maximize_window` | title_substring | Maximize a window matched by title substring. |
+| `minimize_window` | title_substring | Minimize a window matched by title substring. |
+| `close_window` | title_substring | Gracefully close a window (posts WM_CLOSE). Confirm with the user first. |
+| `ensure_window` | title?, process?, show?, foreground? | **Call this FIRST** before automating any app -- fast, reliable targeting. |
+| `list_windows` | title?, process? | List visible windows (read-only) matching `title` and/or `process`. |
+| `execute_tasks` | tasks, resume? | Run a sequence of task dicts (find / click / type / keys) with retry. |
+| `start_recording` | path | Start recording task events into a session zip at `path`. |
+| `stop_recording` | — | Finalize the active recording and write the session zip to disk. |
+| `replay_session` | zip_path | Read back the recorded task events from a session zip. |
+| `render_report` | zip_path, html_path | Render a session zip into a styled single-file HTML report. |
+| `doctor` | — | Verify the environment is healthy (Tesseract, display, deps, pywinauto). |
+
 ## The mental model
 
 0. **Native RPA first when the app is accessible.** Before any pixel work, try `native_dump_tree(window=...)` to *see* the control tree. If it returns controls, prefer `native_click` / `native_set_text` / `native_get_text` / `native_wait` — operating by control (no pixel) is the most robust automation: immune to theme, DPI, resolution, language, window position, and overlapping windows. If `native_dump_tree` returns `[]` (non-accessible UI: Java Swing, some Electron), fall back to the pixel path below.
