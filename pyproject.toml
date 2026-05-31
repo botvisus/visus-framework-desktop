@@ -79,7 +79,7 @@ include = ["visus*", "visus_pytest*"]
 namespaces = true
 
 [tool.setuptools.package-data]
-"visus.desktop" = ["py.typed"]
+"visus.desktop" = ["py.typed", "resources/*.md"]
 
 [tool.ruff]
 line-length = 88

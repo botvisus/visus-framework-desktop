@@ -51,8 +51,8 @@ Full per-parameter detail is in the sections below. A `?` marks an optional para
 | `find_text` | text, region?, filter_type?, confidence_threshold?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find visible on-screen `text` via OCR; return its box (do not click). |
 | `click_text` | text, region?, filter_type?, delay?, mouse_button?, occurrence?, sendtext?, confidence_threshold?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find on-screen `text` via OCR and click its center. |
 | `find_all_text` | text, region?, filter_type?, confidence_threshold? | List EVERY on-screen occurrence of `text` via OCR (do not click). |
-| `find_image` | image_path, region?, confidence?, specific?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen; return its box (do not click). |
-| `click_image` | image_path, region?, confidence?, delay?, mouse_button?, specific?, sendtext?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen and click its center. |
+| `find_image` | image_path, region?, confidence?, specific?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen; return its box (do not click). |
+| `click_image` | image_path, region?, confidence?, delay?, mouse_button?, specific?, occurrence?, sendtext?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen and click its center. |
 | `click_at` | x, y, width?, height?, mouse_button?, delay? | Click at absolute screen coordinates -- no find step. LAST RESORT. |
 | `hybrid_find` | name, region? | Find `name` trying native -> OCR -> image template, in order (no click). |
 | `find_relative_image` | anchor_image, target_image, max_distance?, confidence?, target_region?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a target template NEAR a unique anchor template (no click). |
@@ -185,14 +185,18 @@ Wait/backtrack knobs as in `find_text`.
 
 # Find / click — image (template PNG)
 
-### `find_image(image_path, region=None, confidence=0.9, specific=True, max_attempts=3, backtrack=False, wait_until_found=False, wait_until_disappears=False, wait_timeout=None) -> dict | null`
+### `find_image(image_path, region=None, confidence=0.9, specific=True, occurrence=1, max_attempts=3, backtrack=False, wait_until_found=False, wait_until_disappears=False, wait_timeout=None) -> dict | null`
 Find a template PNG; return its box. `confidence`: 0–1 (lower to ~0.7 on a
 miss). `specific=True` = search `region`; `specific=False` = whole screen +
-scale variations (helps across resolutions). Template must match the live
+scale variations (helps across resolutions). `occurrence`: when the template
+appears more than once, the Nth match in reading order (top-to-bottom,
+left-to-right); `occurrence>1` enumerates every match and picks the Nth — the
+image counterpart of `click_text(occurrence=N)`. Template must match the live
 DPI/scale.
 
-### `click_image(image_path, region=None, confidence=0.9, delay=0, mouse_button="left", specific=True, sendtext=None, max_attempts=3, backtrack=False, wait_until_found=False, wait_until_disappears=False, wait_timeout=None) -> bool`
-Find a template PNG and click its center.
+### `click_image(image_path, region=None, confidence=0.9, delay=0, mouse_button="left", specific=True, occurrence=1, sendtext=None, max_attempts=3, backtrack=False, wait_until_found=False, wait_until_disappears=False, wait_timeout=None) -> bool`
+Find a template PNG and click its center. `occurrence=N` clicks the Nth copy
+(reading order) when the template repeats.
 
 ### `find_relative_image(anchor_image, target_image, max_distance=200, confidence=0.9, target_region=None, wait_until_found=False, wait_until_disappears=False, wait_timeout=None) -> dict | null`
 Find a target template **near** a unique anchor template (no click). Use when

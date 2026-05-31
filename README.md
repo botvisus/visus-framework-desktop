@@ -254,13 +254,14 @@ pip install 'visus-desktop[mcp]'
 | Group | Tools |
 |---|---|
 | Targeting | `ensure_window` ★, `list_windows`, `get_window` |
-| Find / click | `find_text`, `click_text`, `find_image`, `click_image`, `click_at`, `hybrid_find` |
+| Find / click | `find_text`, `click_text`, `find_all_text`, `find_image`, `click_image`, `find_all`, `find_multiple`, `find_relative_image`, `click_relative_image`, `click_at`, `hybrid_find` |
 | Smart / capture | `smart_find`, `smart_click`, `capture_element` |
 | Native RPA | `native_dump_tree`, `native_click`, `native_set_text`, `native_get_text`, `native_get_state`, `native_wait` |
 | Keyboard | `type_text`, `keyboard_command` |
-| Screen | `take_screenshot`, `save_screenshot`, `get_monitors`, `wait_for_stable_screen` |
+| Mouse | `drag`, `scroll`, `triple_click`, `move_random`, `mouse_down`, `mouse_up` |
+| Screen | `take_screenshot`, `save_screenshot`, `get_monitors`, `get_display_size`, `wait_for_stable_screen` |
 | Files / clipboard | `wait_for_file`, `wait_for_file_stable`, `get_clipboard`, `copy_to_clipboard`, `extract_text_from_region` |
-| Process / window | `launch`, `find_process`, `kill_process`, `focus_window`, `maximize_window`, `minimize_window`, `close_window` |
+| Process / window | `launch`, `find_process`, `is_process_running`, `kill_process`, `focus_window`, `maximize_window`, `minimize_window`, `close_window` |
 | Task lists | `execute_tasks` |
 | Sessions | `start_recording`, `stop_recording`, `replay_session`, `render_report` |
 | Diagnostics | `doctor`, `configure` |
