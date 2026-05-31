@@ -172,9 +172,11 @@ class TestOCREngine:
 
     def test_construction_builds_configs(self):
         from visus.desktop.core.ocr_engine import OCREngine
+        from visus.desktop.utils.config import BotVisionConfig
 
-        engine = OCREngine()
-        # The engine ships several Tesseract configs and method descriptions.
+        # ocr_configs/config_names are Tesseract-backend attributes; the
+        # default backend is now rapidocr, so select tesseract explicitly.
+        engine = OCREngine(BotVisionConfig({"ocr_backend": "tesseract"}))
         assert len(engine.ocr_configs) == 7
         assert len(engine.config_names) == 7
         assert engine.image_processor is not None

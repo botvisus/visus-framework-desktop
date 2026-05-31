@@ -26,13 +26,13 @@ from visus.desktop.exceptions import ConfigurationError
 class TestBackendDispatch:
     """``OCREngine`` picks the right backend based on config."""
 
-    def test_default_backend_is_tesseract(self):
+    def test_default_backend_is_rapidocr(self):
         from visus.desktop.utils import config as _config
 
         defaults = _config.BotVisionConfig._load_default_config(
             _config.BotVisionConfig.__new__(_config.BotVisionConfig)
         )
-        assert defaults["ocr_backend"] == "tesseract"
+        assert defaults["ocr_backend"] == "rapidocr"
 
     def test_explicit_tesseract_backend_uses_tesseract_backend(self):
         from visus.desktop.core.ocr_engine import _TesseractBackend
@@ -56,8 +56,12 @@ class TestBackendDispatch:
         with pytest.raises(ConfigurationError, match="ocr_backend"):
             OCREngine(_make_config({"ocr_backend": "magic"}))
 
-    def test_missing_rapidocr_dependency_raises_clear_error(self):
-        # No 'rapidocr' module installed: import fails.
+    def test_missing_rapidocr_dependency_falls_back_to_tesseract(self):
+        # rapidocr is the default but an optional extra. If it isn't installed,
+        # the engine must fall back to Tesseract (with a warning) rather than
+        # raise, so a core install still does OCR.
+        from visus.desktop.core.ocr_engine import _TesseractBackend
+
         original_import = __import__
 
         def fake_import(name, *args, **kwargs):
@@ -65,9 +69,12 @@ class TestBackendDispatch:
                 raise ImportError("No module named 'rapidocr'")
             return original_import(name, *args, **kwargs)
 
-        with patch("builtins.__import__", side_effect=fake_import):
-            with pytest.raises(ConfigurationError, match="rapidocr"):
-                OCREngine(_make_config({"ocr_backend": "rapidocr"}))
+        with patch("builtins.__import__", side_effect=fake_import), patch.object(
+            _TesseractBackend, "_setup", lambda self: None
+        ):
+            engine = OCREngine(_make_config({"ocr_backend": "rapidocr"}))
+        assert isinstance(engine._backend, _TesseractBackend)
+        assert engine.config.get("ocr_backend") == "tesseract"
 
 
 class TestTesseractBackendPreserved:

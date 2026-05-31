@@ -63,10 +63,10 @@ class BotVisionConfig:
 
     Holds a dict of settings and validates them at construction:
 
-        * **Auto-detects Tesseract** on the standard install paths when
-          ``ocr_backend == "tesseract"`` (the default). Skip detection by
-          setting ``ocr_backend = "rapidocr"`` or providing
-          ``tesseract_path`` explicitly.
+        * **Auto-detects Tesseract** on the standard install paths only when
+          ``ocr_backend == "tesseract"``. The default backend is ``rapidocr``
+          (bundled ONNX models, no external binary), which skips detection;
+          if rapidocr isn't installed the OCR engine falls back to Tesseract.
         * **Validates** overlay color, overlay duration, overlay width,
           and default mouse button; invalid values fall back with a
           warning instead of raising.
@@ -243,9 +243,11 @@ class BotVisionConfig:
             self.config.update(config_dict)
 
         # Tesseract is only required when it is the active OCR backend (Phase 3 / E5).
-        # Users on machines that cannot install the Tesseract binary can opt
-        # into ``ocr_backend='rapidocr'`` and skip this gate entirely.
-        if self.config.get("ocr_backend", "tesseract") == "tesseract":
+        # The default backend is now ``rapidocr`` (bundled ONNX models, no
+        # external binary); it skips this gate. Tesseract is detected only when
+        # explicitly selected — and the OCR engine falls back to Tesseract at
+        # construction if rapidocr isn't installed (it detects then).
+        if self.config.get("ocr_backend", "rapidocr") == "tesseract":
             self._detect_tesseract()
         self._validate_dependencies()
         self._validate_overlay_config()
@@ -341,11 +343,13 @@ class BotVisionConfig:
             #            ``visus.desktop.task_events``
             "log_format": "text",
             # Pluggable OCR backend (Phase 3 / E5).
-            #   'tesseract' -> default; uses pytesseract + multi-PSM pipeline.
-            #   'rapidocr'  -> PP-OCR models via ONNX Runtime, zero external
-            #                  binary. Install with: pip install
-            #                  'visus-desktop[rapidocr]'.
-            "ocr_backend": "tesseract",
+            #   'rapidocr'  -> DEFAULT; PP-OCR models via ONNX Runtime, no
+            #                  external binary, more robust on styled text.
+            #                  Ships with the [rapidocr] extra; if it isn't
+            #                  installed the OCR engine falls back to tesseract.
+            #   'tesseract' -> pytesseract + multi-PSM pipeline (needs the
+            #                  Tesseract binary on PATH).
+            "ocr_backend": "rapidocr",
             # Image-matching backend (Phase 3 / E1).
             #   'cv2'       -> default; cv2.matchTemplate over mss-captured
             #                  haystack; ~2-5x faster than pyscreeze on

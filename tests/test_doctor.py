@@ -142,9 +142,19 @@ class TestCliEntryPoint:
 class TestActiveBackendCheck:
     """``check_active_ocr_backend`` reports which backend is configured."""
 
-    def test_default_backend_uses_tesseract_check(self):
-        # Default config -> tesseract backend; success when path exists.
-        with patch.object(doctor, "_detect_tesseract", return_value="/fake/tess"):
+    def test_default_backend_uses_rapidocr_check(self):
+        # Default config is now rapidocr -> the active-backend check routes to
+        # the rapidocr sub-check and reports backend=rapidocr.
+        ok, detail = doctor.check_active_ocr_backend()
+        assert "rapidocr" in detail.lower()
+
+    def test_explicit_tesseract_backend_uses_tesseract_check(self):
+        from visus.desktop.utils import config as _config
+
+        with patch.object(
+            _config.BotVisionConfig, "_load_default_config",
+            return_value={"ocr_backend": "tesseract"},
+        ), patch.object(doctor, "check_tesseract", return_value=(True, "ok")):
             ok, detail = doctor.check_active_ocr_backend()
         assert ok is True
         assert "tesseract" in detail.lower()

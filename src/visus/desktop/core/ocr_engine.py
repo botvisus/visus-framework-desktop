@@ -94,11 +94,29 @@ class OCREngine:
 
     def __init__(self, config: Optional[BotVisionConfig] = None):
         self.config = config or BotVisionConfig()
-        backend_name = self.config.get("ocr_backend", "tesseract")
+        backend_name = self.config.get("ocr_backend", "rapidocr")
         if backend_name == "tesseract":
             self._backend = _TesseractBackend(self.config)
         elif backend_name == "rapidocr":
-            self._backend = _RapidOCRBackend(self.config)
+            try:
+                self._backend = _RapidOCRBackend(self.config)
+            except ConfigurationError as exc:
+                # rapidocr is the preferred default but an OPTIONAL extra.
+                # If it isn't installed, fall back to Tesseract so a core
+                # install still does OCR. (Install with
+                # ``pip install 'visus-desktop[rapidocr]'`` to use it.)
+                logger.warning(
+                    "ocr_backend='rapidocr' unavailable (%s); "
+                    "falling back to 'tesseract'.",
+                    exc,
+                )
+                self.config.config["ocr_backend"] = "tesseract"
+                if hasattr(self.config, "_detect_tesseract"):
+                    try:
+                        self.config._detect_tesseract()
+                    except Exception:  # pragma: no cover - best effort
+                        pass
+                self._backend = _TesseractBackend(self.config)
         else:
             raise ConfigurationError(
                 f"Unknown ocr_backend {backend_name!r}; "

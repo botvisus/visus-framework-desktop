@@ -34,18 +34,36 @@ from mcp.server.fastmcp import FastMCP
 logger = logging.getLogger(__name__)
 
 _INSTRUCTIONS = """\
-Visus Desktop — build reliable RPA for Windows GUI apps by control, image,
-OCR, or coordinates.
+Visus Desktop — build reliable RPA for Windows GUI apps. Be FAST and decisive:
+follow the ladder, don't overthink, don't dump screenshots to "look around".
 
-THE CORE IDEA — locate with your eyes, run on images.
-  The native control tree and OCR are how YOU (the agent) SEE the screen while
-  BUILDING a flow: they find WHERE a thing is. `capture_element` turns a
-  sighting into a reusable PNG template. The automation you hand back then
-  clicks those templates with `click_image` / `click_relative_image` —
-  template matching is fast and deterministic; running OCR every execution is
-  slow and brittle. Re-run OCR/native at RUNTIME only for dynamic text, a
-  changing layout, or to anchor a relative click. (Accessible apps are the
-  exception — see step 2: act by control and skip templates entirely.)
+►►► METHOD LADDER — for EVERY target, try in this order, stop at the first hit:
+  1. NATIVE (no pixels) — `native_dump_tree(window=...)`. If the control is in
+     the tree, do EVERYTHING you can here: `native_click` / `native_set_text` /
+     `native_get_text` / `native_wait`. Instant, exact, immune to
+     theme/DPI/resolution/language. This is the preferred path — use it for as
+     much of the flow as the app exposes.
+  2. OCR TEXT — only when native can't reach it (tree empty / element absent).
+     `show_text_occurrences("<text>")` to SEE it: numbered overlay + a saved
+     PNG path you open as an image + the `matches` list. Then act with
+     `click_text(occurrence=N)`. PREFER the `rapidocr` engine — it reads styled
+     text (mnemonic underlines, anti-aliasing) better than Tesseract. Set it
+     once with `configure(ocr_backend="rapidocr")`, or pass
+     `ocr_backend="rapidocr"` to `show_text_occurrences`.
+  3. IMAGE — for what has no text/native handle (icons, custom-drawn widgets):
+     `capture_element` to save a template, then `click_image` /
+     `click_relative_image`. The repeatable runtime path.
+  4. COORDINATES — `click_at` only if the user gave them. Last resort.
+  Unsure which fits? `smart_click` / `smart_find` run all four in order and
+  report the winner.
+
+RULE OF THUMB: do natively whatever the app exposes; for everything else use
+images. NEVER read a raw `take_screenshot` to find things — that's the slow,
+imprecise path; the locate tools above return exact boxes.
+
+TO SEE / LOCATE TEXT, ALWAYS use `show_text_occurrences` (or `find_all_text`),
+never an eyeballed screenshot — it returns the box(es) + a numbered PNG and
+reveals repeats so you click the right `occurrence`.
 
 WORKFLOW — follow in order:
 
@@ -58,30 +76,48 @@ WORKFLOW — follow in order:
 2. SEE THE UI: `native_dump_tree(window=...)`. If it returns controls, the app
    is ACCESSIBLE — act by control (`native_click` / `native_set_text` /
    `native_get_text` / `native_wait`). This is the most robust path (no pixels,
-   immune to theme/DPI/resolution/language) and needs NO templates. If it
-   returns `[]` (Win11 file pickers, Java Swing, some Electron), see by OCR
-   instead (step 3).
+   immune to theme/DPI/resolution/language) and needs NO templates. Native
+   targeting by `control_type`/`auto_id`/`found_index` is EXACT — act and trust
+   it; do NOT re-check it with OCR/`show_text_occurrences`. (The OCR-occurrence
+   verify in step 3 is ONLY for the pixel/OCR path, where a label can repeat.)
+   If the tree returns `[]` (Win11 file pickers, Java Swing, some Electron),
+   see by OCR instead (step 3).
 
-3. CAPTURE EACH TARGET (build time, for the pixel path). Per button/field,
-   locate AND save a template in one call:
+   ►► TO LOCATE A TEXT TARGET, DON'T eyeball a raw `take_screenshot`. Call
+   `show_text_occurrences("<text>")` (or `find_all_text`) — it returns the
+   exact box(es) AND a numbered annotated image in one step. Reading a
+   full-screen screenshot to guess coordinates is slow, imprecise, and the
+   wrong default. Use `take_screenshot` only for a final visual sanity check,
+   not to find things.
+
+3. CAPTURE EACH TARGET (build time, for the pixel path). `capture_element` is
+   the DEFAULT way to locate + save a template in one call:
      `capture_element(label="save", auto="Save", window="App", click=...)`
    `auto=` tries Win32-menu → OCR → UIA and writes `<label>.png` cropped from
    the EXACT box it found (`located_by` says which won); `click=True` also
    clicks. NEVER eyeball a crop or hand-pick pixels for `save_screenshot` — the
-   template must come from a located box. If a locator misses, FIX it: scope
-   `search_region` to where the element actually is, lower
-   `confidence_threshold`, or try `text=` / `native=`.
+   template must come from a located box.
 
-   ►► TARGETING BY OCR TEXT? See before you act: `show_text_occurrences("<t>")`
-   returns a NUMBERED screenshot (1, 2, 3 …) + the `matches` list, so you know
-   how many copies exist and which one you want. The same string commonly
-   appears more than once (a heading and a button, a label and its field, rows
-   in a list) — a bare `find_text`/`click_text` silently takes the first and
-   may click the wrong one. So when a match could repeat, look first, then act
-   with `click_text(occurrence=N)`. If OCR misreads, retry once with the other
-   engine via `configure(ocr_backend="rapidocr")` (or back to "tesseract").
-   (`smart_click`/`smart_find` run native→image→OCR→coords in one shot and
-   report the winner — handy when unsure which layer fits.)
+   ►► WHEN capture_element CAN'T GO DIRECT — it misses, OR the label could
+   repeat — FALL BACK TO OCR with the occurrence technique. Two triggers, both
+   mandatory:
+     (a) MISS: a locator returns nothing → don't guess coordinates. Run
+         `show_text_occurrences("<text>")` (numbered screenshot + boxes) or
+         `find_all_text` to SEE where it actually is, then re-`capture_element`
+         with `search_region=<that box>` (or `click_text(occurrence=N)`).
+         Also try scoping `search_region`, lowering `confidence_threshold`, or
+         `configure(ocr_backend="rapidocr")` if OCR misread.
+     (b) AMBIGUITY: the word can appear more than once (a button vs a heading
+         vs a menu item with the same text; rows in a list). A live capture
+         that "found and clicked" can succeed by LUCK — the right window
+         happened to be frontmost — yet the generated script, with a looser
+         region, then clicks the wrong twin. So when the text could repeat,
+         VERIFY with `show_text_occurrences` even if the capture seemed fine,
+         and pin the right one by `occurrence` / a tight `search_region`.
+   Default to capture_element; reach for OCR-occurrence the moment it can't go
+   direct or the label isn't provably unique. (`smart_click`/`smart_find` run
+   native→image→OCR→coords in one shot and report the winner — handy when
+   unsure which layer fits.)
 
 4. ASSEMBLE THE RUNTIME FLOW (image-based — fast, repeatable):
    `click_image("save.png", region=<window rect>)` (scope so a look-alike
@@ -416,30 +452,38 @@ def show_text_occurrences(
     color: str = "red",
     duration_ms: int = 3000,
     width: int = 3,
-    annotate_screenshot: bool = True,
+    save_image: bool = True,
+    image_path: str | None = None,
+    ocr_backend: str | None = None,
 ) -> dict:
     """Find every occurrence of ``text`` and SHOW them numbered 1, 2, 3 ….
 
     USE WHEN: a label repeats and you need to SEE which copy is which before
     choosing an ``occurrence`` for ``click_text``. This is the visual sibling
-    of ``find_all_text``: it draws a numbered click-through overlay on the
-    real screen (handy for a human watching) AND, with
-    ``annotate_screenshot`` (default true), returns a base64 PNG of the
-    screen with each match boxed and numbered — so you can read the numbers
-    straight from the image, no separate ``take_screenshot`` and no timing
-    race. The drawn boxes never intercept a later click.
+    of ``find_all_text`` and the MCP equivalent of the CLI
+    ``visus text show "<text>" --ocr ... --color ... --duration ...``: it draws
+    a numbered click-through overlay on the real screen (handy for a human
+    watching) AND, with ``save_image`` (default true), writes a **PNG file** of
+    the screen with each match boxed and numbered, returning its path — open
+    that PNG with your image/Read tool to read the numbers. It returns a file
+    path, NOT a base64 blob, so the result stays small. The drawn boxes never
+    intercept a later click.
 
     PARAMS: ``region=[x,y,w,h]`` scopes the search; ``filter_type`` is
     letters|numbers|both; ``confidence_threshold`` 0-100; ``color`` /
-    ``duration_ms`` / ``width`` style the on-screen overlay;
-    ``annotate_screenshot`` toggles the returned image.
+    ``duration_ms`` / ``width`` style the overlay; ``save_image`` toggles the
+    PNG; ``image_path`` overrides where it is written (default: a transient
+    file in the OS temp dir, ``<tempdir>/visus/occurrences_<text>.png`` — kept
+    out of the project tree); ``ocr_backend`` ("tesseract"|"rapidocr") switches
+    the OCR engine for this and subsequent calls (same as ``configure`` — try
+    "rapidocr" if Tesseract misreads).
 
     RETURNS: ``{count, matches: [{occurrence, x, y, width, height,
-    confidence}], image: {mime_type, data_base64, width, height} | null}``.
-    Match order is reading order (top-to-bottom, left-to-right) — the same
-    ``occurrence`` numbers you pass to ``click_text`` / ``click_image``.
+    confidence}], image_path: "<absolute .png path>" | null}``. Match order is
+    reading order (top-to-bottom, left-to-right) — the same ``occurrence``
+    numbers you pass to ``click_text`` / ``click_image``.
     """
-    bot = get_bot()
+    bot = get_bot({"ocr_backend": ocr_backend}) if ocr_backend else get_bot()
     raw = bot.find_all_text(
         text,
         region=_coerce_region(region),
@@ -455,8 +499,10 @@ def show_text_occurrences(
         for i, (x, y, w, h, conf) in enumerate(raw, start=1)
     ]
 
-    image_payload = None
-    if annotate_screenshot:
+    saved_path = None
+    if save_image:
+        import re
+
         from PIL import ImageDraw, ImageFont
 
         from .core.screen import capture_screen
@@ -473,14 +519,24 @@ def show_text_occurrences(
             label = str(m["occurrence"])
             ly = max(0, y - 24)
             draw.text((x, ly), label, fill=color, font=font)
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        image_payload = {
-            "mime_type": "image/png",
-            "data_base64": base64.b64encode(buf.getvalue()).decode("ascii"),
-            "width": img.width,
-            "height": img.height,
-        }
+
+        if image_path:
+            out = image_path
+        else:
+            # Transient visual aid -> OS temp dir (outside the project tree,
+            # cleaned by the OS), not artifacts_dir which is for kept run
+            # artifacts (failure shots, reports). Stable name overwrites per
+            # text instead of accumulating.
+            import tempfile
+
+            slug = re.sub(r"[^A-Za-z0-9._-]+", "_", text)[:40] or "text"
+            out = os.path.join(
+                tempfile.gettempdir(), "visus", f"occurrences_{slug}.png"
+            )
+        out = os.path.abspath(out)
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        img.save(out, format="PNG")
+        saved_path = out
 
     # Also flash the numbered on-screen overlay (parity with the CLI
     # `text show`), reusing the matches we already have -- no second OCR pass.
@@ -493,7 +549,7 @@ def show_text_occurrences(
             label=str(m["occurrence"]),
         )
 
-    return {"count": len(matches), "matches": matches, "image": image_payload}
+    return {"count": len(matches), "matches": matches, "image_path": saved_path}
 
 
 @mcp.tool()
@@ -898,6 +954,12 @@ def take_screenshot(
 ) -> dict:
     """Capture the screen and return a base64-encoded PNG.
 
+    USE WHEN: a final visual sanity check, or to show the user the state.
+    DO NOT use this to LOCATE a target — reading a full-screen image to guess
+    coordinates is slow and imprecise. To find on-screen text use
+    ``show_text_occurrences`` / ``find_all_text`` (they return the box(es) and a
+    numbered image); for a template use ``find_image`` / ``find_all``; for an
+    accessible control use ``native_dump_tree``.
     The response shape is ``{mime_type, data_base64, width, height}``.
     Pass ``region=[x, y, w, h]`` to crop, or ``monitor=N`` to target a
     specific physical monitor (1-based; see ``get_monitors``).
@@ -1010,11 +1072,22 @@ def capture_element(
     annotated_path, clicked}``. On a miss ``found`` is False and only the
     annotated screenshot (no rectangle) is written.
 
-    Example -- Notepad save-as, coordinate-free, fastest path first::
+    FALL BACK TO OCR when this can't go direct:
+      * MISS (`found` False): don't guess — run ``show_text_occurrences`` /
+        ``find_all_text`` to SEE the target, then retry with a tight
+        ``search_region`` (or `configure(ocr_backend="rapidocr")` if OCR
+        misread).
+      * AMBIGUITY: if the label could appear more than once (a button vs a
+        heading/menu with the same word, repeated rows), a live capture can
+        match the right one by LUCK and still produce a script that later
+        clicks the wrong twin. VERIFY with ``show_text_occurrences`` and pin
+        the intended one via ``search_region`` / ``occurrence`` — even when
+        the capture looks fine.
 
-        capture_element(label="arquivo",     auto="Arquivo",     click=True)
-        capture_element(label="salvar_como", auto="Salvar como", click=True)
-        capture_element(label="btn_salvar",  auto="Salvar",      click=True)
+    Example (generic, fastest path first; scope `window=`/`search_region=`)::
+
+        capture_element(label="menu_file", auto="File",       window="App", click=True)
+        capture_element(label="save_btn",  auto="Save",        window="App", click=True)
     """
     from .core import elements as _elements
 

@@ -143,7 +143,7 @@ visus smart click --query "OK" --order native,ocr
 
 **Shared options** (all four): `--region X,Y,W,H` (else whole screen),
 `--filter letters|numbers|both` (default `both`), `--ocr tesseract|rapidocr`
-(default `tesseract`), `--json`.
+(default: the configured/persisted backend, which is `rapidocr`), `--json`.
 
 `find` / `click` add: `--confidence-threshold` (float, 0–100; `find` default
 `75`, `click` default = config), `--occurrence N` (int, `1`), and the

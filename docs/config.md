@@ -21,7 +21,7 @@ From the CLI: `visus configure '{...}'`. From MCP: the `configure` tool.
 | `tesseract_path` | `None` (auto) | Path to the Tesseract binary. Leave `None` to auto-detect standard install paths. |
 | `tesseract_data_path` | `None` (auto) | Path to the `tessdata` directory. |
 | `ocr_languages` | `["eng"]` | Tesseract language codes (e.g. `["eng","por"]`). |
-| `ocr_backend` | `"tesseract"` | `"tesseract"` (needs the binary) or `"rapidocr"` (bundled ONNX models, no external binary — install `visus-desktop[rapidocr]`). When `rapidocr`, Tesseract auto-detection is skipped. |
+| `ocr_backend` | `"rapidocr"` | `"rapidocr"` (default; bundled ONNX models, no external binary, more robust on styled text) or `"tesseract"` (needs the binary). `rapidocr` ships with the `visus-desktop[rapidocr]` extra; if it isn't installed the OCR engine **falls back to Tesseract** automatically (with a warning). When `rapidocr` is active, Tesseract auto-detection is skipped. |
 | `image_processing_methods` | `"all"` | OCR preprocessing pipeline. `"all"` runs every method; or a list to restrict. |
 
 ## Matching / detection

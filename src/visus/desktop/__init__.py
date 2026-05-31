@@ -480,9 +480,9 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         """Initialize Visus Desktop.
 
         Wires the executor, OCR engine, image processor, and overlay
-        master toggle. Construction is cheap apart from auto-detecting
-        Tesseract when ``ocr_backend == "tesseract"`` (the default), which
-        probes the standard install paths.
+        master toggle. Construction is cheap; Tesseract is auto-detected only
+        when ``ocr_backend == "tesseract"`` (the default backend is now
+        ``rapidocr``, which uses bundled models and skips detection).
 
         Args:
             config: Custom settings. Three forms are accepted:
@@ -508,8 +508,8 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
                     moving the physical cursor (Windows, PostMessage).
                   - ``matcher`` (str, ``"cv2"``): ``"cv2"`` or
                     ``"pyscreeze"``.
-                  - ``ocr_backend`` (str, ``"tesseract"``): ``"tesseract"``
-                    or ``"rapidocr"``.
+                  - ``ocr_backend`` (str, ``"rapidocr"``): ``"rapidocr"``
+                    (default) or ``"tesseract"``.
                   - ``ocr_languages`` (list[str], ``["eng"]``).
                   - ``wait_timeout`` (int s, ``30``): default wait timeout.
                   - ``log_level`` (str, ``"INFO"``) /
@@ -1210,7 +1210,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             # Backend-agnostic OCR narrative on the ``visus`` logger, so it
             # shows up in a session recording regardless of which OCR engine
             # is active (the engines' own loggers are noisy and filtered out).
-            backend = self.config.get("ocr_backend", "tesseract")
+            backend = self.config.get("ocr_backend", "rapidocr")
             logger.info(
                 "OCR search: '%s' (occurrence=%d, filter=%s, backend=%s) in region %s",
                 text, occurrence, filter_type, backend, region,

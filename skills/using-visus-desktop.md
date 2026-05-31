@@ -37,7 +37,7 @@ The find/click primitives also take the robustness knobs `wait_until_found`, `wa
 | `find_text` | text, region?, filter_type?, confidence_threshold?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find visible on-screen `text` via OCR; return its box (do not click). |
 | `click_text` | text, region?, filter_type?, delay?, mouse_button?, occurrence?, sendtext?, confidence_threshold?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find on-screen `text` via OCR and click its center. |
 | `find_all_text` | text, region?, filter_type?, confidence_threshold? | List EVERY on-screen occurrence of `text` via OCR (do not click). |
-| `show_text_occurrences` | text, region?, filter_type?, confidence_threshold?, color?, duration_ms?, width?, annotate_screenshot? | Find every occurrence of `text` and SHOW them numbered 1, 2, 3 …. |
+| `show_text_occurrences` | text, region?, filter_type?, confidence_threshold?, color?, duration_ms?, width?, save_image?, image_path? | Find every occurrence of `text` and SHOW them numbered 1, 2, 3 …. |
 | `find_image` | image_path, region?, confidence?, specific?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen; return its box (do not click). |
 | `click_image` | image_path, region?, confidence?, delay?, mouse_button?, specific?, occurrence?, sendtext?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen and click its center. |
 | `click_at` | x, y, width?, height?, mouse_button?, delay? | Click at absolute screen coordinates -- no find step. LAST RESORT. |

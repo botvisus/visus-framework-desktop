@@ -51,7 +51,7 @@ Full per-parameter detail is in the sections below. A `?` marks an optional para
 | `find_text` | text, region?, filter_type?, confidence_threshold?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find visible on-screen `text` via OCR; return its box (do not click). |
 | `click_text` | text, region?, filter_type?, delay?, mouse_button?, occurrence?, sendtext?, confidence_threshold?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find on-screen `text` via OCR and click its center. |
 | `find_all_text` | text, region?, filter_type?, confidence_threshold? | List EVERY on-screen occurrence of `text` via OCR (do not click). |
-| `show_text_occurrences` | text, region?, filter_type?, confidence_threshold?, color?, duration_ms?, width?, annotate_screenshot? | Find every occurrence of `text` and SHOW them numbered 1, 2, 3 …. |
+| `show_text_occurrences` | text, region?, filter_type?, confidence_threshold?, color?, duration_ms?, width?, save_image?, image_path? | Find every occurrence of `text` and SHOW them numbered 1, 2, 3 …. |
 | `find_image` | image_path, region?, confidence?, specific?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen; return its box (do not click). |
 | `click_image` | image_path, region?, confidence?, delay?, mouse_button?, specific?, occurrence?, sendtext?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen and click its center. |
 | `click_at` | x, y, width?, height?, mouse_button?, delay? | Click at absolute screen coordinates -- no find step. LAST RESORT. |
@@ -177,14 +177,16 @@ Find on-screen text; return its box, no click.
 confidence}, …]`. Use to disambiguate repeats, then `click_text(occurrence=N)`.
 `confidence_threshold=None` uses the config default.
 
-### `show_text_occurrences(text, region=None, filter_type="both", confidence_threshold=None, color="red", duration_ms=3000, width=3, annotate_screenshot=True) -> dict`
+### `show_text_occurrences(text, region=None, filter_type="both", confidence_threshold=None, color="red", duration_ms=3000, width=3, save_image=True, image_path=None) -> dict`
 The **visual** sibling of `find_all_text`: SEE which copy is which before
 picking an `occurrence`. Draws a numbered click-through overlay (1, 2, 3 …) on
-the real screen **and** (with `annotate_screenshot=True`) returns a base64 PNG
-of the screen with each match boxed and numbered — read the numbers straight
-from the image, no separate `take_screenshot`, no timing race. Returns
-`{count, matches: [{occurrence, x, y, width, height, confidence}], image:
-{mime_type, data_base64, width, height} | null}`. Numbers are the same
+the real screen **and** (with `save_image=True`) writes a **PNG file** of the
+screen with each match boxed and numbered, returning its path — open that PNG
+with your image/Read tool. It returns a file **path, not a base64 blob**, so
+the result stays small. The PNG defaults to a transient file in the OS temp dir
+(`<tempdir>/visus/occurrences_<text>.png`, outside the project); override with
+`image_path`. Returns `{count, matches: [{occurrence, x, y, width, height,
+confidence}], image_path: "<absolute .png path>" | null}`. Numbers are the same
 `occurrence` you pass to `click_text` / `click_image`.
 
 ### `click_text(text, region=None, filter_type="both", delay=0, mouse_button="left", occurrence=1, sendtext=None, confidence_threshold=None, max_attempts=3, backtrack=False, wait_until_found=False, wait_until_disappears=False, wait_timeout=None) -> bool`
