@@ -1,6 +1,6 @@
 # Visus Desktop MCP server — complete tool reference (for AI agents)
 
-This is the authoritative, exhaustive reference for the **56 MCP tools** exposed
+This is the authoritative, exhaustive reference for the **57 MCP tools** exposed
 by the `visus-mcp` server. Every tool, every parameter, every default, and every
 return shape is listed. If you are an agent driving this server, you should be
 able to act with **zero guessing** from this page alone.
@@ -41,7 +41,7 @@ a step from the shell whenever that is simpler.
 - A parameter shown as `name=value` has that default; omit it to accept the
   default.
 
-## All 56 tools at a glance
+## All 57 tools at a glance
 
 Full per-parameter detail is in the sections below. A `?` marks an optional parameter.
 
@@ -51,6 +51,7 @@ Full per-parameter detail is in the sections below. A `?` marks an optional para
 | `find_text` | text, region?, filter_type?, confidence_threshold?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find visible on-screen `text` via OCR; return its box (do not click). |
 | `click_text` | text, region?, filter_type?, delay?, mouse_button?, occurrence?, sendtext?, confidence_threshold?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find on-screen `text` via OCR and click its center. |
 | `find_all_text` | text, region?, filter_type?, confidence_threshold? | List EVERY on-screen occurrence of `text` via OCR (do not click). |
+| `show_text_occurrences` | text, region?, filter_type?, confidence_threshold?, color?, duration_ms?, width?, annotate_screenshot? | Find every occurrence of `text` and SHOW them numbered 1, 2, 3 …. |
 | `find_image` | image_path, region?, confidence?, specific?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen; return its box (do not click). |
 | `click_image` | image_path, region?, confidence?, delay?, mouse_button?, specific?, occurrence?, sendtext?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen and click its center. |
 | `click_at` | x, y, width?, height?, mouse_button?, delay? | Click at absolute screen coordinates -- no find step. LAST RESORT. |
@@ -175,6 +176,16 @@ Find on-screen text; return its box, no click.
 **Every** occurrence, reading order. Returns `[{occurrence, x, y, width, height,
 confidence}, …]`. Use to disambiguate repeats, then `click_text(occurrence=N)`.
 `confidence_threshold=None` uses the config default.
+
+### `show_text_occurrences(text, region=None, filter_type="both", confidence_threshold=None, color="red", duration_ms=3000, width=3, annotate_screenshot=True) -> dict`
+The **visual** sibling of `find_all_text`: SEE which copy is which before
+picking an `occurrence`. Draws a numbered click-through overlay (1, 2, 3 …) on
+the real screen **and** (with `annotate_screenshot=True`) returns a base64 PNG
+of the screen with each match boxed and numbered — read the numbers straight
+from the image, no separate `take_screenshot`, no timing race. Returns
+`{count, matches: [{occurrence, x, y, width, height, confidence}], image:
+{mime_type, data_base64, width, height} | null}`. Numbers are the same
+`occurrence` you pass to `click_text` / `click_image`.
 
 ### `click_text(text, region=None, filter_type="both", delay=0, mouse_button="left", occurrence=1, sendtext=None, confidence_threshold=None, max_attempts=3, backtrack=False, wait_until_found=False, wait_until_disappears=False, wait_timeout=None) -> bool`
 Find text and click its center. `sendtext` types a string right after the click

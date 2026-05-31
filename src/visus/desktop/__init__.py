@@ -193,7 +193,7 @@ smart cascade try them in order. Everything is also exposed as an MCP server
 
     Wire into Claude Code / Desktop / Cursor (settings.json):
         { "mcpServers": { "visus-desktop": { "command": "visus-mcp" } } }
-    Restart the host; 56 tools become available to the agent.
+    Restart the host; 57 tools become available to the agent.
 
     Tool groups (each tool's docstring tells the agent when/how to use it):
       • Targeting:   ensure_window ★, list_windows, get_window

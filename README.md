@@ -86,7 +86,7 @@ for the few Windows‑only features).
 - **🎬 Sessions & HTML reports** — record a run (`Session.start_recording`),
   replay its events, and render a single‑file HTML report with timings and
   failure screenshots.
-- **🤖 MCP server** — expose all 56 tools to AI agents (Claude Code/Desktop,
+- **🤖 MCP server** — expose all 57 tools to AI agents (Claude Code/Desktop,
   Cursor) via the `visus-mcp` command. See [Drive it from any MCP agent](#drive-it-from-any-mcp-agent).
 - **⌨️ Visus CLI Pro** — the `visus` command mirrors the whole surface in the
   shell (`--json` everywhere, interactive `repl`). See [docs/cli.md](docs/cli.md).
@@ -243,7 +243,7 @@ if bot.find_text("Username", region=(100, 100, 500, 300), filter_type="letters")
 
 ### Drive it from any MCP agent
 
-`visus-desktop` ships a **Model Context Protocol** server exposing **56 tools**. Install the extra and wire it into Claude Desktop / Code / Cursor — your agent can drive desktop apps end to end. The server also ships an `instructions` preamble and per‑tool docstrings that teach the agent *when and how* to use each tool, so it never has to read source.
+`visus-desktop` ships a **Model Context Protocol** server exposing **57 tools**. Install the extra and wire it into Claude Desktop / Code / Cursor — your agent can drive desktop apps end to end. The server also ships an `instructions` preamble and per‑tool docstrings that teach the agent *when and how* to use each tool, so it never has to read source.
 
 ```bash
 pip install 'visus-desktop[mcp]'
@@ -277,7 +277,7 @@ pip install 'visus-desktop[mcp]'
 }
 ```
 
-See [`docs/mcp.md`](docs/mcp.md) for the full tool reference (all 56 tools, every parameter), and [`skills/`](skills/) for ready-to-use playbooks (login forms, table scraping, captchas, downloads, file dialogs, record/replay). The agent-facing playbook is [`skills/using-visus-desktop.md`](skills/using-visus-desktop.md).
+See [`docs/mcp.md`](docs/mcp.md) for the full tool reference (all 57 tools, every parameter), and [`skills/`](skills/) for ready-to-use playbooks (login forms, table scraping, captchas, downloads, file dialogs, record/replay). The agent-facing playbook is [`skills/using-visus-desktop.md`](skills/using-visus-desktop.md).
 
 ### Or drive it from the shell — Visus CLI Pro
 

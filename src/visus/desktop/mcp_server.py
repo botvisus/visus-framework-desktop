@@ -70,11 +70,18 @@ WORKFLOW — follow in order:
    clicks. NEVER eyeball a crop or hand-pick pixels for `save_screenshot` — the
    template must come from a located box. If a locator misses, FIX it: scope
    `search_region` to where the element actually is, lower
-   `confidence_threshold`, or try `text=` / `native=`. A word can repeat
-   (button "Salvar" vs title "Salvar como") — scope to the button area, or
-   `find_all_text` then pick the right `occurrence`. (`smart_click`/`smart_find`
-   run native→image→OCR→coords in one shot and report the winner — handy when
-   unsure which layer fits.)
+   `confidence_threshold`, or try `text=` / `native=`.
+
+   ►► TARGETING BY OCR TEXT? See before you act: `show_text_occurrences("<t>")`
+   returns a NUMBERED screenshot (1, 2, 3 …) + the `matches` list, so you know
+   how many copies exist and which one you want. The same string commonly
+   appears more than once (a heading and a button, a label and its field, rows
+   in a list) — a bare `find_text`/`click_text` silently takes the first and
+   may click the wrong one. So when a match could repeat, look first, then act
+   with `click_text(occurrence=N)`. If OCR misreads, retry once with the other
+   engine via `configure(ocr_backend="rapidocr")` (or back to "tesseract").
+   (`smart_click`/`smart_find` run native→image→OCR→coords in one shot and
+   report the winner — handy when unsure which layer fits.)
 
 4. ASSEMBLE THE RUNTIME FLOW (image-based — fast, repeatable):
    `click_image("save.png", region=<window rect>)` (scope so a look-alike
@@ -82,6 +89,14 @@ WORKFLOW — follow in order:
    `type_text` (inline tokens `{ctrl}a {tab} {enter}`) and `keyboard_command`
    (CASE-SENSITIVE: `Enter`, `Escape`, `Ctrl+S` — not "esc") for input;
    `click_at` only if the user gave coordinates.
+
+   ►► TEMPLATE REPEATS ON SCREEN? `find_image`/`click_image` take the SAME
+   `occurrence` as the text tools (1-based, reading order top→bottom,
+   left→right). When an icon/button appears more than once (grid rows,
+   toolbars, a list), call `find_all("tpl.png")` to see how many there are,
+   then `click_image("tpl.png", occurrence=N)` — don't rely on the single
+   "best" match, which picks an arbitrary twin. `--no-specific`/`specific=False`
+   widens the search to the whole screen + scale variations.
 
 5. SYNC, DON'T SLEEP. After a UI change `wait_for_stable_screen`; for downloads
    `wait_for_file_stable`; for a control `native_wait`.
@@ -100,12 +115,15 @@ wrong clicks. With leftover look-alike windows, disambiguate via `list_windows`
 (foreground/largest rect, not title alone) and FOCUS the target window/dialog
 before sending clicks or keys.
 
-DIALOGS (Save As / Open / confirm): the Win11 file picker usually gives an
-empty native tree → go OCR. Type the FULL path into the name field (saves
-anywhere, regardless of the dialog's current folder). The default button fires
-on `Enter`, BUT an overwrite confirm ("Sim"/"Não", "Yes"/"No") DEFAULTS TO
-"Não" — so `Enter` cancels it; click "Sim" (focus that dialog first) or send
-`Left` then `Enter`.
+MODAL DIALOGS (any kind — file pickers, confirms, wizards): focus the dialog
+before sending input. Don't assume `Enter` does what you want — a dialog's
+default/highlighted button is whatever the app chose, and on a confirm it is
+often the SAFE/negative option, so blindly pressing `Enter` can cancel the very
+thing you meant to confirm. Read the actual buttons first (native tree, or
+`show_text_occurrences`) and click the one you intend (or Tab/arrow to it). For
+file-path fields, typing the full absolute path is more reliable than
+navigating the folder tree. (Concrete case, illustrative only: some OS file
+pickers expose no native tree → fall back to OCR.)
 
 FULL REFERENCE ON DEMAND: this server ships two readable resources — read
 `visus://docs/mcp` for the complete per-parameter tool reference, and
@@ -273,6 +291,10 @@ def find_text(
 
     USE WHEN: you need the location of a text label, or to verify text is
     present, without clicking. To click it instead, use ``click_text``.
+    FIRST, THOUGH: prefer ``show_text_occurrences("<text>")`` — it returns a
+    NUMBERED screenshot of every match, so you see whether the text repeats and
+    which ``occurrence`` you actually want. ``find_text`` silently returns only
+    the first match.
     PARAMS: ``region=[x,y,w,h]`` scopes the search (pass the window rect from
     ``ensure_window`` — strongly recommended); ``filter_type`` is
     letters|numbers|both; ``occurrence`` picks the Nth match (1-based);
@@ -317,6 +339,9 @@ def click_text(
 
     USE WHEN: clicking a button/link/menu identified by its visible text on
     any UI that renders text (works on Java Swing, Electron, remote desktop).
+    BEFORE CLICKING: if the text might repeat, call
+    ``show_text_occurrences("<text>")`` first to SEE the numbered matches, then
+    pass the right ``occurrence`` here — otherwise you click the first twin.
     PARAMS: ``region`` scopes the search; ``filter_type`` letters|numbers|both;
     ``occurrence`` picks the Nth match; ``mouse_button`` left|right|double|
     move_to; ``sendtext`` types a string right after the click (fill a field
@@ -383,6 +408,95 @@ def find_all_text(
 
 
 @mcp.tool()
+def show_text_occurrences(
+    text: str,
+    region: list[int] | None = None,
+    filter_type: str = "both",
+    confidence_threshold: float | None = None,
+    color: str = "red",
+    duration_ms: int = 3000,
+    width: int = 3,
+    annotate_screenshot: bool = True,
+) -> dict:
+    """Find every occurrence of ``text`` and SHOW them numbered 1, 2, 3 ….
+
+    USE WHEN: a label repeats and you need to SEE which copy is which before
+    choosing an ``occurrence`` for ``click_text``. This is the visual sibling
+    of ``find_all_text``: it draws a numbered click-through overlay on the
+    real screen (handy for a human watching) AND, with
+    ``annotate_screenshot`` (default true), returns a base64 PNG of the
+    screen with each match boxed and numbered — so you can read the numbers
+    straight from the image, no separate ``take_screenshot`` and no timing
+    race. The drawn boxes never intercept a later click.
+
+    PARAMS: ``region=[x,y,w,h]`` scopes the search; ``filter_type`` is
+    letters|numbers|both; ``confidence_threshold`` 0-100; ``color`` /
+    ``duration_ms`` / ``width`` style the on-screen overlay;
+    ``annotate_screenshot`` toggles the returned image.
+
+    RETURNS: ``{count, matches: [{occurrence, x, y, width, height,
+    confidence}], image: {mime_type, data_base64, width, height} | null}``.
+    Match order is reading order (top-to-bottom, left-to-right) — the same
+    ``occurrence`` numbers you pass to ``click_text`` / ``click_image``.
+    """
+    bot = get_bot()
+    raw = bot.find_all_text(
+        text,
+        region=_coerce_region(region),
+        filter_type=filter_type,
+        confidence_threshold=confidence_threshold,
+    )
+    matches = [
+        {
+            "occurrence": i,
+            "x": int(x), "y": int(y), "width": int(w), "height": int(h),
+            "confidence": round(float(conf), 2),
+        }
+        for i, (x, y, w, h, conf) in enumerate(raw, start=1)
+    ]
+
+    image_payload = None
+    if annotate_screenshot:
+        from PIL import ImageDraw, ImageFont
+
+        from .core.screen import capture_screen
+
+        img = capture_screen().convert("RGB")
+        draw = ImageDraw.Draw(img)
+        try:
+            font = ImageFont.truetype("segoeui.ttf", 22)
+        except Exception:
+            font = ImageFont.load_default()
+        for m in matches:
+            x, y, w, h = m["x"], m["y"], m["width"], m["height"]
+            draw.rectangle((x, y, x + w, y + h), outline=color, width=width)
+            label = str(m["occurrence"])
+            ly = max(0, y - 24)
+            draw.text((x, ly), label, fill=color, font=font)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        image_payload = {
+            "mime_type": "image/png",
+            "data_base64": base64.b64encode(buf.getvalue()).decode("ascii"),
+            "width": img.width,
+            "height": img.height,
+        }
+
+    # Also flash the numbered on-screen overlay (parity with the CLI
+    # `text show`), reusing the matches we already have -- no second OCR pass.
+    from .core.overlay_win32 import show_click_through_overlay
+
+    for m in matches:
+        show_click_through_overlay(
+            (m["x"], m["y"], m["width"], m["height"]),
+            color=color, width=width, duration_ms=duration_ms,
+            label=str(m["occurrence"]),
+        )
+
+    return {"count": len(matches), "matches": matches, "image": image_payload}
+
+
+@mcp.tool()
 def find_image(
     image_path: str,
     region: list[int] | None = None,
@@ -405,9 +519,13 @@ def find_image(
     (pass the window rect); ``confidence`` is 0-1 (0.9 default; lower to ~0.7
     if a match is missed); ``specific`` true = search the region, false =
     whole screen + scale variations (helps across resolutions).
+    REPEATS: if the template appears more than once, ``occurrence`` (1-based,
+    reading order top→bottom/left→right) picks the Nth — call ``find_all`` to
+    see how many there are first. Plain ``find_image`` returns an arbitrary
+    "best" match, so ALWAYS set ``occurrence`` when copies exist.
     ROBUSTNESS: ``wait_until_found`` / ``wait_until_disappears`` (+
     ``wait_timeout``) poll for the template; ``max_attempts`` retries.
-    RETURNS: ``{x, y, width, height}`` of the best match, or ``null``.
+    RETURNS: ``{x, y, width, height}`` of the match, or ``null``.
     """
     box = get_bot().find_image(
         image_path,
@@ -450,6 +568,10 @@ def click_image(
     ``confidence`` 0-1; ``mouse_button`` left|right|double|move_to;
     ``specific`` true = region, false = whole screen + scales; ``sendtext``
     types a string right after the click.
+    REPEATS: when the template appears more than once (grid rows, toolbars),
+    set ``occurrence=N`` (1-based, reading order) to click the right copy —
+    check the count with ``find_all`` first. Without it you click an arbitrary
+    twin.
     ROBUSTNESS: ``wait_until_found`` / ``wait_until_disappears`` (+
     ``wait_timeout``), ``backtrack`` + ``max_attempts``.
     RETURNS: True if found and clicked, False otherwise.

@@ -6,7 +6,7 @@ when_to_use: Activate at the start of any visus-desktop automation task to groun
 
 # Using Visus Desktop
 
-You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **56 tools** that cover desktop GUI automation, OCR, image matching, native (Win32/UIA) targeting, **no-pixel native RPA**, a **smart cascade** (`smart_click`/`smart_find` — try native → image → OCR → coordinates, configurable order), low-level mouse gestures, process / window management, clipboard, file waits, session record/replay, and HTML reporting. The full per-parameter reference is `docs/mcp.md`.
+You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **57 tools** that cover desktop GUI automation, OCR, image matching, native (Win32/UIA) targeting, **no-pixel native RPA**, a **smart cascade** (`smart_click`/`smart_find` — try native → image → OCR → coordinates, configurable order), low-level mouse gestures, process / window management, clipboard, file waits, session record/replay, and HTML reporting. The full per-parameter reference is `docs/mcp.md`.
 
 ## What this MCP gives you
 
@@ -27,7 +27,7 @@ You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **56 t
 
 The find/click primitives also take the robustness knobs `wait_until_found`, `wait_until_disappears`, `wait_timeout`, `backtrack`, `max_attempts`, plus `sendtext` (type right after a click) and `filter_type` / `specific` where relevant — see `docs/mcp.md` for the exact per-tool parameter list.
 
-## Every tool (56) at a glance
+## Every tool (57) at a glance
 
 `?` marks an optional parameter. Full per-parameter detail is in `docs/mcp.md`.
 
@@ -37,6 +37,7 @@ The find/click primitives also take the robustness knobs `wait_until_found`, `wa
 | `find_text` | text, region?, filter_type?, confidence_threshold?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find visible on-screen `text` via OCR; return its box (do not click). |
 | `click_text` | text, region?, filter_type?, delay?, mouse_button?, occurrence?, sendtext?, confidence_threshold?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find on-screen `text` via OCR and click its center. |
 | `find_all_text` | text, region?, filter_type?, confidence_threshold? | List EVERY on-screen occurrence of `text` via OCR (do not click). |
+| `show_text_occurrences` | text, region?, filter_type?, confidence_threshold?, color?, duration_ms?, width?, annotate_screenshot? | Find every occurrence of `text` and SHOW them numbered 1, 2, 3 …. |
 | `find_image` | image_path, region?, confidence?, specific?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen; return its box (do not click). |
 | `click_image` | image_path, region?, confidence?, delay?, mouse_button?, specific?, occurrence?, sendtext?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen and click its center. |
 | `click_at` | x, y, width?, height?, mouse_button?, delay? | Click at absolute screen coordinates -- no find step. LAST RESORT. |
