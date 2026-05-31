@@ -1207,6 +1207,15 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             _full = region == (0, 0, region_img.width, region_img.height)
             _ox, _oy = (0, 0) if _full else (region[0], region[1])
 
+            # Backend-agnostic OCR narrative on the ``visus`` logger, so it
+            # shows up in a session recording regardless of which OCR engine
+            # is active (the engines' own loggers are noisy and filtered out).
+            backend = self.config.get("ocr_backend", "tesseract")
+            logger.info(
+                "OCR search: '%s' (occurrence=%d, filter=%s, backend=%s) in region %s",
+                text, occurrence, filter_type, backend, region,
+            )
+
             if occurrence > 1:
                 # ``ocr_engine.find_text`` early-exits with only the first
                 # high-confidence match, so it can never serve the 2nd/3rd
@@ -1215,16 +1224,34 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
                 matches = self.ocr_engine.find_all_text(
                     region_img, text, filter_type, confidence_threshold
                 )
+                logger.info(
+                    "OCR found %d occurrence(s) of '%s'", len(matches), text
+                )
                 if len(matches) >= occurrence:
-                    bx = matches[occurrence - 1][1]
-                    return (_ox + bx[0], _oy + bx[1], bx[2], bx[3])
+                    conf, bx = matches[occurrence - 1]
+                    box = (_ox + bx[0], _oy + bx[1], bx[2], bx[3])
+                    logger.info(
+                        "Selected occurrence %d of '%s' at %s (confidence %.1f%%)",
+                        occurrence, text, box, conf,
+                    )
+                    return box
+                logger.warning(
+                    "Occurrence %d of '%s' not found (%d match(es))",
+                    occurrence, text, len(matches),
+                )
             else:
-                found_boxes, _scores, _ = self.ocr_engine.find_text(
+                found_boxes, scores, _ = self.ocr_engine.find_text(
                     region_img, text, filter_type, confidence_threshold
                 )
                 if found_boxes:
                     bx = found_boxes[0]
-                    return (_ox + bx[0], _oy + bx[1], bx[2], bx[3])
+                    box = (_ox + bx[0], _oy + bx[1], bx[2], bx[3])
+                    conf = scores[0] if scores else 0.0
+                    logger.info(
+                        "Found '%s' at %s (confidence %.1f%%)", text, box, conf
+                    )
+                    return box
+                logger.warning("Text '%s' not found in region %s", text, region)
 
             # If nothing was found and backtrack is enabled, try again
             if backtrack and attempts < max_attempts - 1:
