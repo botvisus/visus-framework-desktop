@@ -79,8 +79,8 @@ click-through window, so it never blocks a subsequent click.
 | `visus configure` | `CONFIG? --set=<text> --dry-run --reset --save --json` | Read, set (persisted), or reset the CLI config. |
 | `visus display-size` | `--json` | Print the primary display size. |
 | `visus doctor` | `--json` | Run environment health checks (Tesseract, display, deps). |
-| `visus image click` | `IMAGE_PATH --region=<text> --confidence=<float> --specific --button=<choice> --delay=<float> --sendtext=<text> --backtrack --wait-timeout=<integer> --wait-until-disappears --wait-until-found --max-attempts=<integer> --json` | Find a template PNG and click its center. |
-| `visus image find` | `IMAGE_PATH --region=<text> --confidence=<float> --specific --backtrack --wait-timeout=<integer> --wait-until-disappears --wait-until-found --max-attempts=<integer> --json` | Find a template PNG; print its box (no click). |
+| `visus image click` | `IMAGE_PATH --region=<text> --confidence=<float> --specific --button=<choice> --delay=<float> --sendtext=<text> --backtrack --occurrence=<integer> --wait-timeout=<integer> --wait-until-disappears --wait-until-found --max-attempts=<integer> --json` | Find a template PNG and click its center. |
+| `visus image find` | `IMAGE_PATH --region=<text> --confidence=<float> --specific --backtrack --occurrence=<integer> --wait-timeout=<integer> --wait-until-disappears --wait-until-found --max-attempts=<integer> --json` | Find a template PNG; print its box (no click). |
 | `visus image find-all` | `IMAGE_PATH --region=<text> --confidence=<float> --json` | Find EVERY occurrence of a template PNG (no click). |
 | `visus image find-multiple` | `IMAGE_PATHS... --region=<text> --confidence=<float> --json` | Find the first match of SEVERAL template PNGs. |
 | `visus image relative` | `ANCHOR_IMAGE TARGET_IMAGE --max-distance=<integer> --confidence=<float> --target-region=<text> --click --button=<choice> --delay=<float> --sendtext=<text> --backtrack --max-attempts=<integer> --wait-until-found --wait-until-disappears --wait-timeout=<integer> --json` | Find/click a target template NEAR a unique anchor. |
@@ -126,15 +126,44 @@ click-through window, so it never blocks a subsequent click.
 
 ## Mental model (same as the MCP skill)
 
-1. **Native first when accessible**: `visus native dump-tree --window "App" --json`
-   to *see* the control tree. If it returns controls, act with
-   `visus native click/set-text/wait` — no pixels, most robust.
-2. **Otherwise prefer `visus smart click`**: it tries native → image → OCR →
-   coordinates and tells you which won. `--dry-run` first if unsure.
-3. **Build click-by-image with `visus capture`**: `visus capture save --auto
-   "Salvar" --window "App" --click` instead of guessing coordinates.
-4. **Verify exit codes**: `0` = success. Branch your script on `$?` or parse
-   the `--json` payload.
+**Core idea — locate with your eyes, run on images.** Native tree + OCR are how
+you SEE the screen while *building* a flow (they find WHERE a thing is).
+`visus capture` turns a sighting into a reusable PNG template. The **script you
+ship** then clicks those templates with `visus image click` /
+`visus image relative` — template matching is fast and deterministic; re-running
+OCR every execution is slow and brittle. Accessible apps are the exception (act
+by control, no templates).
+
+1. **Target first**: `visus window ensure --process app.exe --json` — opens/
+   focuses and returns the `rect`. Scope later searches to it (`--region`).
+2. **See the UI**: `visus native dump-tree --window "App" --json`. Controls
+   returned → accessible app: act with `visus native click/set-text/wait`
+   (no pixels, most robust, **no templates needed**). Returns `[]` (Win11 file
+   pickers, Java Swing, some Electron) → see by OCR.
+3. **Capture each target (build time)**: `visus capture save --auto "Salvar"
+   --window "App" --search-region X,Y,W,H --click` saves `save.png` cropped from
+   the box it located. **Never guess coordinates / eyeball a crop**; if a
+   locator misses, FIX it (scope `--search-region`, lower
+   `--confidence-threshold`, try `--text`/`--native`). When unsure which layer
+   fits, `visus smart click --query "Salvar" --window "App" --dry-run`.
+4. **Assemble the runtime flow (image-based)**: `visus image click save.png
+   --region X,Y,W,H`. Scope to the window rect so a look-alike elsewhere can't
+   match. Re-run OCR/native at runtime only for dynamic text or relative anchors.
+5. **Verify by EFFECT, not just exit code**: a `0`/`clicked:true` ≠ the action
+   worked. Confirm the real outcome — file mtime/size changed, `visus native
+   get-text/get-state` changed, screen settled (`visus` exit code + the actual
+   side effect).
+
+### Dialogs (Save As / Open / overwrite confirm)
+
+The Win11 file picker usually gives an **empty `native dump-tree`** → go OCR.
+Type the **full path** into the name field (`visus type` after focusing it) —
+it saves anywhere regardless of the dialog's current folder. The default button
+fires on `Enter`, **but an overwrite confirm ("Sim"/"Não", "Yes"/"No") defaults
+to "Não"** — so `Enter` cancels it; click "Sim" (focus that dialog first) or
+send `Left` then `Enter`. Locate by text scoped to the **bottom button row**
+(the word may also be in the title). **Verify the save by the file's
+mtime/size.**
 
 ## Safety guardrails
 
@@ -148,13 +177,39 @@ click-through window, so it never blocks a subsequent click.
 
 ## Scripting example
 
+**Build once** — let OCR/native be your eyes and capture the templates the
+runtime will click (run with each dialog open):
+
+```bash
+# Save As button (file picker has no native tree → OCR, scoped to the button row)
+visus capture btn_salvar --text "Salvar" --window "Salvar como" \
+  --search-region 84,528,960,90 --click
+# overwrite-confirm "Sim" button
+visus capture btn_sim --text "Sim" --window "Confirmar Salvar como" --padding 8 --click
+```
+
+**Run** — fast, image-based, deterministic:
+
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-visus process launch notepad.exe --json
-visus native wait --window "Notepad" --control-type Edit --state ready --json
-visus native set-text "hello world" --window "Notepad" --control-type Edit
-visus capture save --auto "Save" --window "Notepad" --click
+OUT="$HOME/Downloads/demo.txt"
+before=$(stat -c %Y "$OUT" 2>/dev/null || echo 0)
+
+visus window ensure --process notepad.exe --json
+visus type "hello world"
+visus key "Ctrl+S"
+visus window get "Salvar como" --json            # wait for the dialog, grab its rect
+visus type "{ctrl}a$OUT"                          # full path → saves to Downloads
+visus image click visus-elements/btn_salvar.png --region 84,78,960,540
+
+# overwrite confirm defaults to "Não" → click "Sim" by image (don't press Enter)
+if visus window get "Confirmar Salvar como" --json >/dev/null 2>&1; then
+  visus image click visus-elements/btn_sim.png --region 769,415,366,140
+fi
+
+after=$(stat -c %Y "$OUT")                         # verify by EFFECT (mtime grew)
+[ "$after" -gt "$before" ] && echo "saved" || { echo "not written"; exit 1; }
 ```
 
 When in doubt, re-read this skill before invoking `visus` — it overrides

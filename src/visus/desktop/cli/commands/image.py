@@ -48,17 +48,21 @@ def _robustness_options(f):
     help="--specific: search the region; --no-specific: whole screen + scale variations.",
 )
 @click.option("--backtrack", is_flag=True, help="Retry with adjustments on a miss.")
+@click.option(
+    "--occurrence", type=int, default=1, show_default=True,
+    help="Which match (1-based, reading order) when the template repeats.",
+)
 @_robustness_options
 @json_option
 def find(
-    image_path, region, confidence, specific, backtrack,
+    image_path, region, confidence, specific, backtrack, occurrence,
     max_attempts, wait_until_found, wait_until_disappears, wait_timeout, json_mode,
 ):
     box = build_bot().find_image(
         image_path, region=tuple(region) if region else None, confidence=confidence,
         specific=specific, backtrack=backtrack, max_attempts=max_attempts,
         wait_until_found=wait_until_found, wait_until_disappears=wait_until_disappears,
-        wait_timeout=wait_timeout,
+        wait_timeout=wait_timeout, occurrence=occurrence,
     )
     if box is None:
         done(None, json_mode=json_mode, ok=False, human="not on screen")
@@ -82,18 +86,22 @@ def find(
 @click.option("--delay", type=float, default=0, show_default=True, help="Pause after the click (s).")
 @click.option("--sendtext", default=None, help="Type this string right after clicking.")
 @click.option("--backtrack", is_flag=True, help="Retry earlier step(s) on a miss.")
+@click.option(
+    "--occurrence", type=int, default=1, show_default=True,
+    help="Which match (1-based, reading order) when the template repeats.",
+)
 @_robustness_options
 @json_option
 def click_cmd(
     image_path, region, confidence, specific, mouse_button, delay, sendtext,
-    backtrack, max_attempts, wait_until_found, wait_until_disappears, wait_timeout,
-    json_mode,
+    backtrack, occurrence, max_attempts, wait_until_found, wait_until_disappears,
+    wait_timeout, json_mode,
 ):
     ok = bool(
         build_bot().click_image(
             image_path, region=tuple(region) if region else None,
             confidence=confidence, specific=specific, mouse_button=mouse_button,
-            delay=delay, sendtext=sendtext, backtrack=backtrack,
+            delay=delay, sendtext=sendtext, backtrack=backtrack, occurrence=occurrence,
             max_attempts=max_attempts, wait_until_found=wait_until_found,
             wait_until_disappears=wait_until_disappears, wait_timeout=wait_timeout,
         )

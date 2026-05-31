@@ -43,7 +43,7 @@ visus <group> <cmd> --help   # a command's full flag list
 | `visus text click` | *(text find opts)* `--button=<choice> --delay=<float> --sendtext=<text> --json` | Find on-screen text via OCR and click its center. |
 | `visus text find-all` | `QUERY --region=<text> --filter=<choice> --confidence-threshold=<float> --ocr=<choice> --json` | List EVERY occurrence of the text (reading order). |
 | `visus text show` | `QUERY --region=<text> --filter=<choice> --confidence-threshold=<float> --color=<text> --duration=<int> --width=<int> --ocr=<choice> --json` | Overlay every occurrence on screen, numbered. |
-| `visus image find` | `IMAGE_PATH --region=<text> --confidence=<float> --specific/--no-specific --backtrack --max-attempts=<int> --wait-until-found --wait-until-disappears --wait-timeout=<int> --json` | Find a template PNG; print its box (no click). |
+| `visus image find` | `IMAGE_PATH --region=<text> --confidence=<float> --specific/--no-specific --occurrence=<int> --backtrack --max-attempts=<int> --wait-until-found --wait-until-disappears --wait-timeout=<int> --json` | Find a template PNG; print its box (no click). |
 | `visus image click` | *(image find opts)* `--button=<choice> --delay=<float> --sendtext=<text> --json` | Find a template PNG and click its center. |
 | `visus image find-all` | `IMAGE_PATH --region=<text> --confidence=<float> --json` | Find EVERY occurrence of one template PNG. |
 | `visus image find-multiple` | `IMAGE_PATHS… --region=<text> --confidence=<float> --json` | First match of several templates in one call. |
@@ -181,10 +181,16 @@ visus text show "Login" --duration 4000 --color green
 
 `find` / `click` options: `--region X,Y,W,H`, `--confidence` (float 0–1, `0.9`),
 `--specific/--no-specific` (default `--specific`: region only; `--no-specific`:
-whole screen + scale variations), `--max-attempts` (`3`),
-`--wait-until-found`, `--wait-until-disappears`, `--wait-timeout`, `--json`.
-`click` adds `--button left|right|double|move_to`, `--delay`, `--sendtext`,
-`--backtrack`. `find` adds `--backtrack`.
+whole screen + scale variations), `--occurrence N` (int, `1` — when the template
+repeats, the Nth match in reading order, top-to-bottom/left-to-right),
+`--max-attempts` (`3`), `--wait-until-found`, `--wait-until-disappears`,
+`--wait-timeout`, `--json`. `click` adds `--button left|right|double|move_to`,
+`--delay`, `--sendtext`, `--backtrack`. `find` adds `--backtrack`.
+
+```bash
+# Click the 2nd copy of an icon that appears several times (e.g. a grid row):
+visus image click row_delete.png --no-specific --occurrence 2
+```
 
 `relative` options: `--max-distance` (int, `200`), `--confidence` (0–1, `0.9`),
 `--target-region X,Y,W,H`, `--click` (else just locate),

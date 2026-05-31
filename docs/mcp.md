@@ -21,6 +21,12 @@ Host config (Claude Desktop / Code `settings.json`):
 The bot is a lazily-built module-level singleton, so config, the open recording,
 and the last extracted text persist across calls within one server lifetime.
 
+**This reference ships with the server.** The MCP server exposes two resources —
+`visus://docs/mcp` (this page) and `visus://docs/cli` (the full CLI reference) —
+so any MCP client can read them on demand after `pip install`, no repo needed.
+The whole toolbox is also a `visus …` shell command (`--json` everywhere); drive
+a step from the shell whenever that is simpler.
+
 ## Reading this reference
 
 - **Types**: `int`, `float`, `str`, `bool`, `list[int]`, `list[str]`, `dict`.
@@ -45,8 +51,8 @@ Full per-parameter detail is in the sections below. A `?` marks an optional para
 | `find_text` | text, region?, filter_type?, confidence_threshold?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find visible on-screen `text` via OCR; return its box (do not click). |
 | `click_text` | text, region?, filter_type?, delay?, mouse_button?, occurrence?, sendtext?, confidence_threshold?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find on-screen `text` via OCR and click its center. |
 | `find_all_text` | text, region?, filter_type?, confidence_threshold? | List EVERY on-screen occurrence of `text` via OCR (do not click). |
-| `find_image` | image_path, region?, confidence?, specific?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen; return its box (do not click). |
-| `click_image` | image_path, region?, confidence?, delay?, mouse_button?, specific?, sendtext?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen and click its center. |
+| `find_image` | image_path, region?, confidence?, specific?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen; return its box (do not click). |
+| `click_image` | image_path, region?, confidence?, delay?, mouse_button?, specific?, occurrence?, sendtext?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen and click its center. |
 | `click_at` | x, y, width?, height?, mouse_button?, delay? | Click at absolute screen coordinates -- no find step. LAST RESORT. |
 | `hybrid_find` | name, region? | Find `name` trying native -> OCR -> image template, in order (no click). |
 | `find_relative_image` | anchor_image, target_image, max_distance?, confidence?, target_region?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a target template NEAR a unique anchor template (no click). |
@@ -105,13 +111,35 @@ Full per-parameter detail is in the sections below. A `?` marks an optional para
 2. **`native_dump_tree(window="App")`** — if it returns controls, drive the app
    natively (most robust). If `[]`, use the pixel path.
 3. **`capture_element(label="save", auto="Save", window="App", click=True)`** —
-   the coordinate-free click. Or `smart_click(query="Save", window="App")`.
+   locate by native/OCR and **save a reusable `save.png` from that exact box**.
+   **OCR/native are your *eyes* at build time, not the runtime.** The automation
+   you hand to the user should click the captured templates with **`click_image`
+   / `click_relative_image`** — template matching is far faster than re-running
+   OCR every run, and deterministic. Re-locate with OCR/native only when the
+   label/layout is dynamic or to anchor a relative click. `visus text find
+   "Save" --ocr rapidocr --json` (CLI) quickly "gives you eyes" on a coordinate.
+   **Never eyeball a pixel crop** for `save_screenshot`; the template must come
+   FROM a located box. If a locator misses, FIX it (widen/scope `search_region`,
+   lower `confidence_threshold`, try `auto=`) — don't guess coordinates. If a
+   word repeats (e.g. "Salvar" is in both the button and the title "Salvar
+   como"), scope `search_region` to the button strip or use `find_all_text` +
+   occurrence.
 4. **Scope every search** — pass `region` = the window `rect` so a match can't
-   land on the wrong window.
+   land on the wrong window. With leftover look-alike windows, disambiguate via
+   `list_windows` (foreground/largest rect), not title alone.
 5. **Wait, don't sleep** — `wait_for_stable_screen` after a UI change;
    `wait_for_file_stable` for downloads; `native_wait` for a control.
 6. **Record** — `start_recording` → `execute_tasks`/clicks → `stop_recording` →
    `render_report` for an auditable HTML artifact.
+
+> **Save As / Open / overwrite dialogs.** The Windows 11 file picker often
+> returns an **empty `native_dump_tree`** — go straight to OCR. Type the full
+> path into the name field, then click the button by **text scoped to the
+> bottom button row**. The dialog's **default button fires on `Enter`**; an
+> overwrite confirm (**"Sim"/"Não"**) **defaults to "Não"**, so `Enter` cancels
+> the overwrite — click **"Sim"** explicitly (focus that dialog first) or send
+> `Left` then `Enter`. **Verify a save by the file's mtime/size**, not just that
+> the path exists.
 
 ---
 
@@ -157,14 +185,18 @@ Wait/backtrack knobs as in `find_text`.
 
 # Find / click — image (template PNG)
 
-### `find_image(image_path, region=None, confidence=0.9, specific=True, max_attempts=3, backtrack=False, wait_until_found=False, wait_until_disappears=False, wait_timeout=None) -> dict | null`
+### `find_image(image_path, region=None, confidence=0.9, specific=True, occurrence=1, max_attempts=3, backtrack=False, wait_until_found=False, wait_until_disappears=False, wait_timeout=None) -> dict | null`
 Find a template PNG; return its box. `confidence`: 0–1 (lower to ~0.7 on a
 miss). `specific=True` = search `region`; `specific=False` = whole screen +
-scale variations (helps across resolutions). Template must match the live
+scale variations (helps across resolutions). `occurrence`: when the template
+appears more than once, the Nth match in reading order (top-to-bottom,
+left-to-right); `occurrence>1` enumerates every match and picks the Nth — the
+image counterpart of `click_text(occurrence=N)`. Template must match the live
 DPI/scale.
 
-### `click_image(image_path, region=None, confidence=0.9, delay=0, mouse_button="left", specific=True, sendtext=None, max_attempts=3, backtrack=False, wait_until_found=False, wait_until_disappears=False, wait_timeout=None) -> bool`
-Find a template PNG and click its center.
+### `click_image(image_path, region=None, confidence=0.9, delay=0, mouse_button="left", specific=True, occurrence=1, sendtext=None, max_attempts=3, backtrack=False, wait_until_found=False, wait_until_disappears=False, wait_timeout=None) -> bool`
+Find a template PNG and click its center. `occurrence=N` clicks the Nth copy
+(reading order) when the template repeats.
 
 ### `find_relative_image(anchor_image, target_image, max_distance=200, confidence=0.9, target_region=None, wait_until_found=False, wait_until_disappears=False, wait_timeout=None) -> dict | null`
 Find a target template **near** a unique anchor template (no click). Use when

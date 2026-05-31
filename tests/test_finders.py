@@ -93,6 +93,18 @@ class TestFindImage:
         )
         assert bot.find_image("button.png") is None
 
+    def test_occurrence_picks_nth_in_reading_order(self, monkeypatch):
+        bot = _make_bot()
+        # find_all returns matches out of order; occurrence sorts reading order
+        # (top-to-bottom, left-to-right) and picks the Nth.
+        boxes = [(200, 300, 40, 12), (10, 10, 40, 12), (60, 60, 40, 12)]
+        monkeypatch.setattr(
+            "visus.desktop.core.locate.find_all", lambda *a, **k: boxes
+        )
+        assert bot.find_image("b.png", occurrence=2) == (60, 60, 40, 12)
+        assert bot.find_image("b.png", occurrence=3) == (200, 300, 40, 12)
+        assert bot.find_image("b.png", occurrence=9) is None
+
     def test_resolves_registered_label_to_path(self, monkeypatch, tmp_path):
         bot = _make_bot()
         real = _make_png(tmp_path, "save.png")

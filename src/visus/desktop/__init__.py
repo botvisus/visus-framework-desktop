@@ -1551,6 +1551,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         wait_until_found=False,
         wait_until_disappears=False,
         wait_timeout=None,
+        occurrence=1,
     ):
         """Internal version of click_image without backtrack (for use by the backtrack system)."""
         # Use the global configuration if not specified
@@ -1569,6 +1570,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             wait_until_found,
             False,
             wait_timeout,
+            occurrence=occurrence,
         )  # backtrack=False for find_image
 
         if location:
@@ -1757,6 +1759,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         wait_until_disappears=False,
         wait_timeout=None,
         scales=None,
+        occurrence=1,
     ):
         """
         Find an image on screen with all the advanced features.
@@ -1772,6 +1775,9 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             wait_until_disappears (bool): 🆕 v1.3.0+ - Waits for the image to disappear
             wait_timeout (int, optional): 🆕 v1.3.0+ - Specific timeout (overrides the global one)
             scales (list, optional): List of scales to try (e.g.: [1.0, 0.95, 1.05])
+            occurrence (int): Which match to return when the template appears more
+                than once, 1-based in reading order (top-to-bottom, left-to-right).
+                ``occurrence > 1`` enumerates every match and picks the Nth.
 
         Returns:
             tuple: Coordinates of the image or None
@@ -1779,6 +1785,33 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         import time
 
         image_path = self.image_map.resolve(image_path)
+
+        # occurrence > 1: a single-best match (the default find path) can't serve
+        # the 2nd/3rd copy. Enumerate every match and pick the Nth in reading
+        # order (top-to-bottom, left-to-right) -- mirrors click_text(occurrence=N).
+        if occurrence and occurrence > 1:
+            from .core.locate import find_all as _find_all
+
+            boxes = _find_all(
+                image_path,
+                region=tuple(region) if region else None,
+                confidence=confidence,
+            )
+            boxes = sorted(boxes, key=lambda b: (b[1], b[0]))
+            logger.info(
+                "Image '%s' found %d occurrence(s)", image_path, len(boxes)
+            )
+            if len(boxes) >= occurrence:
+                box = boxes[occurrence - 1]
+                logger.info(
+                    "Selected image occurrence %d at %s", occurrence, box
+                )
+                return box
+            logger.warning(
+                "Image occurrence %d of '%s' not found (%d match(es))",
+                occurrence, image_path, len(boxes),
+            )
+            return None
 
         if scales is None:
             scales = [1.0, 0.95, 1.05] if not specific else [1.0]
@@ -1894,6 +1927,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         wait_until_found=False,
         wait_until_disappears=False,
         wait_timeout=None,
+        occurrence=1,
     ):
         """
         Find and click on an image with all the advanced features.
@@ -1944,6 +1978,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
                 wait_until_found,
                 wait_until_disappears,
                 wait_timeout,
+                occurrence,
                 backtrack=backtrack,
             )
 
@@ -1961,6 +1996,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             wait_until_found,
             wait_until_disappears,
             wait_timeout,
+            occurrence,
         )
 
     @_records_in_session("click")

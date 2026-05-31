@@ -26,6 +26,7 @@ import base64
 import io
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -33,54 +34,147 @@ from mcp.server.fastmcp import FastMCP
 logger = logging.getLogger(__name__)
 
 _INSTRUCTIONS = """\
-Visus Desktop — drive Windows GUI apps by control, image, OCR, or coordinates.
+Visus Desktop — build reliable RPA for Windows GUI apps by control, image,
+OCR, or coordinates.
 
-HOW TO APPROACH ANY TASK (follow in order):
+THE CORE IDEA — locate with your eyes, run on images.
+  The native control tree and OCR are how YOU (the agent) SEE the screen while
+  BUILDING a flow: they find WHERE a thing is. `capture_element` turns a
+  sighting into a reusable PNG template. The automation you hand back then
+  clicks those templates with `click_image` / `click_relative_image` —
+  template matching is fast and deterministic; running OCR every execution is
+  slow and brittle. Re-run OCR/native at RUNTIME only for dynamic text, a
+  changing layout, or to anchor a relative click. (Accessible apps are the
+  exception — see step 2: act by control and skip templates entirely.)
 
-1. TARGET THE WINDOW FIRST. Call `ensure_window(process="app.exe")` before
-   anything else. It is instant, tells you if the app is open / minimized /
-   where it is, and brings it to the front. Prefer `process=` over `title=`
-   (a title substring like "Notepad" can match an editor showing
-   `notepad.py`). Use its `rect` to scope every later search. NEVER call
-   `native_dump_tree` just to check whether a window exists — that is slow.
+WORKFLOW — follow in order:
 
-2. PICK A TARGETING METHOD, most robust first:
-   a. NATIVE (no pixels): `native_dump_tree` to read the control tree, then
-      `native_click` / `native_set_text` / `native_get_text` / `native_wait`.
-      Immune to theme/DPI/resolution/language. Works on Win32/WPF/WinUI/.NET.
-      Returns empty on non-accessible UIs (Java Swing, some Electron).
-   b. CAPTURE + CLICK: `capture_element(auto="Save", window=...)` locates by
-      Win32-menu → OCR → UIA, saves a reusable PNG template, and can click it.
-      The coordinate-free way to build an image flow on ANY UI.
-   c. SMART CASCADE: `smart_click` / `smart_find` try native→image→OCR→coords
-      in one call and report which won.
-   d. PRIMITIVES: `find_text`/`click_text` (OCR), `find_image`/`click_image`
-      (template PNG), `click_at` (absolute coords — only if the user gave them).
-      If a label repeats on screen, call `find_all_text` first to list every
-      match, then click the right one via `click_text(occurrence=N)`.
+1. TARGET THE WINDOW. `ensure_window(process="app.exe")` first — instant; says
+   if the app is open/minimized/where, and raises it. Prefer `process=` over
+   `title=` ("Notepad" can match an editor showing `notepad.py`). Its `rect`
+   scopes every later search. Don't use `native_dump_tree` just to test
+   existence — that's slow.
 
-3. SCOPE EVERY SEARCH. Pass `region=[x,y,w,h]` (the window rect from
-   ensure_window) to find/click/capture so a match cannot land on the wrong
-   window. Unscoped searches are the #1 cause of wrong clicks.
+2. SEE THE UI: `native_dump_tree(window=...)`. If it returns controls, the app
+   is ACCESSIBLE — act by control (`native_click` / `native_set_text` /
+   `native_get_text` / `native_wait`). This is the most robust path (no pixels,
+   immune to theme/DPI/resolution/language) and needs NO templates. If it
+   returns `[]` (Win11 file pickers, Java Swing, some Electron), see by OCR
+   instead (step 3).
 
-4. WAIT, DON'T SLEEP. After a UI change call `wait_for_stable_screen`; for
-   downloads `wait_for_file_stable`; for a control `native_wait`.
+3. CAPTURE EACH TARGET (build time, for the pixel path). Per button/field,
+   locate AND save a template in one call:
+     `capture_element(label="save", auto="Save", window="App", click=...)`
+   `auto=` tries Win32-menu → OCR → UIA and writes `<label>.png` cropped from
+   the EXACT box it found (`located_by` says which won); `click=True` also
+   clicks. NEVER eyeball a crop or hand-pick pixels for `save_screenshot` — the
+   template must come from a located box. If a locator misses, FIX it: scope
+   `search_region` to where the element actually is, lower
+   `confidence_threshold`, or try `text=` / `native=`. A word can repeat
+   (button "Salvar" vs title "Salvar como") — scope to the button area, or
+   `find_all_text` then pick the right `occurrence`. (`smart_click`/`smart_find`
+   run native→image→OCR→coords in one shot and report the winner — handy when
+   unsure which layer fits.)
 
-5. BATCH a flow with `execute_tasks([...])` (see its docstring for the task
-   schema) and wrap it in `start_recording`/`stop_recording`, then
-   `render_report` to produce an HTML report.
+4. ASSEMBLE THE RUNTIME FLOW (image-based — fast, repeatable):
+   `click_image("save.png", region=<window rect>)` (scope so a look-alike
+   elsewhere can't match); `click_relative_image` for "the target near anchor";
+   `type_text` (inline tokens `{ctrl}a {tab} {enter}`) and `keyboard_command`
+   (CASE-SENSITIVE: `Enter`, `Escape`, `Ctrl+S` — not "esc") for input;
+   `click_at` only if the user gave coordinates.
 
-RETURNS: find/get tools return a box `{x,y,width,height}` or null; click/act
-tools return a bool or a `{...,"clicked"/"found":bool}` dict; window/state
-tools return structured dicts. A null/false means "not found / not done".
+5. SYNC, DON'T SLEEP. After a UI change `wait_for_stable_screen`; for downloads
+   `wait_for_file_stable`; for a control `native_wait`.
 
-SAFETY: confirm destructive actions (kill_process, close_window, overwriting
-files) with the user first. Use absolute coordinates only when the user
-provided them. Key tokens for `keyboard_command` are CASE-SENSITIVE
-(e.g. "Escape", "Enter", "Ctrl+S" — not "esc").
+6. VERIFY BY EFFECT, not by return value. A click returning true ≠ it worked.
+   Confirm the real outcome — file mtime/size changed, `native_get_text`/
+   `native_get_state` changed, screen settled. (A `wait_for_file` that only
+   checks existence is a false positive when the file already existed.)
+
+7. PACKAGE. `execute_tasks([...])` for atomic retry/backtrack; wrap in
+   `start_recording`/`stop_recording` → `render_report` for an auditable HTML
+   artifact.
+
+ALWAYS scope a search with `region=[x,y,w,h]` — unscoped is the #1 cause of
+wrong clicks. With leftover look-alike windows, disambiguate via `list_windows`
+(foreground/largest rect, not title alone) and FOCUS the target window/dialog
+before sending clicks or keys.
+
+DIALOGS (Save As / Open / confirm): the Win11 file picker usually gives an
+empty native tree → go OCR. Type the FULL path into the name field (saves
+anywhere, regardless of the dialog's current folder). The default button fires
+on `Enter`, BUT an overwrite confirm ("Sim"/"Não", "Yes"/"No") DEFAULTS TO
+"Não" — so `Enter` cancels it; click "Sim" (focus that dialog first) or send
+`Left` then `Enter`.
+
+FULL REFERENCE ON DEMAND: this server ships two readable resources — read
+`visus://docs/mcp` for the complete per-parameter tool reference, and
+`visus://docs/cli` for the CLI. Pull them when a short docstring isn't enough;
+no source repo required.
+
+THE WHOLE TOOLBOX IS ALSO A CLI. Every capability is a `visus ...` shell
+command with `--json` output — use it whenever driving from the shell is easier
+(quick "give me eyes" probes, scripting, piping, or building a runnable script
+for the user). Examples: `visus text find-all "Save" --region X,Y,W,H
+--ocr rapidocr --json`, `visus native dump-tree --window "App" --json`,
+`visus smart click --query "Save" --window "App"`, `visus capture save
+--auto "Save" --click`. See the `visus://docs/cli` resource or `visus --help`.
+
+RETURNS: find/get → box `{x,y,width,height}` or null; click/act → bool or
+`{...,"clicked"/"found":bool}`; null/false = not found / not done.
+
+SAFETY: confirm destructive actions (`kill_process`, `close_window`,
+overwriting files) with the user first. Absolute coordinates only when the user
+provided them.
 """
 
 mcp = FastMCP("visus-desktop", instructions=_INSTRUCTIONS)
+
+# ---------------------------------------------------------------------------
+# Documentation resources — the full references ship inside the package
+# (``resources/*.md``) and are exposed over MCP so any client can read them
+# on demand, without the source repo. Kept in sync from ``docs/`` by a
+# pre-commit hook (scripts/sync_mcp_resources.py).
+# ---------------------------------------------------------------------------
+
+_RESOURCES_DIR = Path(__file__).resolve().parent / "resources"
+
+
+def _read_resource(filename: str) -> str:
+    path = _RESOURCES_DIR / filename
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError as exc:  # pragma: no cover - packaging/install issue
+        return f"(resource '{filename}' unavailable: {exc})"
+
+
+@mcp.resource(
+    "visus://docs/mcp",
+    name="Visus MCP tool reference",
+    description=(
+        "Complete reference for every visus-desktop MCP tool — all parameters, "
+        "return shapes, and usage notes. Read this when you need the exact "
+        "signature of a tool beyond its short docstring."
+    ),
+    mime_type="text/markdown",
+)
+def docs_mcp_reference() -> str:
+    return _read_resource("mcp.md")
+
+
+@mcp.resource(
+    "visus://docs/cli",
+    name="Visus CLI Pro reference",
+    description=(
+        "Complete reference for the `visus` command-line tool — every command "
+        "group, flag, and `--json` output. Read this to drive a step from the "
+        "shell instead of an MCP tool when that is simpler."
+    ),
+    mime_type="text/markdown",
+)
+def docs_cli_reference() -> str:
+    return _read_resource("cli.md")
+
 
 # ---------------------------------------------------------------------------
 # Lazy bot singleton + helpers
@@ -294,6 +388,7 @@ def find_image(
     region: list[int] | None = None,
     confidence: float = 0.9,
     specific: bool = True,
+    occurrence: int = 1,
     max_attempts: int = 3,
     backtrack: bool = False,
     wait_until_found: bool = False,
@@ -319,6 +414,7 @@ def find_image(
         region=_coerce_region(region),
         confidence=confidence,
         specific=specific,
+        occurrence=occurrence,
         max_attempts=max_attempts,
         backtrack=backtrack,
         wait_until_found=wait_until_found,
@@ -336,6 +432,7 @@ def click_image(
     delay: float = 0,
     mouse_button: str = "left",
     specific: bool = True,
+    occurrence: int = 1,
     sendtext: str | None = None,
     max_attempts: int = 3,
     backtrack: bool = False,
@@ -365,6 +462,7 @@ def click_image(
             delay=delay,
             mouse_button=mouse_button,
             specific=specific,
+            occurrence=occurrence,
             sendtext=sendtext,
             max_attempts=max_attempts,
             backtrack=backtrack,
