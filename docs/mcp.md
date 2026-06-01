@@ -50,7 +50,7 @@ Full per-parameter detail is in the sections below. A `?` marks an optional para
 | `configure` | config | Change global behavior by rebuilding the bot with new config. |
 | `find_text` | text, region?, filter_type?, confidence_threshold?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find visible on-screen `text` via OCR; return its box (do not click). |
 | `click_text` | text, region?, filter_type?, delay?, mouse_button?, occurrence?, sendtext?, confidence_threshold?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find on-screen `text` via OCR and click its center. |
-| `find_all_text` | text, region?, filter_type?, confidence_threshold?, overlay?, color?, duration_ms?, width? | List EVERY on-screen occurrence of `text` via OCR + draw a numbered overlay. |
+| `find_all_text` | text, region?, filter_type?, confidence_threshold?, overlay?, color?, duration_ms?, width?, word_box? | List EVERY on-screen occurrence of `text` via OCR + draw a numbered overlay. |
 | `show_text_occurrences` | text, region?, filter_type?, confidence_threshold?, color?, duration_ms?, width?, save_image?, image_path? | Find every occurrence of `text` and SHOW them numbered 1, 2, 3 …. |
 | `find_image` | image_path, region?, confidence?, specific?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen; return its box (do not click). |
 | `click_image` | image_path, region?, confidence?, delay?, mouse_button?, specific?, occurrence?, sendtext?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen and click its center. |
@@ -172,15 +172,18 @@ Find on-screen text; return its box, no click.
 - `wait_until_disappears`: wait until it's gone.
 - `backtrack` + `max_attempts`: retry with adjusted thresholds.
 
-### `find_all_text(text, region=None, filter_type="both", confidence_threshold=None, overlay=True, color="red", duration_ms=3000, width=3) -> list[dict]`
+### `find_all_text(text, region=None, filter_type="both", confidence_threshold=None, overlay=True, color="red", duration_ms=3000, width=3, word_box=False) -> list[dict]`
 **Every** occurrence, reading order. Returns `[{occurrence, x, y, width, height,
 confidence}, …]`. Use to disambiguate repeats, then `click_text(occurrence=N)`.
 `confidence_threshold=None` uses the config default. By default it ALSO paints a
 numbered click-through overlay on the real screen (parity with the CLI `visus
 text find-all`) so the returned `occurrence` numbers match what's drawn —
 `color` / `duration_ms` / `width` style it; pass `overlay=False` for a silent
-list. (`show_text_occurrences` remains the richer visual sibling — it also saves
-a numbered PNG you can open.)
+list. `word_box=True` narrows each box to just `text` instead of the whole OCR
+line — e.g. the word `visus` inside a long URL. On RapidOCR it uses the engine's
+native per-word boxes (`return_word_box`), falling back to a character-offset
+estimate if unavailable; already word-level on Tesseract. (`show_text_occurrences`
+remains the richer visual sibling — it also saves a numbered PNG you can open.)
 
 ### `show_text_occurrences(text, region=None, filter_type="both", confidence_threshold=None, color="red", duration_ms=3000, width=3, save_image=True, image_path=None) -> dict`
 The **visual** sibling of `find_all_text`: SEE which copy is which before

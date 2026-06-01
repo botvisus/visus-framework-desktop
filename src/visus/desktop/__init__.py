@@ -1272,6 +1272,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         region=None,
         filter_type="both",
         confidence_threshold=None,
+        word_box=False,
     ):
         """List every occurrence of ``text`` visible on screen (or in ``region``).
 
@@ -1289,6 +1290,13 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             filter_type (str): ``"letters"`` / ``"numbers"`` / ``"both"``.
             confidence_threshold (float, optional): Minimum OCR confidence
                 (0-100). Defaults to ``config.confidence_threshold``.
+            word_box (bool): When True, narrow each box from the whole OCR
+                text line to just ``text`` itself (handy to locate a word
+                inside a long run such as a URL). Default False keeps the full
+                line box. On RapidOCR this uses the engine's native per-word
+                boxes (``return_word_box``), falling back to a character-offset
+                estimate if unavailable; a no-op on Tesseract, whose boxes are
+                already word-level.
 
         Returns:
             list[tuple]: ``[(x, y, w, h, confidence), ...]`` in screen
@@ -1316,7 +1324,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             else self.config.confidence_threshold
         )
         matches = self.ocr_engine.find_all_text(
-            region_img, text, filter_type, threshold
+            region_img, text, filter_type, threshold, word_box=word_box
         )
         # Box is relative to the captured region; convert to screen coordinates.
         return [
@@ -1333,6 +1341,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         color="red",
         duration_ms=3000,
         width=3,
+        word_box=False,
     ):
         """Overlay every occurrence of ``text`` on screen, numbered ``1, 2, 3...``.
 
@@ -1350,6 +1359,8 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             color (str): Overlay color.
             duration_ms (int): How long each overlay stays on screen.
             width (int): Outline thickness in pixels.
+            word_box (bool): Narrow each box to just ``text`` instead of the
+                whole OCR line (see :meth:`find_all_text`). Default False.
 
         Returns:
             list[tuple]: Same shape as :meth:`find_all_text`.
@@ -1360,7 +1371,9 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         """
         from .core.overlay_win32 import show_click_through_overlay
 
-        matches = self.find_all_text(text, region, filter_type, confidence_threshold)
+        matches = self.find_all_text(
+            text, region, filter_type, confidence_threshold, word_box=word_box
+        )
         for i, (x, y, w, h, _) in enumerate(matches, start=1):
             show_click_through_overlay(
                 (x, y, w, h),

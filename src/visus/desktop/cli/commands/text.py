@@ -166,11 +166,16 @@ def click_cmd(
     help="How long each overlay stays on screen (ms).",
 )
 @click.option("--width", type=int, default=3, show_default=True, help="Outline thickness (px).")
+@click.option(
+    "--word", "word_box", is_flag=True,
+    help="Return only the searched word's box (approx), not the whole OCR text "
+         "line -- e.g. just 'visus' inside a long URL.",
+)
 @_ocr_option
 @json_option
 def find_all(
     query, region, filter_type, confidence_threshold,
-    overlay, color, duration, width, ocr_backend, json_mode,
+    overlay, color, duration, width, word_box, ocr_backend, json_mode,
 ):
     bot = _make_bot(ocr_backend)
     region_arg = tuple(region) if region else None
@@ -185,6 +190,7 @@ def find_all(
             color=color,
             duration_ms=duration,
             width=width,
+            word_box=word_box,
         )
     else:
         matches = bot.find_all_text(
@@ -192,6 +198,7 @@ def find_all(
             region=region_arg,
             filter_type=filter_type,
             confidence_threshold=confidence_threshold,
+            word_box=word_box,
         )
     payload = [
         {

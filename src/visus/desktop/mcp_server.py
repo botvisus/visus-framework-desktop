@@ -433,6 +433,7 @@ def find_all_text(
     color: str = "red",
     duration_ms: int = 3000,
     width: int = 3,
+    word_box: bool = False,
 ) -> list[dict]:
     """List EVERY on-screen occurrence of ``text`` via OCR and overlay each one.
 
@@ -448,7 +449,10 @@ def find_all_text(
     ``filter_type`` is "letters"|"numbers"|"both"; ``confidence_threshold``
     is 0-100 (defaults to the configured threshold); ``overlay`` toggles the
     on-screen drawing (set false for a silent list); ``color`` / ``duration_ms``
-    / ``width`` style the overlay.
+    / ``width`` style the overlay; ``word_box`` narrows each box to just
+    ``text`` instead of the whole OCR line — e.g. the word "visus" inside a long
+    URL (RapidOCR: native per-word boxes via ``return_word_box``, else a
+    character-offset estimate; Tesseract: already word-level).
     RETURNS: a list of ``{occurrence, x, y, width, height, confidence}`` in
     reading order (top-to-bottom, left-to-right); empty if nothing matched.
     """
@@ -467,6 +471,7 @@ def find_all_text(
             color=color,
             duration_ms=duration_ms,
             width=width,
+            word_box=word_box,
         )
     else:
         matches = bot.find_all_text(
@@ -474,6 +479,7 @@ def find_all_text(
             region=region_arg,
             filter_type=filter_type,
             confidence_threshold=confidence_threshold,
+            word_box=word_box,
         )
     return [
         {

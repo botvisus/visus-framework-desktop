@@ -39,6 +39,57 @@ def _iou(box_a: Tuple[int, int, int, int], box_b: Tuple[int, int, int, int]) -> 
     return inter / union if union > 0 else 0.0
 
 
+# Relative glyph widths for proportional fonts. A flat "every char is 1/N of
+# the line" model drifts badly on text full of narrow glyphs (URLs: '/', '.',
+# 'i', 'l'); weighting each character by its typical advance width keeps the
+# interpolated slice aligned much further into the string.
+_GLYPH_WIDE = set("mwMW@%—")
+_GLYPH_NARROW = set("iIl|.,:;'`!ij ")
+_GLYPH_SEMI_NARROW = set("ftr()[]{}/\\-")
+
+
+def _glyph_width(c: str) -> float:
+    if c in _GLYPH_WIDE:
+        return 1.0
+    if c in _GLYPH_NARROW:
+        return 0.34
+    if c in _GLYPH_SEMI_NARROW:
+        return 0.5
+    if c.isupper() or c.isdigit():
+        return 0.72
+    return 0.58
+
+
+def _narrow_box_to_word(
+    raw_text: str, target: str, box: Tuple[int, int, int, int]
+) -> Tuple[int, int, int, int]:
+    """Approximate the sub-box of ``target`` inside a line ``box``.
+
+    OCR line detections span the whole text run, so a substring match (e.g.
+    "visus" inside a long URL) returns the entire line's box. When the caller
+    wants just the searched word, interpolate its horizontal slice from the
+    character offset, weighting each glyph by its typical width so proportional
+    fonts stay aligned. The vertical extent (``y``, ``h``) is kept. Falls back
+    to the full ``box`` when the target is not found verbatim in ``raw_text``
+    (e.g. OCR cleaning shifted it). Still an estimate -- exact per-word boxes
+    need a word-level OCR pass (Tesseract ``image_to_data``).
+    """
+    if not raw_text:
+        return box
+    i = raw_text.lower().find(target.lower())
+    if i < 0:
+        return box
+    x, y, w, h = box
+    widths = [_glyph_width(c) for c in raw_text]
+    total = sum(widths) or 1.0
+    pre = sum(widths[:i])
+    word = sum(widths[i:i + len(target)])
+    word_x = int(round(x + w * pre / total))
+    word_w = max(1, int(round(w * word / total)))
+    word_w = min(word_w, x + w - word_x)  # clamp inside the original box
+    return (word_x, y, word_w, h)
+
+
 def _dedupe_in_reading_order(
     candidates: List[Tuple[float, Tuple[int, int, int, int]]],
     iou_threshold: float = 0.4,
@@ -378,6 +429,7 @@ class _TesseractBackend:
         target_text: str,
         filter_type: str = "both",
         min_confidence: float = 0.0,
+        word_box: bool = False,
     ) -> List[Tuple[float, Tuple[int, int, int, int]]]:
         """Return every distinct ``target_text`` match in ``region_img``.
 
@@ -386,6 +438,10 @@ class _TesseractBackend:
         on-screen instances of the same string can all be reported. The
         result is a deduplicated list of ``(confidence, (x, y, w, h))``
         in reading order (top-to-bottom, left-to-right).
+
+        ``word_box`` is accepted for API parity with the RapidOCR backend;
+        Tesseract matches whole word tokens, so its boxes are already
+        word-level and the flag has no additional effect here.
         """
         try:
             processed_images = self.image_processor.preprocess_for_ocr(region_img)
@@ -693,6 +749,52 @@ class _RapidOCRBackend:
         x, y = min(xs), min(ys)
         return (x, y, max(xs) - x, max(ys) - y)
 
+    def _run_word_boxes(self, image: Image.Image):
+        """Single OCR pass with per-word boxes; return ``(words, lines)``.
+
+        Uses RapidOCR's native ``return_word_box=True`` so the recognizer
+        emits a box per WORD (via its internal CTC alignment) instead of one
+        box for the whole line -- this is what makes locating a word inside a
+        long run (e.g. a URL) precise. ``words`` is
+        ``[(text, score, (x, y, w, h)), ...]``; ``lines`` is the line-level
+        ``[(text, polygon, score), ...]`` from the SAME pass (so the caller can
+        fall back without a second OCR run).
+        """
+        import numpy as np
+
+        result = self._engine(np.array(image), return_word_box=True)
+        if result is None:
+            return [], []
+
+        txts = list(getattr(result, "txts", []) or [])
+        boxes_raw = getattr(result, "boxes", None)
+        scores = list(getattr(result, "scores", []) or [])
+        if boxes_raw is None:
+            lines = []
+        else:
+            try:
+                boxes_iter = boxes_raw.tolist()  # type: ignore[union-attr]
+            except AttributeError:
+                boxes_iter = list(boxes_raw)
+            lines = list(zip(txts, boxes_iter, scores))
+
+        words: List[Tuple[str, float, Tuple[int, int, int, int]]] = []
+        for entry in getattr(result, "word_results", None) or []:
+            if not entry:
+                continue
+            # An entry is a tuple of (text, score, polygon) word-tuples; some
+            # versions hand back a single word-tuple unwrapped.
+            word_tuples = [entry] if isinstance(entry[0], str) else entry
+            for word in word_tuples:
+                try:
+                    text, score, poly = word[0], word[1], word[2]
+                except (IndexError, TypeError):
+                    continue
+                if not poly:
+                    continue
+                words.append((str(text), float(score), self._poly_to_xywh(poly)))
+        return words, lines
+
     def find_text(
         self,
         region_img: Image.Image,
@@ -733,23 +835,67 @@ class _RapidOCRBackend:
         target_text: str,
         filter_type: str = "both",
         min_confidence: float = 0.0,
+        word_box: bool = False,
     ) -> List[Tuple[float, Tuple[int, int, int, int]]]:
         """RapidOCR equivalent of :meth:`_TesseractBackend.find_all_text`.
 
         Lists every RapidOCR detection whose cleaned text contains
         ``target_text``, scored on RapidOCR's own 0--100 confidence,
         deduplicated by spatial overlap and sorted in reading order.
-        """
-        try:
-            txts, polygons, scores = self._run(region_img)
-        except Exception as exc:
-            raise OCRProcessingError(f"RapidOCR call failed: {exc}") from exc
 
+        When ``word_box`` is True, boxes are tightened from the whole text line
+        to the matched word: RapidOCR's native per-word boxes
+        (``return_word_box``) are used when available, falling back to a
+        character-offset interpolation (:func:`_narrow_box_to_word`) otherwise.
+        Useful to locate a word inside a long run such as a URL.
+        """
         target_clean = limpar_texto(target_text, filter_type).lower()
         if not target_clean:
             return []
-        candidates: List[Tuple[float, Tuple[int, int, int, int]]] = []
-        for txt, polygon, raw_score in zip(txts, polygons, scores):
+
+        # Gather line-level detections (and, for word_box, per-word boxes from
+        # the same pass so there is no second OCR run in the common case).
+        words: List[Tuple[str, float, Tuple[int, int, int, int]]] = []
+        lines = None
+        if word_box:
+            try:
+                words, lines = self._run_word_boxes(region_img)
+            except Exception as exc:
+                logger.debug("return_word_box pass failed (%s); using lines", exc)
+        if lines is None:
+            try:
+                txts, polygons, scores = self._run(region_img)
+            except Exception as exc:
+                raise OCRProcessingError(f"RapidOCR call failed: {exc}") from exc
+            lines = list(zip(txts, polygons, scores))
+
+        # Precise path: match against native per-word boxes.
+        if word_box and words:
+            candidates: List[Tuple[float, Tuple[int, int, int, int]]] = []
+            for raw_text, score, wbox in words:
+                cleaned = limpar_texto(raw_text, filter_type)
+                if not matches_filter(cleaned, filter_type):
+                    continue
+                if target_clean not in cleaned.lower():
+                    continue
+                score_pct = score * 100.0
+                if score_pct < min_confidence:
+                    continue
+                # Exact when the word IS the target; otherwise the target is a
+                # substring of a bigger token (e.g. "visus" in "visus-desktop")
+                # -- interpolate inside that small token box, not the line.
+                box = (
+                    wbox
+                    if len(raw_text) <= len(target_text)
+                    else _narrow_box_to_word(raw_text, target_text, wbox)
+                )
+                candidates.append((score_pct, box))
+            if candidates:
+                return _dedupe_in_reading_order(candidates)
+
+        # Fallback: line-level match (with interpolation when word_box).
+        candidates = []
+        for txt, polygon, raw_score in lines:
             candidate = limpar_texto(str(txt), filter_type)
             if not matches_filter(candidate, filter_type):
                 continue
@@ -758,7 +904,10 @@ class _RapidOCRBackend:
             score_pct = float(raw_score) * 100.0
             if score_pct < min_confidence:
                 continue
-            candidates.append((score_pct, self._poly_to_xywh(polygon)))
+            box = self._poly_to_xywh(polygon)
+            if word_box:
+                box = _narrow_box_to_word(str(txt), target_text, box)
+            candidates.append((score_pct, box))
         return _dedupe_in_reading_order(candidates)
 
     def extract_all_text(
