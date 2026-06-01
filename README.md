@@ -311,10 +311,10 @@ a failed operation, `2` on a usage error.
 |---|---|---|
 | `visus smart find` | `--query=<text> --image=<text> --coords=<text> --window=<text> --pid=<int> --control-type=<text> --auto-id=<text> --region=<text> --confidence=<float> --confidence-threshold=<float> --order=<text> --timeout=<float> --json` | Locate a target via the cascade (native→image→OCR→coords); report which won. |
 | `visus smart click` | *(smart find opts)* `--button=<choice> --retries=<int> --delay=<float> --dry-run --json` | Same cascade, then click the winner. |
-| `visus text find` | `QUERY --region=<text> --filter=<choice> --confidence-threshold=<float> --occurrence=<int> --max-attempts=<int> --backtrack --wait-until-found --wait-until-disappears --wait-timeout=<int> --ocr=<choice> --json` | Find on-screen text via OCR; print its box (no click). |
-| `visus text click` | *(text find opts)* `--button=<choice> --delay=<float> --sendtext=<text> --json` | Find on-screen text via OCR and click its center. |
+| `visus text find` | `QUERY --region=<text> --filter=<choice> --confidence-threshold=<float> --occurrence=<int> --word --max-attempts=<int> --backtrack --wait-until-found --wait-until-disappears --wait-timeout=<int> --ocr=<choice> --json` | Find on-screen text via OCR; print its box (no click). |
+| `visus text click` | *(text find opts)* `--word --button=<choice> --delay=<float> --sendtext=<text> --json` | Find on-screen text via OCR and click its center. |
 | `visus text find-all` | `QUERY --region=<text> --filter=<choice> --confidence-threshold=<float> --overlay/--no-overlay --color=<text> --duration=<int> --width=<int> --word --ocr=<choice> --json` | List EVERY occurrence of the text (reading order) + draw a numbered overlay (`--word` = just the word's box). |
-| `visus text show` | `QUERY --region=<text> --filter=<choice> --confidence-threshold=<float> --color=<text> --duration=<int> --width=<int> --ocr=<choice> --json` | Overlay every occurrence on screen, numbered. |
+| `visus text show` | `QUERY --region=<text> --filter=<choice> --confidence-threshold=<float> --color=<text> --duration=<int> --width=<int> --word --ocr=<choice> --json` | Overlay every occurrence on screen, numbered. |
 | `visus image find` | `IMAGE_PATH --region=<text> --confidence=<float> --specific/--no-specific --occurrence=<int> --backtrack --max-attempts=<int> --wait-until-found --wait-until-disappears --wait-timeout=<int> --json` | Find a template PNG; print its box (no click). |
 | `visus image click` | *(image find opts)* `--button=<choice> --delay=<float> --sendtext=<text> --json` | Find a template PNG and click its center. |
 | `visus image find-all` | `IMAGE_PATH --region=<text> --confidence=<float> --json` | Find EVERY occurrence of one template PNG. |

@@ -48,10 +48,10 @@ Full per-parameter detail is in the sections below. A `?` marks an optional para
 | Tool | Parameters | What it does |
 |---|---|---|
 | `configure` | config | Change global behavior by rebuilding the bot with new config. |
-| `find_text` | text, region?, filter_type?, confidence_threshold?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find visible on-screen `text` via OCR; return its box (do not click). |
-| `click_text` | text, region?, filter_type?, delay?, mouse_button?, occurrence?, sendtext?, confidence_threshold?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find on-screen `text` via OCR and click its center. |
+| `find_text` | text, region?, filter_type?, confidence_threshold?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout?, word_box? | Find visible on-screen `text` via OCR; return its box (do not click). |
+| `click_text` | text, region?, filter_type?, delay?, mouse_button?, occurrence?, sendtext?, confidence_threshold?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout?, word_box? | Find on-screen `text` via OCR and click its center. |
 | `find_all_text` | text, region?, filter_type?, confidence_threshold?, overlay?, color?, duration_ms?, width?, word_box? | List EVERY on-screen occurrence of `text` via OCR + draw a numbered overlay. |
-| `show_text_occurrences` | text, region?, filter_type?, confidence_threshold?, color?, duration_ms?, width?, save_image?, image_path? | Find every occurrence of `text` and SHOW them numbered 1, 2, 3 …. |
+| `show_text_occurrences` | text, region?, filter_type?, confidence_threshold?, color?, duration_ms?, width?, save_image?, image_path?, word_box? | Find every occurrence of `text` and SHOW them numbered 1, 2, 3 …. |
 | `find_image` | image_path, region?, confidence?, specific?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen; return its box (do not click). |
 | `click_image` | image_path, region?, confidence?, delay?, mouse_button?, specific?, occurrence?, sendtext?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen and click its center. |
 | `click_at` | x, y, width?, height?, mouse_button?, delay? | Click at absolute screen coordinates -- no find step. LAST RESORT. |
@@ -163,11 +163,14 @@ One window's `{title, pid, hwnd, x, y, width, height}`; no focus.
 
 # Find / click — text (OCR)
 
-### `find_text(text, region=None, filter_type="both", confidence_threshold=75.0, occurrence=1, max_attempts=3, backtrack=False, wait_until_found=False, wait_until_disappears=False, wait_timeout=None) -> dict | null`
+### `find_text(text, region=None, filter_type="both", confidence_threshold=75.0, occurrence=1, max_attempts=3, backtrack=False, wait_until_found=False, wait_until_disappears=False, wait_timeout=None, word_box=False) -> dict | null`
 Find on-screen text; return its box, no click.
 - `filter_type`: `"letters"` | `"numbers"` | `"both"`.
 - `occurrence`: Nth match, 1-based.
 - `confidence_threshold`: 0–100 (lower to ~50 to debug a miss).
+- `word_box`: box just the searched word, not the whole OCR line (e.g. `visus`
+  inside a URL — RapidOCR native per-word boxes). Shared by `click_text`,
+  `find_all_text`, `show_text_occurrences` too.
 - `wait_until_found`: poll until it appears (≤ `wait_timeout` s).
 - `wait_until_disappears`: wait until it's gone.
 - `backtrack` + `max_attempts`: retry with adjusted thresholds.
@@ -185,7 +188,7 @@ native per-word boxes (`return_word_box`), falling back to a character-offset
 estimate if unavailable; already word-level on Tesseract. (`show_text_occurrences`
 remains the richer visual sibling — it also saves a numbered PNG you can open.)
 
-### `show_text_occurrences(text, region=None, filter_type="both", confidence_threshold=None, color="red", duration_ms=3000, width=3, save_image=True, image_path=None) -> dict`
+### `show_text_occurrences(text, region=None, filter_type="both", confidence_threshold=None, color="red", duration_ms=3000, width=3, save_image=True, image_path=None, word_box=False) -> dict`
 The **visual** sibling of `find_all_text`: SEE which copy is which before
 picking an `occurrence`. Draws a numbered click-through overlay (1, 2, 3 …) on
 the real screen **and** (with `save_image=True`) writes a **PNG file** of the
@@ -197,10 +200,11 @@ the result stays small. The PNG defaults to a transient file in the OS temp dir
 confidence}], image_path: "<absolute .png path>" | null}`. Numbers are the same
 `occurrence` you pass to `click_text` / `click_image`.
 
-### `click_text(text, region=None, filter_type="both", delay=0, mouse_button="left", occurrence=1, sendtext=None, confidence_threshold=None, max_attempts=3, backtrack=False, wait_until_found=False, wait_until_disappears=False, wait_timeout=None) -> bool`
+### `click_text(text, region=None, filter_type="both", delay=0, mouse_button="left", occurrence=1, sendtext=None, confidence_threshold=None, max_attempts=3, backtrack=False, wait_until_found=False, wait_until_disappears=False, wait_timeout=None, word_box=False) -> bool`
 Find text and click its center. `sendtext` types a string right after the click
 (fill a field you just clicked). `mouse_button`: left|right|double|move_to.
-Wait/backtrack knobs as in `find_text`.
+`word_box` aims at the word, not the whole OCR line. Wait/backtrack knobs as in
+`find_text`.
 
 ---
 

@@ -31,6 +31,16 @@ def _filter_option(f):
     )(f)
 
 
+def _word_option(f):
+    """``--word`` -- box the matched word, not the whole OCR line."""
+    return click.option(
+        "--word", "word_box", is_flag=True,
+        help="Box only the searched word, not the whole OCR text line "
+             "(e.g. just 'visus' inside a long URL). RapidOCR uses native "
+             "per-word boxes; no-op on Tesseract.",
+    )(f)
+
+
 def _robustness_options(f):
     """Wait / retry knobs shared by the find/click primitives."""
     f = click.option(
@@ -71,11 +81,12 @@ def _make_bot(ocr_backend):
     show_default=True, help="OCR confidence 0-100.",
 )
 @click.option("--occurrence", type=int, default=1, show_default=True, help="Nth match (1-based).")
+@_word_option
 @_robustness_options
 @_ocr_option
 @json_option
 def find(
-    query, region, filter_type, confidence_threshold, occurrence,
+    query, region, filter_type, confidence_threshold, occurrence, word_box,
     max_attempts, backtrack, wait_until_found, wait_until_disappears, wait_timeout,
     ocr_backend, json_mode,
 ):
@@ -91,6 +102,7 @@ def find(
         wait_until_found=wait_until_found,
         wait_until_disappears=wait_until_disappears,
         wait_timeout=wait_timeout,
+        word_box=word_box,
     )
     if box is None:
         done(None, json_mode=json_mode, ok=False, human=f"'{query}' not found")
@@ -115,12 +127,13 @@ def find(
 )
 @click.option("--delay", type=float, default=0, show_default=True, help="Pause after the click (s).")
 @click.option("--sendtext", default=None, help="Type this string right after clicking.")
+@_word_option
 @_robustness_options
 @_ocr_option
 @json_option
 def click_cmd(
     query, region, filter_type, confidence_threshold, occurrence,
-    mouse_button, delay, sendtext,
+    mouse_button, delay, sendtext, word_box,
     max_attempts, backtrack, wait_until_found, wait_until_disappears, wait_timeout,
     ocr_backend, json_mode,
 ):
@@ -140,6 +153,7 @@ def click_cmd(
             wait_until_found=wait_until_found,
             wait_until_disappears=wait_until_disappears,
             wait_timeout=wait_timeout,
+            word_box=word_box,
         )
     )
     done(ok, json_mode=json_mode, ok=ok, human=("clicked" if ok else f"'{query}' not found"))
@@ -166,11 +180,7 @@ def click_cmd(
     help="How long each overlay stays on screen (ms).",
 )
 @click.option("--width", type=int, default=3, show_default=True, help="Outline thickness (px).")
-@click.option(
-    "--word", "word_box", is_flag=True,
-    help="Return only the searched word's box (approx), not the whole OCR text "
-         "line -- e.g. just 'visus' inside a long URL.",
-)
+@_word_option
 @_ocr_option
 @json_option
 def find_all(
@@ -241,11 +251,12 @@ def find_all(
     help="How long each overlay stays on screen (ms).",
 )
 @click.option("--width", type=int, default=3, show_default=True, help="Outline thickness (px).")
+@_word_option
 @_ocr_option
 @json_option
 def show(
     query, region, filter_type, confidence_threshold, color, duration, width,
-    ocr_backend, json_mode,
+    word_box, ocr_backend, json_mode,
 ):
     bot = _make_bot(ocr_backend)
     matches = bot.show_text_occurrences(
@@ -256,6 +267,7 @@ def show(
         color=color,
         duration_ms=duration,
         width=width,
+        word_box=word_box,
     )
     payload = [
         {

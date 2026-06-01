@@ -1144,6 +1144,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         wait_until_found=False,
         wait_until_disappears=False,
         wait_timeout=None,
+        word_box=False,
     ):
         """
         Find text on screen using advanced OCR with all features.
@@ -1216,13 +1217,15 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
                 text, occurrence, filter_type, backend, region,
             )
 
-            if occurrence > 1:
+            if occurrence > 1 or word_box:
                 # ``ocr_engine.find_text`` early-exits with only the first
-                # high-confidence match, so it can never serve the 2nd/3rd
-                # occurrence. Enumerate ALL matches (deduped, reading order)
-                # and pick the Nth.
+                # high-confidence match (and only at line granularity), so it
+                # can't serve the Nth occurrence nor a word-level box. Enumerate
+                # ALL matches (deduped, reading order) and pick the Nth; pass
+                # ``word_box`` so the box is tightened to the word itself.
                 matches = self.ocr_engine.find_all_text(
-                    region_img, text, filter_type, confidence_threshold
+                    region_img, text, filter_type, confidence_threshold,
+                    word_box=word_box,
                 )
                 logger.info(
                     "OCR found %d occurrence(s) of '%s'", len(matches), text
@@ -1404,6 +1407,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         wait_until_found=False,
         wait_until_disappears=False,
         wait_timeout=None,
+        word_box=False,
     ):
         """
         Find and click on text with advanced features.
@@ -1454,6 +1458,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
                 wait_until_found,
                 wait_until_disappears,
                 wait_timeout,
+                word_box,
                 backtrack=backtrack,
             )
 
@@ -1472,6 +1477,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             wait_until_found,
             wait_until_disappears,
             wait_timeout,
+            word_box,
         )
 
     def _click_text_internal(
@@ -1489,6 +1495,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         wait_until_found=False,
         wait_until_disappears=False,
         wait_timeout=None,
+        word_box=False,
     ):
         """Internal version of click_text without backtrack (for use by the backtrack system)."""
         # Use the global configuration if not specified
@@ -1518,6 +1525,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
                     wait_until_found=wait_until_found,
                     wait_until_disappears=wait_until_disappears,
                     wait_timeout=wait_timeout,
+                    word_box=word_box,
                 )
 
                 if location:

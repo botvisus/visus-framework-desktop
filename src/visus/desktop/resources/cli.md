@@ -39,10 +39,10 @@ visus <group> <cmd> --help   # a command's full flag list
 |---|---|---|
 | `visus smart find` | `--query=<text> --image=<text> --coords=<text> --window=<text> --pid=<int> --control-type=<text> --auto-id=<text> --region=<text> --confidence=<float> --confidence-threshold=<float> --order=<text> --timeout=<float> --json` | Locate a target via the cascade (native→image→OCR→coords); report which won. |
 | `visus smart click` | *(smart find opts)* `--button=<choice> --retries=<int> --delay=<float> --dry-run --json` | Same cascade, then click the winner. |
-| `visus text find` | `QUERY --region=<text> --filter=<choice> --confidence-threshold=<float> --occurrence=<int> --max-attempts=<int> --backtrack --wait-until-found --wait-until-disappears --wait-timeout=<int> --ocr=<choice> --json` | Find on-screen text via OCR; print its box (no click). |
-| `visus text click` | *(text find opts)* `--button=<choice> --delay=<float> --sendtext=<text> --json` | Find on-screen text via OCR and click its center. |
+| `visus text find` | `QUERY --region=<text> --filter=<choice> --confidence-threshold=<float> --occurrence=<int> --word --max-attempts=<int> --backtrack --wait-until-found --wait-until-disappears --wait-timeout=<int> --ocr=<choice> --json` | Find on-screen text via OCR; print its box (no click). |
+| `visus text click` | *(text find opts)* `--word --button=<choice> --delay=<float> --sendtext=<text> --json` | Find on-screen text via OCR and click its center. |
 | `visus text find-all` | `QUERY --region=<text> --filter=<choice> --confidence-threshold=<float> --overlay/--no-overlay --color=<text> --duration=<int> --width=<int> --word --ocr=<choice> --json` | List EVERY occurrence of the text (reading order) + draw a numbered overlay. |
-| `visus text show` | `QUERY --region=<text> --filter=<choice> --confidence-threshold=<float> --color=<text> --duration=<int> --width=<int> --ocr=<choice> --json` | Overlay every occurrence on screen, numbered. |
+| `visus text show` | `QUERY --region=<text> --filter=<choice> --confidence-threshold=<float> --color=<text> --duration=<int> --width=<int> --word --ocr=<choice> --json` | Overlay every occurrence on screen, numbered. |
 | `visus image find` | `IMAGE_PATH --region=<text> --confidence=<float> --specific/--no-specific --occurrence=<int> --backtrack --max-attempts=<int> --wait-until-found --wait-until-disappears --wait-timeout=<int> --json` | Find a template PNG; print its box (no click). |
 | `visus image click` | *(image find opts)* `--button=<choice> --delay=<float> --sendtext=<text> --json` | Find a template PNG and click its center. |
 | `visus image find-all` | `IMAGE_PATH --region=<text> --confidence=<float> --json` | Find EVERY occurrence of one template PNG. |
@@ -157,11 +157,14 @@ visus smart click --query "OK" --order native,ocr
 paints a numbered overlay by default: `--overlay/--no-overlay` (default
 `--overlay`), `--color` (`red`), `--duration` ms (`3000`), `--width` px (`3`).
 Pass `--no-overlay` for a silent list (e.g. when scripting with `--json`).
-`--word` narrows each box to just the searched word instead of the whole OCR
-text line — e.g. only `visus` inside a long URL. On RapidOCR it uses the
-engine's native per-word boxes (`return_word_box`), falling back to a
-character-offset estimate if unavailable; already word-level on Tesseract.
 `show` carries the same `--color` / `--duration` / `--width`.
+
+`--word` is shared by **all four** (`find`, `click`, `find-all`, `show`): it
+narrows the box to just the searched word instead of the whole OCR text line —
+e.g. only `visus` inside a long URL (so `click --word` aims at the word, not the
+line center). On RapidOCR it uses the engine's native per-word boxes
+(`return_word_box`), falling back to a character-offset estimate if unavailable;
+already word-level on Tesseract.
 
 JSON: `find` → `{x,y,width,height}`; `find-all`/`show` →
 `[{occurrence,x,y,width,height,confidence}, …]`.
@@ -173,6 +176,7 @@ visus text click "Next"  --wait-until-found --wait-timeout 10
 visus text find-all "Total" --ocr rapidocr --filter numbers --no-overlay --json
 visus text find-all "visus" --color blue --duration 5000 --width 4
 visus text find-all "visus" --word --json    # box of just the word, not the line
+visus text click "visus" --word               # click the word, not the line center
 visus text show "Login" --duration 4000 --color green
 ```
 

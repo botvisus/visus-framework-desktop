@@ -49,7 +49,9 @@ follow the ladder, don't overthink, don't dump screenshots to "look around".
      `click_text(occurrence=N)`. PREFER the `rapidocr` engine — it reads styled
      text (mnemonic underlines, anti-aliasing) better than Tesseract. Set it
      once with `configure(ocr_backend="rapidocr")`, or pass
-     `ocr_backend="rapidocr"` to `show_text_occurrences`.
+     `ocr_backend="rapidocr"` to `show_text_occurrences`. The four text tools
+     and every parameter (occurrence, word_box, region, filter, confidence) are
+     drilled in the OCR-TEXT MASTERY block below — read it before acting on text.
   3. IMAGE — for what has no text/native handle (icons, custom-drawn widgets):
      `capture_element` to save a template, then `click_image` /
      `click_relative_image`. The repeatable runtime path.
@@ -61,9 +63,50 @@ RULE OF THUMB: do natively whatever the app exposes; for everything else use
 images. NEVER read a raw `take_screenshot` to find things — that's the slow,
 imprecise path; the locate tools above return exact boxes.
 
-TO SEE / LOCATE TEXT, ALWAYS use `show_text_occurrences` (or `find_all_text`),
-never an eyeballed screenshot — it returns the box(es) + a numbered PNG and
-reveals repeats so you click the right `occurrence`.
+═══ OCR-TEXT MASTERY — the 4 text tools, and which params to use when ═══
+Whenever you work with on-screen text, the loop is always SEE → PICK → ACT.
+Never eyeball a raw `take_screenshot` to guess coordinates.
+
+THE 4 TOOLS (same detection engine; pick by what you need back):
+  • `show_text_occurrences("<text>")` — your EYES. Draws a numbered overlay AND
+    saves a numbered PNG you open + returns every match in reading order. Use it
+    FIRST to see whether the text repeats and which copy you want.
+  • `find_all_text("<text>")` — same enumeration, NO picture (boxes/JSON only).
+    Use when scripting or you already know the layout.
+  • `find_text("<text>")` — ONE box, no click. For "where is it / is it there".
+  • `click_text("<text>", occurrence=N)` — find + click. The verb of the flow.
+  `occurrence` is 1-based in reading order (top→bottom, left→right) — the SAME
+  numbers the overlay/PNG show, so SEE then pass the matching N.
+
+PICK PARAMETERS BY SITUATION (all four tools share these):
+  • Text might REPEAT (button vs title vs menu, list rows) → `show_text_occurrences`
+    first, then pin with `occurrence=N`. Acting blind = clicking the first twin
+    by luck; the saved script then misfires.
+  • Need just ONE WORD inside a longer run (a word in a URL, a sentence, a cell)
+    → `word_box=True`. The box tightens to that word alone (RapidOCR native
+    per-word boxes) so a click lands ON the word, not the line center. Without
+    it the box spans the whole detected line — correct when the line IS the word.
+  • You know the rough area → ALWAYS pass `region=[x,y,w,h]` (the window `rect`).
+    Scoping is the #1 fix for wrong matches and is much faster than full-screen.
+  • Only digits / only letters (prices, ids, codes) → `filter_type="numbers"`
+    or `"letters"` to drop noise; `"both"` (default) otherwise.
+  • Misread / faint / styled text → lower `confidence_threshold` (~50 to debug a
+    miss) and make sure `ocr_backend="rapidocr"` (best on anti-aliased/styled).
+  • Driving a human demo or debugging visually → `color` / `duration_ms` /
+    `width` style the overlay (find-all/show); `save_image=False` skips the PNG.
+
+WORKED DECISIONS:
+  • "click Save, but there are two" → `show_text_occurrences("Save", region=rect)`
+    → see #1 = button, #2 = dialog title → `click_text("Save", occurrence=1)`.
+  • "click the word 'visus' in the address-bar URL" →
+    `click_text("visus", word_box=True, region=<address-bar rect>)`.
+  • "read the invoice total" → `find_all_text("Total", filter_type="numbers",
+    region=<panel rect>)` → use the returned box.
+  • "is the error banner gone?" → `find_text("Error", region=rect,
+    wait_until_disappears=True, wait_timeout=10)`.
+Native targeting is still preferred when the tree exposes the control (exact,
+no pixels); reach for these text tools when it doesn't.
+═══════════════════════════════════════════════════════════════════════
 
 WORKFLOW — follow in order:
 
@@ -340,6 +383,7 @@ def find_text(
     wait_until_found: bool = False,
     wait_until_disappears: bool = False,
     wait_timeout: int | None = None,
+    word_box: bool = False,
 ) -> dict | None:
     """Find visible on-screen ``text`` via OCR; return its box (do not click).
 
@@ -352,7 +396,9 @@ def find_text(
     PARAMS: ``region=[x,y,w,h]`` scopes the search (pass the window rect from
     ``ensure_window`` — strongly recommended); ``filter_type`` is
     letters|numbers|both; ``occurrence`` picks the Nth match (1-based);
-    ``confidence_threshold`` is 0-100 (lower to ~50 to debug a miss).
+    ``confidence_threshold`` is 0-100 (lower to ~50 to debug a miss);
+    ``word_box`` returns just the searched word's box, not the whole OCR line
+    (e.g. "visus" inside a long URL — RapidOCR native per-word boxes).
     ROBUSTNESS: ``wait_until_found`` polls until the text APPEARS (up to
     ``wait_timeout`` s); ``wait_until_disappears`` waits until it is GONE;
     ``backtrack`` + ``max_attempts`` retry with adjusted thresholds.
@@ -369,6 +415,7 @@ def find_text(
         wait_until_found=wait_until_found,
         wait_until_disappears=wait_until_disappears,
         wait_timeout=wait_timeout,
+        word_box=word_box,
     )
     return _box_to_dict(box)
 
@@ -388,6 +435,7 @@ def click_text(
     wait_until_found: bool = False,
     wait_until_disappears: bool = False,
     wait_timeout: int | None = None,
+    word_box: bool = False,
 ) -> bool:
     """Find on-screen ``text`` via OCR and click its center.
 
@@ -399,7 +447,9 @@ def click_text(
     PARAMS: ``region`` scopes the search; ``filter_type`` letters|numbers|both;
     ``occurrence`` picks the Nth match; ``mouse_button`` left|right|double|
     move_to; ``sendtext`` types a string right after the click (fill a field
-    you just clicked); ``confidence_threshold`` 0-100 (default = config).
+    you just clicked); ``confidence_threshold`` 0-100 (default = config);
+    ``word_box`` aims at just the searched word, not the whole OCR line (e.g.
+    click "visus" inside a long URL — RapidOCR native per-word boxes).
     ROBUSTNESS: ``wait_until_found`` / ``wait_until_disappears`` (+
     ``wait_timeout``) and ``backtrack`` + ``max_attempts`` — see ``find_text``.
     RETURNS: True if found and clicked, False otherwise.
@@ -419,6 +469,7 @@ def click_text(
             wait_until_found=wait_until_found,
             wait_until_disappears=wait_until_disappears,
             wait_timeout=wait_timeout,
+            word_box=word_box,
         )
     )
 
@@ -506,6 +557,7 @@ def show_text_occurrences(
     save_image: bool = True,
     image_path: str | None = None,
     ocr_backend: str | None = None,
+    word_box: bool = False,
 ) -> dict:
     """Find every occurrence of ``text`` and SHOW them numbered 1, 2, 3 ….
 
@@ -527,7 +579,9 @@ def show_text_occurrences(
     file in the OS temp dir, ``<tempdir>/visus/occurrences_<text>.png`` — kept
     out of the project tree); ``ocr_backend`` ("tesseract"|"rapidocr") switches
     the OCR engine for this and subsequent calls (same as ``configure`` — try
-    "rapidocr" if Tesseract misreads).
+    "rapidocr" if Tesseract misreads); ``word_box`` boxes just the searched word
+    instead of the whole OCR line (e.g. "visus" inside a long URL — RapidOCR
+    native per-word boxes).
 
     RETURNS: ``{count, matches: [{occurrence, x, y, width, height,
     confidence}], image_path: "<absolute .png path>" | null}``. Match order is
@@ -540,6 +594,7 @@ def show_text_occurrences(
         region=_coerce_region(region),
         filter_type=filter_type,
         confidence_threshold=confidence_threshold,
+        word_box=word_box,
     )
     matches = [
         {
