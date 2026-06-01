@@ -41,7 +41,7 @@ visus <group> <cmd> --help   # a command's full flag list
 | `visus smart click` | *(smart find opts)* `--button=<choice> --retries=<int> --delay=<float> --dry-run --json` | Same cascade, then click the winner. |
 | `visus text find` | `QUERY --region=<text> --filter=<choice> --confidence-threshold=<float> --occurrence=<int> --max-attempts=<int> --backtrack --wait-until-found --wait-until-disappears --wait-timeout=<int> --ocr=<choice> --json` | Find on-screen text via OCR; print its box (no click). |
 | `visus text click` | *(text find opts)* `--button=<choice> --delay=<float> --sendtext=<text> --json` | Find on-screen text via OCR and click its center. |
-| `visus text find-all` | `QUERY --region=<text> --filter=<choice> --confidence-threshold=<float> --ocr=<choice> --json` | List EVERY occurrence of the text (reading order). |
+| `visus text find-all` | `QUERY --region=<text> --filter=<choice> --confidence-threshold=<float> --overlay/--no-overlay --color=<text> --duration=<int> --width=<int> --ocr=<choice> --json` | List EVERY occurrence of the text (reading order) + draw a numbered overlay. |
 | `visus text show` | `QUERY --region=<text> --filter=<choice> --confidence-threshold=<float> --color=<text> --duration=<int> --width=<int> --ocr=<choice> --json` | Overlay every occurrence on screen, numbered. |
 | `visus image find` | `IMAGE_PATH --region=<text> --confidence=<float> --specific/--no-specific --occurrence=<int> --backtrack --max-attempts=<int> --wait-until-found --wait-until-disappears --wait-timeout=<int> --json` | Find a template PNG; print its box (no click). |
 | `visus image click` | *(image find opts)* `--button=<choice> --delay=<float> --sendtext=<text> --json` | Find a template PNG and click its center. |
@@ -58,10 +58,10 @@ visus <group> <cmd> --help   # a command's full flag list
 | `visus type` | `TEXT --interval=<float> --delay=<float> --backtrack --json` | Type into the focused field (`{ctrl}a {tab} {enter}` tokens). |
 | `visus key` | `COMMAND --delay=<float> --backtrack --json` | Press a key/chord (case-sensitive, e.g. `Ctrl+S`). |
 | `visus keys` | `--json` | List every valid `key` token. |
-| `visus native dump-tree` | `--window=<text> --pid=<int> --max-depth=<int> --timeout=<float> --json` | Print the accessibility control tree. |
-| `visus native click` | `--window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --button=<text> --double --method=<choice> --timeout=<float> --retries=<int> --delay=<float> --dry-run --json` | Click a control by selector (no pixels). |
-| `visus native set-text` | `TEXT --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --timeout=<float> --retries=<int> --delay=<float> --dry-run --json` | Set an editable control's text. |
-| `visus native get-text` | `--window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --timeout=<float> --json` | Read a control's text/value. |
+| `visus native dump-tree` | `--window=<text> --pid=<int> --max-depth=<int> --timeout=<float> --backend=<choice> --json` | Print the accessibility control tree. |
+| `visus native click` | `--window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --button=<text> --double --method=<choice> --timeout=<float> --retries=<int> --delay=<float> --dry-run --json` | Click a control by selector (no pixels). |
+| `visus native set-text` | `TEXT --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --retries=<int> --delay=<float> --dry-run --json` | Set an editable control's text. |
+| `visus native get-text` | `--window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --json` | Read a control's text/value. |
 | `visus native get-state` | *(native selectors)* `--timeout=<float> --json` | Snapshot exists/visible/enabled/checked/value/rect. |
 | `visus native wait` | *(native selectors)* `--state=<choice> --timeout=<float> --poll-interval=<float> --json` | Wait until a control reaches a state. |
 | `visus capture` | `LABEL --auto=<text> --text=<text> --native=<text> --region=<text> --window=<text> --search-region=<text> --click --mouse-button=<text> --padding=<int> --confidence-threshold=<float> --native-timeout=<float> --elements-dir=<text> --dry-run --json` | Locate an element → save template + annotated → optional click. |
@@ -138,7 +138,7 @@ visus smart click --query "OK" --order native,ocr
 |---|---|
 | `text find QUERY` | Find text via OCR; print its box (no click). |
 | `text click QUERY` | Find text via OCR and click its center. |
-| `text find-all QUERY` | List **every** match in reading order (no click). |
+| `text find-all QUERY` | List **every** match in reading order + draw a numbered overlay. |
 | `text show QUERY` | List every match + draw a numbered click-through overlay. |
 
 **Shared options** (all four): `--region X,Y,W,H` (else whole screen),
@@ -153,8 +153,11 @@ visus smart click --query "OK" --order native,ocr
 `click` also adds: `--button left|right|double|move_to` (default `left`),
 `--delay` (s), `--sendtext TEXT` (type right after clicking).
 
-`find-all` adds `--confidence-threshold` (default = config); `show` adds
-`--color` (`red`), `--duration` ms (`3000`), `--width` px (`3`).
+`find-all` adds `--confidence-threshold` (default = config) and, like `show`,
+paints a numbered overlay by default: `--overlay/--no-overlay` (default
+`--overlay`), `--color` (`red`), `--duration` ms (`3000`), `--width` px (`3`).
+Pass `--no-overlay` for a silent list (e.g. when scripting with `--json`).
+`show` carries the same `--color` / `--duration` / `--width`.
 
 JSON: `find` → `{x,y,width,height}`; `find-all`/`show` →
 `[{occurrence,x,y,width,height,confidence}, …]`.
@@ -163,7 +166,8 @@ JSON: `find` → `{x,y,width,height}`; `find-all`/`show` →
 visus text find  "Login" --region 0,0,1920,1080 --json
 visus text click "Save"  --occurrence 2 --sendtext "report.xlsx" --ocr rapidocr
 visus text click "Next"  --wait-until-found --wait-timeout 10
-visus text find-all "Total" --ocr rapidocr --filter numbers --json
+visus text find-all "Total" --ocr rapidocr --filter numbers --no-overlay --json
+visus text find-all "visus" --color blue --duration 5000 --width 4
 visus text show "Login" --duration 4000 --color green
 ```
 
@@ -259,14 +263,15 @@ Bridge, some Electron); fall back to OCR/image there.
 | `--window` | str | Window title substring (else foreground). |
 | `--pid` | int | Process id (else foreground). |
 | `--title` | str | Control title/name. |
-| `--control-type` | str | Button, MenuItem, Edit, … |
-| `--auto-id` | str | UIA automation id. |
+| `--control-type` | str | Button, MenuItem, Edit, … (under `--backend win32`, matches the class name, e.g. `Edit`). |
+| `--auto-id` | str | UIA automation id (ignored under `--backend win32`). |
 | `--found-index` | int | Disambiguate multiple matches (0-based). |
+| `--backend` | choice | `uia` (default; modern WPF/WinUI/Electron/browsers) or `win32` (classic Win32 controls like Notepad's Edit — use it when `uia` returns nothing or stalls on a legacy app). |
 
 ### `visus native dump-tree`
 Print the control tree. Options: `--window`, `--pid`, `--max-depth` (int, `3`),
-`--timeout` (float, `5.0`), `--json`. Each node: `{depth, control_type, title,
-auto_id, rect}`.
+`--timeout` (float, `5.0`), `--backend uia|win32` (default `uia`), `--json`. Each
+node: `{depth, control_type, title, auto_id, rect}`.
 
 ### `visus native click`
 Selector options + `--button` (str, `left`), `--double` (flag),
@@ -293,6 +298,8 @@ visus native dump-tree --window "Notepad" --json
 visus native click --window "Notepad" --control-type MenuItem --title "File"
 visus native set-text "hello" --window "Notepad" --control-type Edit
 visus native wait --window "Notepad" --control-type Edit --state ready
+# classic Win32 app (UIA stalls): switch to the win32 backend
+visus native set-text "hello" --window "Notepad" --control-type Edit --backend win32
 ```
 
 ---

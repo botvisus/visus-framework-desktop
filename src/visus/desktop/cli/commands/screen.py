@@ -45,12 +45,21 @@ def screenshot(path, region, monitor, as_base64, json_mode):
         fail("PATH is required unless --base64 is given", json_mode=json_mode)
         return
 
+    import os
+
+    from PIL import Image
+
     from visus.desktop.core.screen import save_screenshot as _save
 
-    result = _save(path, region=region_t, monitor=monitor)
+    # ``save_screenshot`` returns the path string; build the {path,width,height}
+    # result here (same shape the MCP tool returns) by reading the saved file.
+    written = os.path.abspath(_save(path, region=region_t, monitor=monitor))
+    with Image.open(written) as img:
+        width, height = img.size
+    result = {"path": written, "width": int(width), "height": int(height)}
     done(
         result, json_mode=json_mode, ok=True,
-        human=f"saved {result.get('path')} ({result.get('width')}x{result.get('height')})",
+        human=f"saved {result['path']} ({result['width']}x{result['height']})",
     )
 
 

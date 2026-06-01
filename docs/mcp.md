@@ -50,7 +50,7 @@ Full per-parameter detail is in the sections below. A `?` marks an optional para
 | `configure` | config | Change global behavior by rebuilding the bot with new config. |
 | `find_text` | text, region?, filter_type?, confidence_threshold?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find visible on-screen `text` via OCR; return its box (do not click). |
 | `click_text` | text, region?, filter_type?, delay?, mouse_button?, occurrence?, sendtext?, confidence_threshold?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find on-screen `text` via OCR and click its center. |
-| `find_all_text` | text, region?, filter_type?, confidence_threshold? | List EVERY on-screen occurrence of `text` via OCR (do not click). |
+| `find_all_text` | text, region?, filter_type?, confidence_threshold?, overlay?, color?, duration_ms?, width? | List EVERY on-screen occurrence of `text` via OCR + draw a numbered overlay. |
 | `show_text_occurrences` | text, region?, filter_type?, confidence_threshold?, color?, duration_ms?, width?, save_image?, image_path? | Find every occurrence of `text` and SHOW them numbered 1, 2, 3 …. |
 | `find_image` | image_path, region?, confidence?, specific?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen; return its box (do not click). |
 | `click_image` | image_path, region?, confidence?, delay?, mouse_button?, specific?, occurrence?, sendtext?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen and click its center. |
@@ -74,12 +74,12 @@ Full per-parameter detail is in the sections below. A `?` marks an optional para
 | `capture_element` | label, auto?, text?, native?, region?, window?, search_region?, click?, mouse_button?, padding?, confidence_threshold?, native_timeout?, elements_dir? | Locate a UI element, save a reusable template + annotated shot, click. |
 | `smart_find` | query?, image?, coordinates?, window?, pid?, control_type?, auto_id?, search_region?, confidence?, confidence_threshold?, order?, timeout? | Locate a target by cascading native -> image -> ocr -> coordinates. |
 | `smart_click` | query?, image?, coordinates?, window?, pid?, control_type?, auto_id?, search_region?, button?, confidence?, confidence_threshold?, order?, timeout?, retries?, delay? | Click a target by cascading native -> image -> ocr -> coordinates. |
-| `native_dump_tree` | window?, pid?, max_depth?, timeout? | Return the accessibility control tree of a window (no pixel). |
-| `native_click` | window?, pid?, title?, control_type?, auto_id?, found_index?, button?, double?, method?, timeout?, retries?, delay? | Click a control by selector -- no coordinates, no image (UIA). |
-| `native_set_text` | text, window?, pid?, title?, control_type?, auto_id?, found_index?, timeout?, retries?, delay? | Set the text of an editable control by selector (UIA value pattern). |
-| `native_get_text` | window?, pid?, title?, control_type?, auto_id?, found_index?, timeout? | Read a control's text/value by selector. Returns the string or None. |
-| `native_get_state` | window?, pid?, title?, control_type?, auto_id?, found_index?, timeout? | Snapshot a control's state by selector. |
-| `native_wait` | window?, pid?, title?, control_type?, auto_id?, found_index?, state?, timeout?, poll_interval? | Wait until a control reaches `state` by selector. |
+| `native_dump_tree` | window?, pid?, max_depth?, timeout?, backend? | Return the accessibility control tree of a window (no pixel). |
+| `native_click` | window?, pid?, title?, control_type?, auto_id?, found_index?, button?, double?, method?, timeout?, retries?, delay?, backend? | Click a control by selector -- no coordinates, no image (UIA). |
+| `native_set_text` | text, window?, pid?, title?, control_type?, auto_id?, found_index?, timeout?, retries?, delay?, backend? | Set the text of an editable control by selector (UIA value pattern). |
+| `native_get_text` | window?, pid?, title?, control_type?, auto_id?, found_index?, timeout?, backend? | Read a control's text/value by selector. Returns the string or None. |
+| `native_get_state` | window?, pid?, title?, control_type?, auto_id?, found_index?, timeout?, backend? | Snapshot a control's state by selector. |
+| `native_wait` | window?, pid?, title?, control_type?, auto_id?, found_index?, state?, timeout?, poll_interval?, backend? | Wait until a control reaches `state` by selector. |
 | `get_monitors` | — | List connected monitors so you can target one in a multi-screen setup. |
 | `get_display_size` | — | Return the primary display size as `{width, height}` (pixels). |
 | `wait_for_stable_screen` | region?, stable_for?, timeout?, poll_interval? | Block until the screen stops changing -- use INSTEAD of sleeping. |
@@ -172,10 +172,15 @@ Find on-screen text; return its box, no click.
 - `wait_until_disappears`: wait until it's gone.
 - `backtrack` + `max_attempts`: retry with adjusted thresholds.
 
-### `find_all_text(text, region=None, filter_type="both", confidence_threshold=None) -> list[dict]`
+### `find_all_text(text, region=None, filter_type="both", confidence_threshold=None, overlay=True, color="red", duration_ms=3000, width=3) -> list[dict]`
 **Every** occurrence, reading order. Returns `[{occurrence, x, y, width, height,
 confidence}, …]`. Use to disambiguate repeats, then `click_text(occurrence=N)`.
-`confidence_threshold=None` uses the config default.
+`confidence_threshold=None` uses the config default. By default it ALSO paints a
+numbered click-through overlay on the real screen (parity with the CLI `visus
+text find-all`) so the returned `occurrence` numbers match what's drawn —
+`color` / `duration_ms` / `width` style it; pass `overlay=False` for a silent
+list. (`show_text_occurrences` remains the richer visual sibling — it also saves
+a numbered PNG you can open.)
 
 ### `show_text_occurrences(text, region=None, filter_type="both", confidence_threshold=None, color="red", duration_ms=3000, width=3, save_image=True, image_path=None) -> dict`
 The **visual** sibling of `find_all_text`: SEE which copy is which before
@@ -266,24 +271,31 @@ label, located_by, box, template_path, annotated_path, clicked}`.
 All select a control via `window` / `pid` / `title` / `control_type` /
 `auto_id` / `found_index`. Empty/`false`/`null` on non-accessible UIs.
 
-### `native_dump_tree(window=None, pid=None, max_depth=3, timeout=5.0) -> list[dict]`
-`[{depth, control_type, title, auto_id, rect}, …]`. How an agent *sees* a native
-UI. `[]` for non-accessible apps (Java Swing w/o Access Bridge, some Electron).
+All six accept a **`backend`** (`"uia"` default | `"win32"`). `uia` is right for
+modern apps (WPF/WinUI/Electron/browsers); switch to `win32` for classic Win32
+controls like Notepad's Edit — when `uia` returns `[]` or stalls on a legacy app.
+Under `win32`, `control_type` matches the **class name** (e.g. `Edit`) and
+`auto_id` is ignored.
 
-### `native_click(window=None, pid=None, title=None, control_type=None, auto_id=None, found_index=None, button="left", double=False, method="auto", timeout=5.0, retries=0, delay=0.3) -> bool`
+### `native_dump_tree(window=None, pid=None, max_depth=3, timeout=5.0, backend="uia") -> list[dict]`
+`[{depth, control_type, title, auto_id, rect}, …]`. How an agent *sees* a native
+UI. `[]` for non-accessible apps (Java Swing w/o Access Bridge, some Electron) —
+or a classic Win32 app under `uia`; retry with `backend="win32"`.
+
+### `native_click(window=None, pid=None, title=None, control_type=None, auto_id=None, found_index=None, button="left", double=False, method="auto", timeout=5.0, retries=0, delay=0.3, backend="uia") -> bool`
 `method`: `invoke` (UIA, no mouse) | `click` (real mouse) | `auto` (invoke then
 click). `button`: left|right|middle.
 
-### `native_set_text(text, window=None, pid=None, title=None, control_type=None, auto_id=None, found_index=None, timeout=5.0, retries=0, delay=0.3) -> bool`
+### `native_set_text(text, window=None, pid=None, title=None, control_type=None, auto_id=None, found_index=None, timeout=5.0, retries=0, delay=0.3, backend="uia") -> bool`
 Set an editable control's text (UIA value pattern).
 
-### `native_get_text(window=None, pid=None, title=None, control_type=None, auto_id=None, found_index=None, timeout=5.0) -> str | null`
+### `native_get_text(window=None, pid=None, title=None, control_type=None, auto_id=None, found_index=None, timeout=5.0, backend="uia") -> str | null`
 Read a control's text/value.
 
-### `native_get_state(window=None, pid=None, title=None, control_type=None, auto_id=None, found_index=None, timeout=5.0) -> dict | null`
+### `native_get_state(window=None, pid=None, title=None, control_type=None, auto_id=None, found_index=None, timeout=5.0, backend="uia") -> dict | null`
 `{exists, visible, enabled, checked, value, control_type, rect}`.
 
-### `native_wait(window=None, pid=None, title=None, control_type=None, auto_id=None, found_index=None, state="exists", timeout=10.0, poll_interval=0.3) -> bool`
+### `native_wait(window=None, pid=None, title=None, control_type=None, auto_id=None, found_index=None, state="exists", timeout=10.0, poll_interval=0.3, backend="uia") -> bool`
 `state`: `exists` | `visible` | `enabled` | `ready` (= exists+visible+enabled).
 
 ---

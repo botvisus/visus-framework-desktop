@@ -429,25 +429,52 @@ def find_all_text(
     region: list[int] | None = None,
     filter_type: str = "both",
     confidence_threshold: float | None = None,
+    overlay: bool = True,
+    color: str = "red",
+    duration_ms: int = 3000,
+    width: int = 3,
 ) -> list[dict]:
-    """List EVERY on-screen occurrence of ``text`` via OCR (do not click).
+    """List EVERY on-screen occurrence of ``text`` via OCR and overlay each one.
 
     USE WHEN: the same label appears more than once and you must pick the
     right one by position before clicking — e.g. several "OK" buttons, or
     repeated rows. Unlike ``find_text`` (first match only), this returns
     all matches so you can choose an ``occurrence`` index for ``click_text``.
+    By default it ALSO paints a numbered click-through overlay on the real
+    screen (parity with the CLI ``visus text find-all``); the ``#N`` in the
+    returned list lines up with the number drawn on screen. The boxes never
+    intercept a later click.
     PARAMS: ``region=[x,y,w,h]`` scopes the search (pass the window rect);
     ``filter_type`` is "letters"|"numbers"|"both"; ``confidence_threshold``
-    is 0-100 (defaults to the configured threshold).
+    is 0-100 (defaults to the configured threshold); ``overlay`` toggles the
+    on-screen drawing (set false for a silent list); ``color`` / ``duration_ms``
+    / ``width`` style the overlay.
     RETURNS: a list of ``{occurrence, x, y, width, height, confidence}`` in
     reading order (top-to-bottom, left-to-right); empty if nothing matched.
     """
-    matches = get_bot().find_all_text(
-        text,
-        region=_coerce_region(region),
-        filter_type=filter_type,
-        confidence_threshold=confidence_threshold,
-    )
+    bot = get_bot()
+    region_arg = _coerce_region(region)
+    if overlay:
+        # Draws the numbered overlay AND returns the same matches we list, so
+        # the returned occurrence numbers line up with the on-screen labels.
+        # No sleep needed: the MCP server process stays alive, so the daemon
+        # overlay threads persist for the full duration_ms on their own.
+        matches = bot.show_text_occurrences(
+            text,
+            region=region_arg,
+            filter_type=filter_type,
+            confidence_threshold=confidence_threshold,
+            color=color,
+            duration_ms=duration_ms,
+            width=width,
+        )
+    else:
+        matches = bot.find_all_text(
+            text,
+            region=region_arg,
+            filter_type=filter_type,
+            confidence_threshold=confidence_threshold,
+        )
     return [
         {
             "occurrence": i,
@@ -1227,6 +1254,7 @@ def native_dump_tree(
     pid: int | None = None,
     max_depth: int = 3,
     timeout: float = 5.0,
+    backend: str = "uia",
 ) -> list[dict]:
     """Return the accessibility control tree of a window (no pixel).
 
@@ -1237,12 +1265,19 @@ def native_dump_tree(
     substring) or ``pid`` (else the foreground window). Walks ``children()``
     to ``max_depth`` (fast; not the full subtree).
 
+    ``backend`` is ``"uia"`` (default; modern WPF/WinUI/Electron/browsers) or
+    ``"win32"`` (classic Win32 controls like Notepad's Edit — use it when uia
+    returns ``[]`` or stalls on a legacy app; there ``control_type`` matches the
+    class name, e.g. ``Edit``).
+
     Returns ``[]`` for non-accessible apps (Java Swing without the Access
     Bridge, some Electron) -- use OCR / ``capture_element`` there.
     """
     from .core.native_rpa import native_dump_tree as _fn
 
-    return _fn(window=window, pid=pid, max_depth=max_depth, timeout=timeout)
+    return _fn(
+        window=window, pid=pid, max_depth=max_depth, timeout=timeout, backend=backend
+    )
 
 
 @mcp.tool()
@@ -1259,6 +1294,7 @@ def native_click(
     timeout: float = 5.0,
     retries: int = 0,
     delay: float = 0.3,
+    backend: str = "uia",
 ) -> bool:
     """Click a control by selector -- no coordinates, no image (UIA).
 
@@ -1266,6 +1302,8 @@ def native_click(
     Edit, ...) / ``auto_id`` / ``found_index``. ``method``: ``invoke``
     (UIA, no mouse), ``click`` (real mouse), ``auto`` (invoke then click).
     ``retries`` + ``delay`` re-attempt a flaky control (backtrack-style).
+    ``backend`` is ``"uia"`` (default) or ``"win32"`` for classic Win32 apps
+    (where ``control_type`` matches the class name, e.g. ``Edit``).
     Most robust automation when the app is accessible.
     """
     from .core.native_rpa import native_click as _fn
@@ -1274,7 +1312,7 @@ def native_click(
         window=window, pid=pid, title=title, control_type=control_type,
         auto_id=auto_id, found_index=found_index, button=button,
         double=double, method=method, timeout=timeout, retries=retries,
-        delay=delay,
+        delay=delay, backend=backend,
     )
 
 
@@ -1290,14 +1328,19 @@ def native_set_text(
     timeout: float = 5.0,
     retries: int = 0,
     delay: float = 0.3,
+    backend: str = "uia",
 ) -> bool:
-    """Set the text of an editable control by selector (UIA value pattern)."""
+    """Set the text of an editable control by selector (UIA value pattern).
+
+    ``backend`` is ``"uia"`` (default) or ``"win32"`` for classic Win32 apps
+    like Notepad (where ``control_type`` matches the class name, e.g. ``Edit``).
+    """
     from .core.native_rpa import native_set_text as _fn
 
     return _fn(
         window=window, pid=pid, title=title, control_type=control_type,
         auto_id=auto_id, found_index=found_index, text=text, timeout=timeout,
-        retries=retries, delay=delay,
+        retries=retries, delay=delay, backend=backend,
     )
 
 
@@ -1310,13 +1353,17 @@ def native_get_text(
     auto_id: str | None = None,
     found_index: int | None = None,
     timeout: float = 5.0,
+    backend: str = "uia",
 ) -> str | None:
-    """Read a control's text/value by selector. Returns the string or None."""
+    """Read a control's text/value by selector. Returns the string or None.
+
+    ``backend`` is ``"uia"`` (default) or ``"win32"`` for classic Win32 apps.
+    """
     from .core.native_rpa import native_get_text as _fn
 
     return _fn(
         window=window, pid=pid, title=title, control_type=control_type,
-        auto_id=auto_id, found_index=found_index, timeout=timeout,
+        auto_id=auto_id, found_index=found_index, timeout=timeout, backend=backend,
     )
 
 
@@ -1329,17 +1376,19 @@ def native_get_state(
     auto_id: str | None = None,
     found_index: int | None = None,
     timeout: float = 5.0,
+    backend: str = "uia",
 ) -> dict | None:
     """Snapshot a control's state by selector.
 
     ``{exists, visible, enabled, checked, value, control_type, rect}``.
     ``checked`` is the UIA toggle state for checkboxes (None otherwise).
+    ``backend`` is ``"uia"`` (default) or ``"win32"`` for classic Win32 apps.
     """
     from .core.native_rpa import native_get_state as _fn
 
     return _fn(
         window=window, pid=pid, title=title, control_type=control_type,
-        auto_id=auto_id, found_index=found_index, timeout=timeout,
+        auto_id=auto_id, found_index=found_index, timeout=timeout, backend=backend,
     )
 
 
@@ -1354,18 +1403,20 @@ def native_wait(
     state: str = "exists",
     timeout: float = 10.0,
     poll_interval: float = 0.3,
+    backend: str = "uia",
 ) -> bool:
     """Wait until a control reaches ``state`` by selector.
 
     ``state``: ``exists`` | ``visible`` | ``enabled`` | ``ready``
     (ready = exists + visible + enabled). Returns True when satisfied.
+    ``backend`` is ``"uia"`` (default) or ``"win32"`` for classic Win32 apps.
     """
     from .core.native_rpa import native_wait as _fn
 
     return _fn(
         window=window, pid=pid, title=title, control_type=control_type,
         auto_id=auto_id, found_index=found_index, state=state,
-        timeout=timeout, poll_interval=poll_interval,
+        timeout=timeout, poll_interval=poll_interval, backend=backend,
     )
 
 

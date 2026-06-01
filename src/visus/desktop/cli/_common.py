@@ -178,5 +178,13 @@ def native_selector_options(f):
                 "--found-index", "found_index", type=int,
                 help="Disambiguate multiple matches (0-based).",
             ),
+            click.option(
+                "--backend", default="uia", show_default=True,
+                type=click.Choice(["uia", "win32"]),
+                help="Accessibility backend: 'uia' (modern: WPF/WinUI/Electron/"
+                     "browsers) or 'win32' (classic Win32 controls like Notepad's "
+                     "Edit, where UIA can stall). Under win32, --control-type "
+                     "matches the class name (e.g. Edit).",
+            ),
         ],
     )

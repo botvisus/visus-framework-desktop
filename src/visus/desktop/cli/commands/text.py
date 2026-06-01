@@ -145,7 +145,10 @@ def click_cmd(
     done(ok, json_mode=json_mode, ok=ok, human=("clicked" if ok else f"'{query}' not found"))
 
 
-@text.command(name="find-all", help="List EVERY on-screen occurrence of TEXT (no click).")
+@text.command(
+    name="find-all",
+    help="List EVERY on-screen occurrence of TEXT and overlay each one, numbered.",
+)
 @click.argument("query")
 @click.option("--region", callback=region_cb, help="Search region 'X,Y,W,H' (else whole screen).")
 @_filter_option
@@ -153,16 +156,43 @@ def click_cmd(
     "--confidence-threshold", "confidence_threshold", type=float, default=None,
     help="Minimum OCR confidence 0-100 (defaults to the config value).",
 )
+@click.option(
+    "--overlay/--no-overlay", "overlay", default=True, show_default=True,
+    help="Also paint a numbered overlay on screen (matching the printed #N).",
+)
+@click.option("--color", default="red", show_default=True, help="Overlay color.")
+@click.option(
+    "--duration", type=int, default=3000, show_default=True,
+    help="How long each overlay stays on screen (ms).",
+)
+@click.option("--width", type=int, default=3, show_default=True, help="Outline thickness (px).")
 @_ocr_option
 @json_option
-def find_all(query, region, filter_type, confidence_threshold, ocr_backend, json_mode):
+def find_all(
+    query, region, filter_type, confidence_threshold,
+    overlay, color, duration, width, ocr_backend, json_mode,
+):
     bot = _make_bot(ocr_backend)
-    matches = bot.find_all_text(
-        query,
-        region=tuple(region) if region else None,
-        filter_type=filter_type,
-        confidence_threshold=confidence_threshold,
-    )
+    region_arg = tuple(region) if region else None
+    if overlay:
+        # Draws the numbered overlay AND returns the same matches we list, so
+        # the printed #N lines up with the number painted on screen.
+        matches = bot.show_text_occurrences(
+            query,
+            region=region_arg,
+            filter_type=filter_type,
+            confidence_threshold=confidence_threshold,
+            color=color,
+            duration_ms=duration,
+            width=width,
+        )
+    else:
+        matches = bot.find_all_text(
+            query,
+            region=region_arg,
+            filter_type=filter_type,
+            confidence_threshold=confidence_threshold,
+        )
     payload = [
         {
             "occurrence": i,
@@ -180,6 +210,13 @@ def find_all(query, region, filter_type, confidence_threshold, ocr_backend, json
         if payload
         else f"no occurrences of '{query}' found"
     )
+    # The overlays paint in daemon threads; ``done`` exits the process, which
+    # kills them instantly regardless of --duration. Hold here FIRST (for the
+    # duration + a small teardown margin) so they stay up, THEN report & exit.
+    if overlay and payload:
+        import time
+
+        time.sleep(duration / 1000.0 + 0.3)
     done(payload, json_mode=json_mode, ok=bool(payload), human=human)
 
 

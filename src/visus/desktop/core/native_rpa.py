@@ -59,26 +59,39 @@ def _run_with_timeout(fn, timeout: float):
     return box["value"]
 
 
-def _selector_kwargs(title, control_type, auto_id, found_index) -> dict:
-    """Build the ``child_window`` kwargs from the selector arguments."""
+def _selector_kwargs(title, control_type, auto_id, found_index, backend="uia") -> dict:
+    """Build the ``child_window`` kwargs from the selector arguments.
+
+    The ``win32`` backend has no UIA ``control_type``/``auto_id`` concept, so
+    ``control_type`` is mapped to ``class_name`` (e.g. ``Edit``) and ``auto_id``
+    is ignored there. Under ``uia`` the UIA-native keys are used as-is.
+    """
     kwargs: dict = {}
     if title is not None:
         kwargs["title"] = title
     if control_type is not None:
-        kwargs["control_type"] = control_type
-    if auto_id is not None:
+        if backend == "win32":
+            kwargs["class_name"] = control_type
+        else:
+            kwargs["control_type"] = control_type
+    if auto_id is not None and backend != "win32":
         kwargs["auto_id"] = auto_id
     if found_index is not None:
         kwargs["found_index"] = found_index
     return kwargs
 
 
-def _connect_top(window, pid, connect_timeout: float):
-    """Connect to the target app (UIA) and return its top window, or None."""
+def _connect_top(window, pid, connect_timeout: float, backend="uia"):
+    """Connect to the target app and return its top window, or None.
+
+    ``backend`` is ``"uia"`` (default; right for WPF/WinUI/Electron/browsers)
+    or ``"win32"`` (fast + reliable for classic Win32 controls like Notepad's
+    Edit, where the UIA provider can stall on enumeration).
+    """
     import pywinauto  # noqa: F401
     from pywinauto import Application
 
-    app = Application(backend="uia")
+    app = Application(backend=backend)
     if pid is not None:
         app.connect(process=pid, timeout=connect_timeout)
     elif window is not None:
@@ -141,6 +154,7 @@ def native_dump_tree(
     max_depth: int = 3,
     timeout: float = 5.0,
     connect_timeout: float = 2.0,
+    backend: str = "uia",
 ) -> list[dict]:
     """Return the control tree of the target window as a flat list.
 
@@ -154,7 +168,7 @@ def native_dump_tree(
         return []
 
     def _job():
-        top = _connect_top(window, pid, connect_timeout)
+        top = _connect_top(window, pid, connect_timeout, backend)
         if top is None:
             return []
         nodes: list[dict] = []
@@ -209,6 +223,7 @@ def native_click(
     connect_timeout: float = 2.0,
     retries: int = 0,
     delay: float = 0.3,
+    backend: str = "uia",
 ) -> bool:
     """Click a control located by selector -- no coordinates, no image.
 
@@ -223,11 +238,11 @@ def native_click(
 
     def _attempt():
         def _job():
-            top = _connect_top(window, pid, connect_timeout)
+            top = _connect_top(window, pid, connect_timeout, backend)
             if top is None:
                 return False
             ctrl = top.child_window(
-                **_selector_kwargs(title, control_type, auto_id, found_index)
+                **_selector_kwargs(title, control_type, auto_id, found_index, backend)
             )
             if not ctrl.exists(timeout=timeout):
                 return False
@@ -262,6 +277,7 @@ def native_set_text(
     connect_timeout: float = 2.0,
     retries: int = 0,
     delay: float = 0.3,
+    backend: str = "uia",
 ) -> bool:
     """Set the text of an editable control located by selector.
 
@@ -273,11 +289,11 @@ def native_set_text(
 
     def _attempt():
         def _job():
-            top = _connect_top(window, pid, connect_timeout)
+            top = _connect_top(window, pid, connect_timeout, backend)
             if top is None:
                 return False
             ctrl = top.child_window(
-                **_selector_kwargs(title, control_type, auto_id, found_index)
+                **_selector_kwargs(title, control_type, auto_id, found_index, backend)
             )
             if not ctrl.exists(timeout=timeout):
                 return False
@@ -307,17 +323,18 @@ def native_get_text(
     found_index=None,
     timeout: float = 5.0,
     connect_timeout: float = 2.0,
+    backend: str = "uia",
 ) -> str | None:
     """Read a control's text/value. Returns the string or ``None``."""
     if not _ensure_pywinauto():
         return None
 
     def _job():
-        top = _connect_top(window, pid, connect_timeout)
+        top = _connect_top(window, pid, connect_timeout, backend)
         if top is None:
             return None
         ctrl = top.child_window(
-            **_selector_kwargs(title, control_type, auto_id, found_index)
+            **_selector_kwargs(title, control_type, auto_id, found_index, backend)
         )
         if not ctrl.exists(timeout=timeout):
             return None
@@ -343,6 +360,7 @@ def native_get_state(
     found_index=None,
     timeout: float = 5.0,
     connect_timeout: float = 2.0,
+    backend: str = "uia",
 ) -> dict | None:
     """Return a control's state snapshot, or ``None`` if not found.
 
@@ -354,11 +372,11 @@ def native_get_state(
         return None
 
     def _job():
-        top = _connect_top(window, pid, connect_timeout)
+        top = _connect_top(window, pid, connect_timeout, backend)
         if top is None:
             return None
         ctrl = top.child_window(
-            **_selector_kwargs(title, control_type, auto_id, found_index)
+            **_selector_kwargs(title, control_type, auto_id, found_index, backend)
         )
         if not ctrl.exists(timeout=timeout):
             return {"exists": False}
@@ -401,6 +419,7 @@ def native_wait(
     timeout: float = 10.0,
     connect_timeout: float = 2.0,
     poll_interval: float = 0.3,
+    backend: str = "uia",
 ) -> bool:
     """Wait until a control reaches ``state`` (or ``timeout`` elapses).
 
@@ -418,11 +437,11 @@ def native_wait(
     }.get(state, "exists")
 
     def _job():
-        top = _connect_top(window, pid, connect_timeout)
+        top = _connect_top(window, pid, connect_timeout, backend)
         if top is None:
             return False
         ctrl = top.child_window(
-            **_selector_kwargs(title, control_type, auto_id, found_index)
+            **_selector_kwargs(title, control_type, auto_id, found_index, backend)
         )
         try:
             ctrl.wait(wanted, timeout=timeout, retry_interval=poll_interval)

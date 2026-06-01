@@ -18,12 +18,18 @@ def native():
 @click.option("--pid", type=int, help="Process id (else foreground).")
 @click.option("--max-depth", "max_depth", type=int, default=3, show_default=True)
 @click.option("--timeout", type=float, default=5.0, show_default=True)
+@click.option(
+    "--backend", default="uia", show_default=True,
+    type=click.Choice(["uia", "win32"]),
+    help="Accessibility backend: 'uia' (modern apps) or 'win32' (classic Win32 "
+         "controls like Notepad, where UIA can stall).",
+)
 @json_option
-def dump_tree(window, pid, max_depth, timeout, json_mode):
+def dump_tree(window, pid, max_depth, timeout, backend, json_mode):
     from visus.desktop.core.native_rpa import native_dump_tree
 
     nodes = native_dump_tree(
-        window=window, pid=pid, max_depth=max_depth, timeout=timeout
+        window=window, pid=pid, max_depth=max_depth, timeout=timeout, backend=backend
     )
     if json_mode:
         done(nodes, json_mode=True, ok=True)
@@ -56,7 +62,7 @@ def dump_tree(window, pid, max_depth, timeout, json_mode):
 @dry_run_option
 @json_option
 def click_cmd(
-    window, pid, title, control_type, auto_id, found_index,
+    window, pid, title, control_type, auto_id, found_index, backend,
     button, double, method, timeout, retries, delay, dry_run, json_mode,
 ):
     from visus.desktop.core.native_rpa import native_click, native_get_state
@@ -64,7 +70,7 @@ def click_cmd(
     if dry_run:
         state = native_get_state(
             window=window, pid=pid, title=title, control_type=control_type,
-            auto_id=auto_id, found_index=found_index, timeout=timeout,
+            auto_id=auto_id, found_index=found_index, timeout=timeout, backend=backend,
         )
         ok = bool(state and state.get("exists"))
         human = (
@@ -78,7 +84,7 @@ def click_cmd(
     result = native_click(
         window=window, pid=pid, title=title, control_type=control_type,
         auto_id=auto_id, found_index=found_index, button=button, double=double,
-        method=method, timeout=timeout, retries=retries, delay=delay,
+        method=method, timeout=timeout, retries=retries, delay=delay, backend=backend,
     )
     ok = bool(result)
     done(result, json_mode=json_mode, ok=ok, human=("clicked" if ok else "not clicked"))
@@ -93,7 +99,7 @@ def click_cmd(
 @dry_run_option
 @json_option
 def set_text(
-    text, window, pid, title, control_type, auto_id, found_index,
+    text, window, pid, title, control_type, auto_id, found_index, backend,
     timeout, retries, delay, dry_run, json_mode,
 ):
     from visus.desktop.core.native_rpa import native_get_state, native_set_text
@@ -101,7 +107,7 @@ def set_text(
     if dry_run:
         state = native_get_state(
             window=window, pid=pid, title=title, control_type=control_type,
-            auto_id=auto_id, found_index=found_index, timeout=timeout,
+            auto_id=auto_id, found_index=found_index, timeout=timeout, backend=backend,
         )
         ok = bool(state and state.get("exists"))
         human = (
@@ -113,9 +119,9 @@ def set_text(
         return
 
     result = native_set_text(
-        text, window=window, pid=pid, title=title, control_type=control_type,
+        text=text, window=window, pid=pid, title=title, control_type=control_type,
         auto_id=auto_id, found_index=found_index, timeout=timeout,
-        retries=retries, delay=delay,
+        retries=retries, delay=delay, backend=backend,
     )
     ok = bool(result)
     done(
@@ -128,12 +134,12 @@ def set_text(
 @native_selector_options
 @click.option("--timeout", type=float, default=5.0, show_default=True)
 @json_option
-def get_text(window, pid, title, control_type, auto_id, found_index, timeout, json_mode):
+def get_text(window, pid, title, control_type, auto_id, found_index, backend, timeout, json_mode):
     from visus.desktop.core.native_rpa import native_get_text
 
     result = native_get_text(
         window=window, pid=pid, title=title, control_type=control_type,
-        auto_id=auto_id, found_index=found_index, timeout=timeout,
+        auto_id=auto_id, found_index=found_index, timeout=timeout, backend=backend,
     )
     ok = result is not None
     done(
@@ -146,12 +152,12 @@ def get_text(window, pid, title, control_type, auto_id, found_index, timeout, js
 @native_selector_options
 @click.option("--timeout", type=float, default=5.0, show_default=True)
 @json_option
-def get_state(window, pid, title, control_type, auto_id, found_index, timeout, json_mode):
+def get_state(window, pid, title, control_type, auto_id, found_index, backend, timeout, json_mode):
     from visus.desktop.core.native_rpa import native_get_state
 
     result = native_get_state(
         window=window, pid=pid, title=title, control_type=control_type,
-        auto_id=auto_id, found_index=found_index, timeout=timeout,
+        auto_id=auto_id, found_index=found_index, timeout=timeout, backend=backend,
     )
     ok = bool(result and result.get("exists"))
     done(result, json_mode=json_mode, ok=ok)
@@ -167,7 +173,7 @@ def get_state(window, pid, title, control_type, auto_id, found_index, timeout, j
 @click.option("--poll-interval", "poll_interval", type=float, default=0.3, show_default=True)
 @json_option
 def wait(
-    window, pid, title, control_type, auto_id, found_index,
+    window, pid, title, control_type, auto_id, found_index, backend,
     state, timeout, poll_interval, json_mode,
 ):
     from visus.desktop.core.native_rpa import native_wait
@@ -175,7 +181,7 @@ def wait(
     result = native_wait(
         window=window, pid=pid, title=title, control_type=control_type,
         auto_id=auto_id, found_index=found_index, state=state,
-        timeout=timeout, poll_interval=poll_interval,
+        timeout=timeout, poll_interval=poll_interval, backend=backend,
     )
     ok = bool(result)
     done(
