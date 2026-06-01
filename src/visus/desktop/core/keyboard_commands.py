@@ -197,13 +197,68 @@ class KeyboardCommander:
                 self.command_mapping[command]()
                 logger.info(f"Command '{command}' executed successfully")
                 return True
-            else:
-                logger.warning(f"Command '{command}' not recognized")
-                return False
+            # Fall back to a generic chord parser so ANY modifier combo works
+            # (e.g. "Ctrl+Shift+S", "Ctrl+Alt+Del") without a hardcoded entry.
+            keys = self._parse_chord(command)
+            if keys:
+                import pyautogui
+
+                logger.info(f"Executing keyboard chord: '{command}' -> {keys}")
+                pyautogui.hotkey(*keys)
+                return True
+            logger.warning(f"Command '{command}' not recognized")
+            return False
         except Exception as e:
             error_msg = f"Error executing command '{command}': {e}"
             logger.error(error_msg)
             raise TaskExecutionError(error_msg) from e
+
+    @staticmethod
+    def _parse_chord(command: str):
+        """Parse 'Mod+Mod+Key' into pyautogui key names, or return None.
+
+        Accepts any combination of the modifiers Ctrl/Control, Shift, Alt,
+        Win/Windows/Cmd/Super plus a final key (a letter, digit, F1-F24, or a
+        named key like Enter/Esc/Tab/Delete/Up). Case-insensitive. Returns the
+        ordered key list for ``pyautogui.hotkey(*keys)`` or ``None`` if it
+        doesn't look like a valid chord/key.
+        """
+        if not command or not isinstance(command, str):
+            return None
+        mods = {
+            "ctrl": "ctrl", "control": "ctrl", "shift": "shift", "alt": "alt",
+            "win": "win", "windows": "win", "cmd": "win", "super": "win",
+        }
+        named = {
+            "enter": "enter", "return": "enter", "esc": "esc", "escape": "esc",
+            "tab": "tab", "space": "space", "backspace": "backspace",
+            "delete": "delete", "del": "delete", "insert": "insert",
+            "home": "home", "end": "end", "pageup": "pageup",
+            "pagedown": "pagedown", "up": "up", "down": "down", "left": "left",
+            "right": "right",
+        }
+        parts = [p.strip() for p in command.replace(" ", "").split("+") if p.strip()]
+        if len(parts) < 2:
+            return None  # a bare single key goes through the normal mapping
+        keys = []
+        for i, part in enumerate(parts):
+            low = part.lower()
+            is_last = i == len(parts) - 1
+            if not is_last:
+                if low not in mods:
+                    return None  # non-modifier before the final key -> invalid
+                keys.append(mods[low])
+                continue
+            # final element = the key
+            if low in named:
+                keys.append(named[low])
+            elif len(low) == 1 and low.isalnum():
+                keys.append(low)
+            elif len(low) >= 2 and low[0] == "f" and low[1:].isdigit():
+                keys.append(low)  # function key f1..f24
+            else:
+                return None
+        return keys
 
     def get_available_commands(self) -> list:
         """

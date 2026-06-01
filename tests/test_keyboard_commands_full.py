@@ -29,6 +29,24 @@ class TestExecuteCommand:
     def test_unknown_command_returns_false(self, commander):
         assert commander.execute_command("NotARealCommand") is False
 
+    def test_generic_chord_not_in_mapping_dispatches_hotkey(self, commander):
+        # "Ctrl+Shift+S" isn't a hardcoded entry; the generic parser handles
+        # it so scripts never need pyautogui directly.
+        assert "Ctrl+Shift+S" not in commander.command_mapping
+        with patch("pyautogui.hotkey") as hotkey:
+            assert commander.execute_command("Ctrl+Shift+S") is True
+        hotkey.assert_called_once_with("ctrl", "shift", "s")
+
+    def test_chord_parser_normalizes_aliases_and_named_keys(self, commander):
+        with patch("pyautogui.hotkey") as hotkey:
+            assert commander.execute_command("Win+R") is True
+            assert commander.execute_command("Control+Alt+Del") is True
+        hotkey.assert_any_call("win", "r")
+        hotkey.assert_any_call("ctrl", "alt", "delete")
+
+    def test_invalid_chord_still_returns_false(self, commander):
+        assert commander.execute_command("Ctrl+Banana") is False
+
     def test_exception_inside_mapping_raises_task_execution_error(self, commander):
         def explodes():
             raise RuntimeError("boom")

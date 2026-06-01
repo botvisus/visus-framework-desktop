@@ -119,20 +119,25 @@ WORKFLOW — follow in order:
    native→image→OCR→coords in one shot and report the winner — handy when
    unsure which layer fits.)
 
-4. ASSEMBLE THE RUNTIME FLOW (image-based — fast, repeatable):
-   `click_image("save.png", region=<window rect>)` (scope so a look-alike
-   elsewhere can't match); `click_relative_image` for "the target near anchor";
-   `type_text` (inline tokens `{ctrl}a {tab} {enter}`) and `keyboard_command`
+4. ASSEMBLE THE RUNTIME FLOW. For every step the app does NOT expose natively,
+   the STANDARD action in the generated script is `click_image` on a captured
+   template (`click_relative_image` for "the target near an anchor"). Native
+   steps stay native; everything else is `click_image`. Use `type_text`
+   (inline tokens `{ctrl}a {tab} {enter}`) and `keyboard_command`
    (CASE-SENSITIVE: `Enter`, `Escape`, `Ctrl+S` — not "esc") for input;
    `click_at` only if the user gave coordinates.
 
-   ►► TEMPLATE REPEATS ON SCREEN? `find_image`/`click_image` take the SAME
+   ►► DISAMBIGUATE BY `occurrence`, NOT by a window-rect region. A template
+   often matches more than one spot (e.g. a "Save" button while a "Save As"
+   TITLE also contains the word). `find_image`/`click_image` take the SAME
    `occurrence` as the text tools (1-based, reading order top→bottom,
-   left→right). When an icon/button appears more than once (grid rows,
-   toolbars, a list), call `find_all("tpl.png")` to see how many there are,
-   then `click_image("tpl.png", occurrence=N)` — don't rely on the single
-   "best" match, which picks an arbitrary twin. `--no-specific`/`specific=False`
-   widens the search to the whole screen + scale variations.
+   left→right): call `find_all("tpl.png")` to count, then
+   `click_image("tpl.png", occurrence=N)`. This is the robust default — DO NOT
+   scope with `region=get_window("Save As")`: a title substring can match a
+   SUPERSTRING window ("Save As" ⊂ "Confirm Save As") and hand you the wrong
+   rect. If you must scope, use `ensure_window`/`list_windows` and an EXACT
+   title, but prefer `occurrence`. `specific=False` widens to the whole screen
+   + scale variations.
 
 5. SYNC, DON'T SLEEP. After a UI change `wait_for_stable_screen`; for downloads
    `wait_for_file_stable`; for a control `native_wait`.
@@ -145,6 +150,19 @@ WORKFLOW — follow in order:
 7. PACKAGE. `execute_tasks([...])` for atomic retry/backtrack; wrap in
    `start_recording`/`stop_recording` → `render_report` for an auditable HTML
    artifact.
+
+   ►► THE GENERATED SCRIPT MUST BE 100% visus-desktop. Import ONLY from
+   `visus.desktop` (e.g. `from visus.desktop import VisusBot, ensure_window`).
+   NEVER `import pyautogui` (or pynput/keyboard/win32 etc.) and NEVER call
+   `pyautogui.hotkey(...)` in the script — every action has a visus equivalent:
+     • keys/chords → `bot.keyboard_command("Ctrl+Shift+S")` (ANY modifier combo
+       works: Ctrl/Shift/Alt/Win + key); typing → `bot.type_text(...)`
+     • clicks → `bot.click_image(...)` / `click_text` / `native_click` /
+       `bot.click_at(...)`; never `pyautogui.click`
+     • screenshots → `take_screenshot`/`save_screenshot`; waits →
+       `wait_for_stable_screen` / `wait_for_file_stable` / `native_wait`, never
+       `time.sleep` as the sync mechanism
+   If you reach for pyautogui, you picked the wrong visus tool — find it.
 
 ALWAYS scope a search with `region=[x,y,w,h]` — unscoped is the #1 cause of
 wrong clicks. With leftover look-alike windows, disambiguate via `list_windows`
@@ -830,16 +848,17 @@ def type_text(
 
 @mcp.tool()
 def keyboard_command(command: str, delay: float = 0, backtrack: bool = False) -> bool:
-    """Press a named key or shortcut. Tokens are CASE-SENSITIVE.
+    """Press a named key or shortcut — this is the visus way; never pyautogui.
 
     USE WHEN: pressing a single key or chord (not typing text).
-    VALID TOKENS (exact case): single keys ``Enter``, ``Escape``, ``Tab``,
-    ``Delete``, ``F1``..``F12``, arrow ``Up``/``Down``/``Left``/``Right``;
-    chords ``Ctrl+S``, ``Ctrl+C``, ``Ctrl+V``, ``Ctrl+A``, ``Ctrl+Z``,
-    ``Alt+F4``, ``Alt+Tab``, ``Shift+Tab``, ``Ctrl+T``, ``Ctrl+W``. It is
-    ``Escape`` (not "esc") and ``Enter`` (not "return key").
-    RETURNS: True if the token was recognized and sent; False if the token is
-    not in the supported set (check the case/spelling above).
+    KEYS: single keys ``Enter``, ``Escape``, ``Tab``, ``Delete``, ``F1``..``F24``,
+    arrows ``Up``/``Down``/``Left``/``Right``, ``Home``/``End``/``PageUp`` …
+    CHORDS: ANY modifier combo works via a generic parser — ``Ctrl+S``,
+    ``Ctrl+Shift+S``, ``Ctrl+Alt+Del``, ``Win+R``, ``Shift+Tab``,
+    ``Ctrl+Shift+F12`` … (modifiers: Ctrl/Control, Shift, Alt, Win/Cmd/Super;
+    case-insensitive for chords). So you NEVER need ``pyautogui.hotkey`` — a
+    generated script must call this instead.
+    RETURNS: True if recognized and sent; False otherwise.
     """
     return bool(get_bot().keyboard_command(command, delay=delay, backtrack=backtrack))
 
