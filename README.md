@@ -423,6 +423,7 @@ bot.click_image(
     "button.png",
     confidence=0.9,        # 0.0–1.0
     specific=True,         # True: search the region; False: full screen + scale variations
+    occurrence=1,          # which match to act on (1 = first), reading order top→bottom/left→right
     mouse_button="double",
     delay=1,
 )
@@ -430,6 +431,19 @@ bot.click_image(
 
 `specific=False` also tries scaled versions of the template, which helps when the UI renders at a
 different resolution/DPI. You can pass an explicit `scales=[1.0, 0.95, 1.05]` list too.
+
+When the **same template appears more than once** on screen (grid rows, a toolbar of identical
+icons), list every match first and pick the right one by index with `occurrence` — exactly like
+`click_text`:
+
+```python
+# find_all -> every box, in reading order (empty list if none found)
+for i, box in enumerate(bot.find_all("row_icon.png"), start=1):
+    print(f"#{i} at {box}")
+
+bot.find_image("row_icon.png", occurrence=2)    # box of the second match
+bot.click_image("row_icon.png", occurrence=2)   # click the second match
+```
 
 `find_image` / `click_image` accept either a **registered label** or a **file path** for the image —
 see [Image map](#image-map-register-images-by-name).
@@ -838,6 +852,7 @@ from visus.desktop import find_text, click_text, click_image, execute_tasks, typ
 
 click_text("Login", region=(0, 0, 800, 600))
 click_image("submit.png", confidence=0.9)
+click_image("row_icon.png", occurrence=2)   # nth copy when the template repeats
 execute_tasks([{"text": "OK"}, {"type": "keyboard_command", "command": "Enter"}])
 ```
 

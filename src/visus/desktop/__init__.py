@@ -3220,6 +3220,7 @@ def find_image(
     wait_until_found=False,
     wait_until_disappears=False,
     wait_timeout=None,
+    occurrence=1,
 ):
     """
     Search for an image on screen using a temporary VisusBot instance.
@@ -3235,6 +3236,8 @@ def find_image(
         wait_until_found (bool): 🆕 v1.3.0+ - Waits for the image to appear automatically
         wait_until_disappears (bool): 🆕 v1.3.0+ - Waits for the image to disappear
         wait_timeout (int, optional): 🆕 v1.3.0+ - Specific timeout (overrides the global one)
+        occurrence (int): Which match to return when the template appears more
+            than once (1=first, reading order top→bottom/left→right)
 
     Returns:
         tuple: Coordinates of the image or None
@@ -3251,6 +3254,7 @@ def find_image(
         wait_until_disappears,
         wait_timeout,
         scales,
+        occurrence=occurrence,
     )
 
 
@@ -3268,6 +3272,7 @@ def click_image(
     wait_until_found=False,
     wait_until_disappears=False,
     wait_timeout=None,
+    occurrence=1,
 ):
     """
     Click on an image using a temporary VisusBot instance.
@@ -3290,6 +3295,8 @@ def click_image(
         wait_until_found (bool): 🆕 v1.3.0+ - Waits for the image to appear automatically
         wait_until_disappears (bool): 🆕 v1.3.0+ - Waits for the image to disappear
         wait_timeout (int, optional): 🆕 v1.3.0+ - Specific timeout (overrides the global one)
+        occurrence (int): Which match to click when the template appears more
+            than once (1=first, reading order top→bottom/left→right)
 
     Returns:
         bool: True if found and clicked, False otherwise
@@ -3309,6 +3316,7 @@ def click_image(
         wait_until_found,
         wait_until_disappears,
         wait_timeout,
+        occurrence=occurrence,
     )
 
 
