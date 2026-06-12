@@ -1813,9 +1813,15 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         if occurrence and occurrence > 1:
             from .core.locate import find_all as _find_all
 
+            # Honor `specific` exactly like the single-match path below: restrict
+            # to `region` only when specific=True. With specific=False (search the
+            # whole screen) a captured template carries the FIRST copy's box as
+            # `region`, so restricting find_all to it would only ever see 1 match
+            # and the 2nd/3rd copies (outside that box) could never be selected.
+            search_region = tuple(region) if (specific and region) else None
             boxes = _find_all(
                 image_path,
-                region=tuple(region) if region else None,
+                region=search_region,
                 confidence=confidence,
             )
             boxes = sorted(boxes, key=lambda b: (b[1], b[0]))

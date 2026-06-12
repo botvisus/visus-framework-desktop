@@ -149,6 +149,54 @@ class TestClickImageOccurrenceReal:
 
 
 # --------------------------------------------------------------------------- #
+# occurrence + region/specific -- the Visus Studio scenario
+# --------------------------------------------------------------------------- #
+class TestOccurrenceWithCapturedRegionReal:
+    """Regression: a captured template carries the *first* copy's box as ``region``.
+
+    Studio captures a screen area to build the template, so the saved step's
+    ``region`` is the bounding box of the FIRST occurrence. With ``specific=False``
+    (the Studio default = "search the whole screen") ``occurrence=2`` must still
+    reach the 2nd/3rd copies, which live OUTSIDE that captured box.
+    """
+
+    # region = bounding box of the first copy in reading order (100, 50, 30, 20)
+    _FIRST_BOX_REGION = (100, 50, _NEEDLE_W, _NEEDLE_H)
+
+    @pytest.mark.parametrize("n", [1, 2, 3])
+    def test_nonspecific_occurrence_ignores_captured_region(self, scene, n):
+        bot = _make_bot()
+        box = bot.find_image(
+            scene, region=self._FIRST_BOX_REGION, specific=False, occurrence=n
+        )
+        assert box == _EXPECTED_IN_READING_ORDER[n - 1]
+
+    def test_nonspecific_click_second_copy_with_captured_region(self, scene):
+        bot = _make_bot()
+        rec = _ClickRecorder()
+        bot.executor.virtual_mouse.click = rec
+
+        ok = bot.click_image(
+            scene, region=self._FIRST_BOX_REGION, specific=False, occurrence=2
+        )
+        assert ok is True
+        x, y, w, h = _EXPECTED_IN_READING_ORDER[1]
+        _, kwargs = rec.last
+        assert (kwargs["x"], kwargs["y"]) == (x + w // 2, y + h // 2)
+
+    def test_specific_true_still_restricts_to_region(self, scene):
+        # specific=True means "only look inside this region" -- so a region that
+        # only contains the first copy legitimately has no 2nd occurrence.
+        bot = _make_bot()
+        assert (
+            bot.find_image(
+                scene, region=self._FIRST_BOX_REGION, specific=True, occurrence=2
+            )
+            is None
+        )
+
+
+# --------------------------------------------------------------------------- #
 # standalone module-level wrappers -- real engine
 # --------------------------------------------------------------------------- #
 class TestStandaloneWrappersReal:
