@@ -353,6 +353,81 @@ class TestClickImage:
         assert seen["region"] == (1, 2, 3, 4)
         assert seen["confidence"] == 0.8
 
+    def test_occurrence_forwarded_to_find_image(self, monkeypatch):
+        bot = _make_bot()
+        _install_click_recorder(bot)
+        seen = {}
+
+        def fake_find(image_path, *a, occurrence=1, **k):
+            seen["occurrence"] = occurrence
+            return (0, 0, 4, 4)
+
+        monkeypatch.setattr(bot, "find_image", fake_find)
+        bot.click_image("b.png", occurrence=3)
+        assert seen["occurrence"] == 3
+
+    def test_occurrence_picks_nth_match_and_clicks_its_center(self, monkeypatch):
+        # End-to-end through the real occurrence path: find_all returns three
+        # copies out of order; occurrence=2 must click the 2nd in reading order.
+        bot = _make_bot()
+        rec = _install_click_recorder(bot)
+        boxes = [(200, 300, 40, 12), (10, 10, 40, 12), (60, 60, 40, 12)]
+        monkeypatch.setattr(
+            "visus.desktop.core.locate.find_all", lambda *a, **k: boxes
+        )
+        assert bot.click_image("b.png", occurrence=2) is True
+        # 2nd in reading order is (60,60,40,12) -> center (60+20, 60+6) = (80, 66)
+        _, kwargs = rec.last
+        assert kwargs["x"] == 80
+        assert kwargs["y"] == 66
+
+
+# --------------------------------------------------------------------------- #
+# standalone module-level wrappers (occurrence parity)
+# --------------------------------------------------------------------------- #
+class TestStandaloneImageOccurrence:
+    """The module-level find_image/click_image create a temp VisusBot; verify
+    they forward ``occurrence`` to it (the gap this change closes)."""
+
+    def test_standalone_find_image_forwards_occurrence(self, monkeypatch):
+        import visus.desktop as vd
+
+        seen = {}
+
+        def fake_method(self, image_path, *a, **k):
+            seen["occurrence"] = k.get("occurrence")
+            return (1, 2, 3, 4)
+
+        monkeypatch.setattr(vd.VisusBot, "find_image", fake_method)
+        assert vd.find_image("b.png", occurrence=4) == (1, 2, 3, 4)
+        assert seen["occurrence"] == 4
+
+    def test_standalone_click_image_forwards_occurrence(self, monkeypatch):
+        import visus.desktop as vd
+
+        seen = {}
+
+        def fake_method(self, image_path, *a, **k):
+            seen["occurrence"] = k.get("occurrence")
+            return True
+
+        monkeypatch.setattr(vd.VisusBot, "click_image", fake_method)
+        assert vd.click_image("b.png", occurrence=2) is True
+        assert seen["occurrence"] == 2
+
+    def test_standalone_find_image_defaults_to_first(self, monkeypatch):
+        import visus.desktop as vd
+
+        seen = {}
+
+        def fake_method(self, image_path, *a, **k):
+            seen["occurrence"] = k.get("occurrence")
+            return (0, 0, 1, 1)
+
+        monkeypatch.setattr(vd.VisusBot, "find_image", fake_method)
+        vd.find_image("b.png")
+        assert seen["occurrence"] == 1
+
 
 # --------------------------------------------------------------------------- #
 # find_text (~10 tests)
