@@ -224,6 +224,13 @@ def _collect_windows(title=None, process=None) -> list:
 
     Process filtering resolves each candidate window's process name on demand
     (cheap), so it never scans the whole process table.
+
+    Com ``title``, os matches saem ORDENADOS por especificidade — título EXATO
+    (case-insensitive) primeiro, depois prefixo, depois substring solta — com a
+    ordem de enumeração (Z-order) como desempate (sort estável). Sem isso,
+    ``find_window_handle("Calculadora")`` casava a janela do Explorer da pasta
+    ``example-calculadora`` (substring incidental em "example-calculadora") no
+    lugar da Calculadora real, e todo native_* mirava a janela errada.
     """
     needle_t = (title or "").lower()
     needle_p = (process or "").lower()
@@ -234,6 +241,17 @@ def _collect_windows(title=None, process=None) -> list:
         if process and needle_p not in _process_name(pid).lower():
             continue
         out.append((hwnd, wtitle, pid))
+    if title:
+
+        def _rank(entry) -> int:
+            wl = entry[1].lower()
+            if wl == needle_t:
+                return 0
+            if wl.startswith(needle_t):
+                return 1
+            return 2
+
+        out.sort(key=_rank)  # estável: preserva o Z-order dentro de cada rank
     return out
 
 
