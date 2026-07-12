@@ -87,15 +87,40 @@ def _connect_top(window, pid, connect_timeout: float, backend="uia"):
     ``backend`` is ``"uia"`` (default; right for WPF/WinUI/Electron/browsers)
     or ``"win32"`` (fast + reliable for classic Win32 controls like Notepad's
     Edit, where the UIA provider can stall on enumeration).
+
+    ``window=`` resolve o HANDLE por win32 (substring, sem UIA) e prende o UIA
+    NAQUELE hwnd — nunca em ``Desktop().window(title_re=...)``. Duas armadilhas
+    mortais que essa rota por handle elimina de uma vez (bug real, 2026-07-12):
+
+    1. UWP: a janela pertence ao ``ApplicationFrameHost.exe``, que hospeda
+       TODAS as janelas UWP — ``connect(process) + top_window()`` devolve a
+       hospedada que estiver por cima NAQUELE instante (a Calculadora só "por
+       sorte", em primeiro plano). O handle é a janela-frame CERTA, sempre.
+    2. Enumeração: ``Desktop().window(title_re=...)`` faz um ``FindFirst`` na
+       RAIZ do desktop, varrendo todos os topos. Se QUALQUER janela do sistema
+       tem um provider UIA lento/travado, esse FindFirst BLOQUEIA por tempo
+       indefinido (o ``timeout`` do pywinauto só é checado ENTRE tentativas,
+       não durante a chamada COM presa) — na worker thread o
+       ``_run_with_timeout`` mata por join e devolve False em silêncio; na main
+       trava de vez. Amarrar no handle não varre nada: ~50ms, imune ao provider
+       podre do vizinho (medido: rota por título trava >8s, por handle resolve
+       em ~0.05s — idêntico em STA e MTA).
     """
     import pywinauto  # noqa: F401
-    from pywinauto import Application
+    from pywinauto import Application, Desktop
+
+    if window is not None and pid is None:
+        from .locators import find_window_handle
+
+        hwnd = find_window_handle(window)
+        if not hwnd:
+            return None
+        spec = Desktop(backend=backend).window(handle=hwnd)
+        return spec if spec.exists(timeout=connect_timeout) else None
 
     app = Application(backend=backend)
     if pid is not None:
         app.connect(process=pid, timeout=connect_timeout)
-    elif window is not None:
-        app.connect(title_re=f".*{window}.*", timeout=connect_timeout)
     else:
         from .locators import get_foreground_window
 
@@ -446,7 +471,11 @@ def native_wait(
         try:
             ctrl.wait(wanted, timeout=timeout, retry_interval=poll_interval)
             return True
-        except Exception:
+        except Exception as exc:
+            # NUNCA silencioso: um wait que falha por infra (COM, conexão,
+            # seletor) parecia idêntico a "elemento não apareceu" — logue a
+            # causa real para o próximo caçador de fantasmas.
+            logger.debug("native_wait(%s) failed: %s", wanted, exc)
             return False
 
     result = _run_with_timeout(_job, timeout + connect_timeout)
