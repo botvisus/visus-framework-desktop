@@ -60,10 +60,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/matheuszwilk/visus-desktop"
-Documentation = "https://github.com/matheuszwilk/visus-desktop#readme"
-Repository = "https://github.com/matheuszwilk/visus-desktop.git"
-"Bug Tracker" = "https://github.com/matheuszwilk/visus-desktop/issues"
+Homepage = "https://github.com/botvisus/visus-framework-desktop"
+Documentation = "https://github.com/botvisus/visus-framework-desktop#readme"
+Repository = "https://github.com/botvisus/visus-framework-desktop.git"
+"Bug Tracker" = "https://github.com/botvisus/visus-framework-desktop/issues"
 
 [project.scripts]
 visus = "visus.desktop.cli:main"
