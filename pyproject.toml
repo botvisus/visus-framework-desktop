@@ -4,13 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "visus-desktop"
-version = "0.1.0"
+version = "0.1.1"
 authors = [
     {name = "Matheus Pereira", email = "matheuszwilkdev@gmail.com"},
 ]
 description = "Visus Desktop — desktop GUI automation with multi-technique OCR, robust image detection, smart backtracking, and a non-intrusive virtual mouse."
 readme = "README.md"
-license = "MIT"
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.8"
 classifiers = [
     "Development Status :: 4 - Beta",
