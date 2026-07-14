@@ -13,6 +13,7 @@ import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
+from io import BytesIO
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from PIL import Image
@@ -42,6 +43,60 @@ logger = logging.getLogger(__name__)
 # name so users can attach a JSON sink (file, Loki, OpenTelemetry, …) without
 # touching the human-readable ``visus.desktop`` logger.
 task_event_logger = logging.getLogger("visus.desktop.task_events")
+
+
+# ---------------------------------------------------------------------------
+# RunPilot orchestrator streaming (optional).
+#
+# When a bot runs under the RunPilot runner (env ``RUNPILOT_RUN_TOKEN`` set),
+# every recorded action is streamed to the orchestrator as a timeline step --
+# with a screenshot and the per-action logs -- instead of (only) being written
+# to a local run.zip. ``runpilot`` is imported lazily and every failure
+# degrades to the normal local behaviour: visus.desktop never hard-depends on
+# it. Mirrors ``visus.web``'s ``_make_run_reporter`` / ``_make_step_sink``.
+# ---------------------------------------------------------------------------
+_RUN_REPORTER_SENTINEL = object()
+_run_reporter_cache: Any = _RUN_REPORTER_SENTINEL
+
+
+def _run_reporter() -> Any:
+    """Return a cached runpilot ``Orchestrator`` bound to the current run, or
+    ``None`` when not running under RunPilot (or ``runpilot`` isn't installed).
+
+    Built once per process. Fully optional and best-effort: any failure (no run
+    token, ``runpilot`` missing, SDK error) returns ``None`` so the run proceeds
+    with the normal local run.zip/report behaviour.
+    """
+    global _run_reporter_cache
+    if _run_reporter_cache is not _RUN_REPORTER_SENTINEL:
+        return _run_reporter_cache
+    reporter = None
+    if os.environ.get("RUNPILOT_RUN_TOKEN"):
+        try:
+            import runpilot  # optional: only present inside a real RunPilot run
+
+            reporter = runpilot.Orchestrator.try_from_env()
+        except Exception:
+            reporter = None
+    _run_reporter_cache = reporter
+    return reporter
+
+
+# Log records captured by ``session.start_recording`` for the open recording,
+# published here so ``_emit_task_event`` can attach the per-action logs to a
+# step it streams live to the orchestrator (mirrors visus.web, where the
+# recorder owns the log handler that feeds the sink). ``None`` when no recording
+# is capturing logs. Each record is ``(created_ts, levelname, logger_name, msg)``.
+_active_log_records: Optional[List[Tuple[float, str, str, str]]] = None
+
+
+def set_active_log_records(
+    records: Optional[List[Tuple[float, str, str, str]]],
+) -> None:
+    """Publish (or clear with ``None``) the log records the current recording is
+    capturing, so streamed orchestrator steps can carry per-action logs."""
+    global _active_log_records
+    _active_log_records = records
 
 
 class TaskResult:
@@ -240,16 +295,18 @@ class TaskExecutor:
         draw.line((cx, cy - cross, cx, cy + cross), fill=color, width=width)
 
     def _emit_task_event(self, result: "TaskResult", task: Dict[str, Any]) -> None:
-        """Emit a structured JSON event for ``result`` when ``log_format='json'``.
+        """Emit telemetry for ``result``: stream it to the RunPilot orchestrator
+        (always) and write a structured JSON event when ``log_format='json'``.
 
-        Writes to the dedicated ``visus.desktop.task_events`` logger. The event
-        carries enough telemetry to debug a run without the source: the task
-        ``type`` / ``target`` / ``region`` searched, the ``location`` acted on,
-        ``attempts``, ``duration_ms``, a detailed ``error`` on failure, and the
-        per-step / failure ``screenshot`` paths.
+        The event carries enough telemetry to debug a run without the source: the
+        task ``type`` / ``target`` / ``region`` searched, the ``location`` acted
+        on, ``attempts``, ``duration_ms``, a detailed ``error`` on failure, and
+        the per-step / failure ``screenshot`` paths.
+
+        The orchestrator streaming happens regardless of ``log_format`` (so it
+        works in text-log mode too); only the JSON event line stays gated behind
+        ``log_format='json'``.
         """
-        if self.config.get("log_format", "text") != "json":
-            return
         region = task.get("region") or task.get("target_region")
         loc = result.location
         if loc == "skip":
@@ -279,7 +336,110 @@ class TaskExecutor:
             "failure_screenshot": result.failure_screenshot,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+
+        # Stream this action to the RunPilot orchestrator as a timeline step
+        # (screenshot + per-action logs). Best-effort and independent of
+        # ``log_format`` -- must run even in the default text-log mode.
+        self._stream_step_to_reporter(result, event)
+
+        # The structured JSON event line is only written when the host opted into
+        # JSON logs; the live streaming above already happened regardless.
+        if self.config.get("log_format", "text") != "json":
+            return
         task_event_logger.info(json.dumps(event))
+
+    def _stream_step_to_reporter(
+        self, result: "TaskResult", event: Dict[str, Any]
+    ) -> None:
+        """Best-effort: stream one recorded action to the RunPilot orchestrator.
+
+        No-op unless the bot runs under RunPilot (``RUNPILOT_RUN_TOKEN`` set and
+        ``runpilot`` importable). Sends the action + a screenshot (read from disk
+        when the event references one, else captured live in memory) + the
+        per-action logs, so the SaaS run report matches the local one. Any
+        failure here is swallowed so reporting never breaks the automation.
+        """
+        reporter = _run_reporter()
+        if reporter is None:
+            return
+        try:
+            png = self._screenshot_png_for_event(event)
+            attrs: Dict[str, Any] = {}
+            logs = self._correlate_logs(event)
+            if logs:
+                attrs["logs"] = logs
+            if event.get("region"):
+                attrs["region"] = event["region"]
+            if event.get("location"):
+                attrs["location"] = event["location"]
+            if event.get("attempts"):
+                attrs["attempts"] = event["attempts"]
+            reporter.report_ui_step(
+                action=str(event.get("type") or "action"),
+                target=event.get("target") or None,
+                status="ok" if result.success else "failed",
+                screenshot_png=png,
+                duration_ms=event.get("duration_ms"),
+                error=event.get("error"),
+                name=result.task_name or str(event.get("type") or "action"),
+                attributes=attrs or None,
+            )
+        except Exception as exc:  # pragma: no cover - observing must not break run
+            logger.debug("report_ui_step streaming failed: %s", exc)
+
+    def _screenshot_png_for_event(self, event: Dict[str, Any]) -> Optional[bytes]:
+        """Return PNG bytes for a streamed step.
+
+        Prefers an on-disk screenshot the event already references (failure
+        first, then per-step), reading it straight off disk; otherwise captures
+        the live screen into memory (disk-free). Returns ``None`` on any failure
+        so a capture problem never breaks streaming.
+        """
+        for key in ("failure_screenshot", "screenshot"):
+            path = event.get(key)
+            if path and os.path.exists(path):
+                try:
+                    with open(path, "rb") as fh:
+                        return fh.read()
+                except Exception:  # pragma: no cover - defensive
+                    pass
+        try:
+            image = capture_screen()
+            buffer = BytesIO()
+            image.save(buffer, format="PNG")
+            return buffer.getvalue()
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("live screenshot capture for streaming failed: %s", exc)
+            return None
+
+    @staticmethod
+    def _correlate_logs(event: Dict[str, Any]) -> List[str]:
+        """Return the log lines emitted during this action's time window.
+
+        Mirrors ``session._attach_logs_to_events`` / visus.web's live sink:
+        claims records whose timestamp falls inside the action's window (end
+        from the event ``timestamp``, start from ``end - duration_ms``). Empty
+        when no recording is capturing logs.
+        """
+        records = _active_log_records
+        if not records:
+            return []
+        ts_iso = event.get("timestamp")
+        if not ts_iso:
+            return []
+        try:
+            end = datetime.fromisoformat(ts_iso.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return []
+        start = end - (event.get("duration_ms") or 0) / 1000.0
+        # 1ms slack on both ends (see session._attach_logs_to_events).
+        window_start = start - 0.001
+        window_end = end + 0.001
+        return [
+            f"[{lvl}] {name}: {msg}"
+            for ts, lvl, name, msg in records
+            if window_start < ts <= window_end
+        ]
 
     # ------------------------------------------------------------------
     # Checkpoint / resume (Phase 2 / R3)

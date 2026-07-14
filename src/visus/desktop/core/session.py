@@ -135,6 +135,14 @@ class Session:
         root_logger = logging.getLogger()
         root_logger.addHandler(log_handler)
 
+        # Publish the captured log records so the executor can attach per-action
+        # logs to steps it streams live to the RunPilot orchestrator (the zip
+        # enrichment below is skipped in orchestrator mode). Lazy import avoids
+        # any import cycle at module load.
+        from . import task_executor as _task_executor
+
+        _task_executor.set_active_log_records(log_handler.records)
+
         try:
             yield
         finally:
@@ -142,7 +150,13 @@ class Session:
             root_logger.removeHandler(log_handler)
             if prior_event_level != event_logger.level:
                 event_logger.setLevel(prior_event_level)
-            _write_zip(zip_path, event_handler.lines, log_handler.records)
+            _task_executor.set_active_log_records(None)
+            # Under the RunPilot runner every action was streamed live to the
+            # orchestrator (the SaaS run report IS the report), so skip the local
+            # run.zip / report. Handlers are always detached above, so no handler
+            # leaks either way.
+            if not os.environ.get("RUNPILOT_RUN_TOKEN"):
+                _write_zip(zip_path, event_handler.lines, log_handler.records)
 
     @staticmethod
     def replay(zip_path: str | os.PathLike[str]) -> list[dict[str, Any]]:
