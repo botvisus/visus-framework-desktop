@@ -68,6 +68,11 @@ Repository = "https://github.com/botvisus/visus-framework-desktop.git"
 
 [project.scripts]
 visus = "visus.desktop.cli:main"
+# `visus` COLIDE: o visus-web declara esse mesmo nome, então num ambiente com os
+# dois quem instalou por último fica com o arquivo — medido: num venv com ambos, o
+# `visus` virou o CLI do web e este aqui ficou inalcançável. Este alias é o nome
+# que sempre significa desktop, em qualquer instalação.
+visus-desktop = "visus.desktop.cli:main"
 visus-doctor = "visus.desktop.doctor:main"
 visus-mcp = "visus.desktop.mcp_server:main"
 
