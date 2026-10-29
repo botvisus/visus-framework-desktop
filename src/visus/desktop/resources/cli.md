@@ -139,7 +139,11 @@ occurrence, robust to 1–2 px of jitter); `--occurrence N`, when given (even 1)
 is always that list's #N — on `text` and `image` alike. `--window TITLE`
 searches only that (visible) window, several times faster than the screen.
 `click --virtual` clicks through window messages: the cursor does not move, and
-a refused click fails instead of falling back to the real mouse. `find-all`
+a refused click fails instead of falling back to the real mouse; a `--sendtext`
+after it is typed by window messages into the clicked control (never the
+focused app, never the clipboard). `type TEXT --virtual --window TITLE` does
+the same into that window's focused control. The physical `--sendtext` paste
+gives the person's clipboard back afterwards. `find-all`
 paints its numbered overlay unless the config's `show_overlay` is off (or
 `--no-overlay`).
 

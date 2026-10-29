@@ -165,6 +165,57 @@ def test_virtual_mouse_nao_estrito_continua_com_fallback() -> None:
     assert vm.last_click == "physical"
 
 
+def _executor():
+    from visus.desktop.core.task_executor import TaskExecutor
+
+    return TaskExecutor.__new__(TaskExecutor)
+
+
+def test_sendtext_apos_clique_virtual_vai_por_mensagens_nao_pelo_teclado() -> None:
+    ex = _executor()
+    ex.virtual_mouse = MagicMock(last_click="virtual", last_hwnd=4242)
+    with patch("visus.desktop.core.virtual_keyboard.send_text", return_value=True) as send, patch(
+        "pyautogui.hotkey"
+    ) as hotkey, patch("pyperclip.copy") as copy:
+        ex._process_sendtext("{ctrl}aolá")
+    send.assert_called_once_with(4242, "{ctrl}aolá")
+    hotkey.assert_not_called()
+    copy.assert_not_called()
+
+
+def test_sendtext_fisico_devolve_a_area_de_transferencia() -> None:
+    ex = _executor()
+    ex.virtual_mouse = MagicMock(last_click="physical", last_hwnd=None)
+    with patch("pyperclip.paste", return_value="o que a pessoa copiou"), patch(
+        "pyperclip.copy"
+    ) as copy, patch("pyautogui.hotkey"), patch("time.sleep"):
+        ex._process_sendtext("texto")
+    assert [c.args[0] for c in copy.call_args_list] == ["texto", "o que a pessoa copiou"]
+
+
+def test_type_virtual_exige_window() -> None:
+    r = runner.invoke(cli, ["type", "olá", "--virtual"])
+    assert r.exit_code == 1
+    assert "--window" in r.output
+
+
+def test_send_text_um_wm_char_por_unidade_utf16() -> None:
+    from visus.desktop.core import virtual_keyboard
+
+    posted: list[tuple] = []
+    fake = types.SimpleNamespace(PostMessage=lambda *a: posted.append(a))
+    with patch.dict(sys.modules, {"win32gui": fake}), patch.object(virtual_keyboard, "_post_key") as key, patch.object(
+        virtual_keyboard.sys, "platform", "win32"
+    ):
+        assert virtual_keyboard.send_text(7, "{ctrl}aç😀{enter}") is True
+    import win32con
+
+    assert posted[0] == (7, virtual_keyboard._EM_SETSEL, 0, -1)
+    assert [p[2] for p in posted[1:]] == [0xE7, 0xD83D, 0xDE00]
+    assert all(p[1] == win32con.WM_CHAR for p in posted[1:])
+    key.assert_called_once_with(7, win32con.VK_RETURN)
+
+
 @pytest.mark.parametrize(
     ("argv", "target"),
     [

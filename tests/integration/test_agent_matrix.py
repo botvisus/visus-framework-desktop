@@ -267,6 +267,69 @@ def test_imagem_find_all_e_click_occurrence_2_virtual(alvo) -> None:
     assert len(clicks) == 1 and _inside(clicks[0], b2), (clicks, b2)
 
 
+def _field_text(info, expected: str, timeout: float = 4.0) -> str:
+    """The field's CURRENT text. WM_GETTEXT, not GetWindowText: across processes
+    GetWindowText returns the text the control was created with."""
+    import ctypes
+
+    wm_gettext, wm_gettextlength = 0x000D, 0x000E
+    send = ctypes.windll.user32.SendMessageW
+    deadline = time.monotonic() + timeout
+    text = ""
+    while time.monotonic() < deadline:
+        size = send(info["edit_hwnd"], wm_gettextlength, 0, 0) + 1
+        buf = ctypes.create_unicode_buffer(size)
+        send(info["edit_hwnd"], wm_gettext, size, buf)
+        text = buf.value
+        if text == expected:
+            break
+        time.sleep(0.1)
+    return text
+
+
+def _clipboard() -> str | None:
+    import pyperclip
+
+    try:
+        return pyperclip.paste()
+    except Exception:  # noqa: BLE001 -- non-text clipboard
+        return None
+
+
+def test_sendtext_apos_clique_virtual_vai_para_o_campo(alvo) -> None:
+    """--virtual --sendtext: o texto segue o clique para o campo, por mensagens —
+    não vai para a janela em foco (talvez a da pessoa) nem passa pela área de
+    transferência dela."""
+    pytest.importorskip("rapidocr")
+    box = alvo["items"]["campo"]
+    if not _ours((box[0] + box[2] // 2, box[1] + box[3] // 2), alvo["pid"]):
+        pytest.skip("outra janela cobre a janela de teste")
+    clipboard = _clipboard()
+    r = _cli("text", "click", "Digite", "--window", alvo["title"], "--virtual",
+             "--sendtext", "{ctrl}aNovo texto ação", "--ocr", "rapidocr", config_dir=alvo["dir"])
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert _field_text(alvo, "Novo texto ação") == "Novo texto ação"
+    assert _clipboard() == clipboard, "a área de transferência da pessoa mudou"
+
+
+def test_type_virtual_no_campo_focado(alvo) -> None:
+    import win32api
+
+    box = alvo["items"]["campo"]
+    point = (box[0] + box[2] // 2, box[1] + box[3] // 2)
+    if not _ours(point, alvo["pid"]):
+        pytest.skip("outra janela cobre a janela de teste")
+    before = win32api.GetCursorPos()
+    clipboard = _clipboard()
+    focus = _cli("mouse", "click", str(point[0]), str(point[1]), "--virtual", config_dir=alvo["dir"])
+    assert focus.returncode == 0, focus.stdout + focus.stderr
+    r = _cli("type", "{ctrl}aOlá, ação! 😀", "--virtual", "--window", alvo["title"], config_dir=alvo["dir"])
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert _field_text(alvo, "Olá, ação! 😀") == "Olá, ação! 😀"
+    assert win32api.GetCursorPos() == before
+    assert _clipboard() == clipboard
+
+
 def test_display_size_igual_ao_print(tmp_path) -> None:
     size = _cli("display-size", "--json", config_dir=tmp_path)
     shot = _cli("screenshot", "--base64", "--json", config_dir=tmp_path)

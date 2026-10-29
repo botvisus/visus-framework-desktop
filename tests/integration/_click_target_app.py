@@ -41,6 +41,7 @@ BLUE = win32api.RGB(31, 111, 235)
 WORDS = {"salvar1": (110, 70), "salvar2": (360, 68)}
 BUTTONS = {"botao1": (110, 200), "botao2": (360, 199)}
 BUTTON_SIZE = (110, 56)
+FIELD = (110, 290, 380, 50)  # a classic EDIT control, for the typing tests
 
 
 def _font():
@@ -122,15 +123,23 @@ hwnd = win32gui.CreateWindowEx(
     win32con.WS_EX_TOPMOST, atom, title, win32con.WS_OVERLAPPEDWINDOW | win32con.WS_VISIBLE,
     240, 200, 620, 420, 0, 0, wc.hInstance, None,
 )
+edit = win32gui.CreateWindowEx(
+    0, "EDIT", "Digite aqui",
+    win32con.WS_CHILD | win32con.WS_VISIBLE | win32con.WS_BORDER | win32con.ES_AUTOHSCROLL,
+    *FIELD, hwnd, 0, wc.hInstance, None,
+)
+win32gui.SendMessage(edit, win32con.WM_SETFONT, FONT, 1)
 win32gui.UpdateWindow(hwnd)
 
 ox, oy = win32gui.ClientToScreen(hwnd, (0, 0))
 _l, _t, cw, ch = win32gui.GetClientRect(hwnd)
 items = {name: _text_box(hwnd, x, y) for name, (x, y) in WORDS.items()}
 items.update({name: [x, y, *BUTTON_SIZE] for name, (x, y) in BUTTONS.items()})
+items["campo"] = list(FIELD)
 (state / "ready.json").write_text(json.dumps({
     "pid": os.getpid(),
     "title": title,
+    "edit_hwnd": int(edit),
     "canvas": [ox, oy, cw, ch],
     "items": {name: [ox + b[0], oy + b[1], b[2], b[3]] for name, b in items.items()},
 }), encoding="utf-8")

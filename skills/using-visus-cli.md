@@ -66,6 +66,11 @@ Pick the cheapest way that works, in this order:
      button state (Chrome, Electron, Tk, some Store apps) ignore it — then use
      native, or the real mouse. Check the result after a virtual click.
    - Also on `mouse click X Y --virtual` and `smart click --virtual`.
+   - **Typing in the background:** `--sendtext` after a `--virtual` click goes
+     by window messages into the control that took the click (not the focused
+     app, not the clipboard); `type "text" --virtual --window TITLE` types into
+     that window's focused control. Accents and emoji work; chords like Ctrl+S
+     cannot be sent this way.
 
 3. **The real mouse/keyboard** (`mouse`, `type`, `key`) — last, because it
    takes the PC from the person.

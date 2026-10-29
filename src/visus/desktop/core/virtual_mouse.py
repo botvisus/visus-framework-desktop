@@ -53,6 +53,9 @@ class VirtualMouse:
         # alone), "physical", or "virtual-refused" (strict mode: the virtual
         # click failed and the real mouse was deliberately NOT used).
         self.last_click: Optional[str] = None
+        # The window that took the last virtual click: where a following
+        # sendtext goes (by window messages too), never the focused app.
+        self.last_hwnd: Optional[int] = None
 
         # Detect whether the virtual mouse is available on the system
 
@@ -194,6 +197,7 @@ class VirtualMouse:
                 return False
 
             lParam = win32api.MAKELONG(int(client_x), int(client_y))
+            self.last_hwnd = int(hwnd)
 
             # Ensure the window receives the updated position before the click
             win32gui.PostMessage(hwnd, win32con.WM_MOUSEMOVE, 0, lParam)

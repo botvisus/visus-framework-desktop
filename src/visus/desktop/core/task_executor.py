@@ -1566,6 +1566,17 @@ class TaskExecutor:
         Args:
             text_command (str): Text command with possible special commands
         """
+        # After a VIRTUAL click the text must follow it into that window by
+        # window messages too: the real keyboard would type into whatever has
+        # focus -- maybe the person's own window -- and paste via their clipboard.
+        mouse = self.virtual_mouse
+        if mouse.last_click == "virtual" and mouse.last_hwnd:
+            from .virtual_keyboard import send_text
+
+            if not send_text(mouse.last_hwnd, text_command):
+                raise TaskExecutionError("sendtext failed: virtual typing was refused")
+            return
+
         try:
             import pyautogui
             import pyperclip
@@ -1609,9 +1620,19 @@ class TaskExecutor:
             # Type the remaining text using the clipboard for better compatibility
             if text_to_write:
                 logger.info(f"Pasting text: '{text_to_write}'")
+                try:
+                    previous = pyperclip.paste()
+                except Exception:  # noqa: BLE001 -- empty / non-text clipboard
+                    previous = None
                 pyperclip.copy(text_to_write)
                 pyautogui.hotkey("ctrl", "v")
                 time.sleep(0.5)
+                # the paste borrowed the person's clipboard: give it back
+                if previous is not None:
+                    try:
+                        pyperclip.copy(previous)
+                    except Exception:  # noqa: BLE001
+                        pass
 
         except Exception as e:
             logger.error(f"Error processing sendtext: {e}")
