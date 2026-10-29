@@ -196,36 +196,118 @@ def native_dump_tree(
         top = _connect_top(window, pid, connect_timeout, backend)
         if top is None:
             return []
-        nodes: list[dict] = []
-
-        def _walk(element, depth):
-            if depth > max_depth:
-                return
-            try:
-                children = element.children()
-            except Exception:
-                return
-            for child in children:
-                try:
-                    info = child.element_info
-                    nodes.append(
-                        {
-                            "depth": depth,
-                            "control_type": getattr(info, "control_type", "") or "",
-                            "title": (info.name or ""),
-                            "auto_id": getattr(info, "automation_id", "") or "",
-                            "rect": _rect_to_box(child),
-                        }
-                    )
-                except Exception:
-                    continue
-                _walk(child, depth + 1)
-
-        _walk(top, 1)
-        return nodes
+        return _walk_tree(top, max_depth)
 
     result = _run_with_timeout(_job, timeout)
     return [] if result is _TIMEOUT_SENTINEL or result is None else result
+
+
+def _walk_tree(top, max_depth: int, max_nodes: int = 5000) -> list[dict]:
+    """Pre-order walk of ``children()`` — the same order pywinauto's
+    ``descendants()`` uses, so a ``found_index`` counted here selects the same
+    control later. ``max_nodes`` stops a runaway walk on huge trees."""
+    nodes: list[dict] = []
+
+    def _walk(element, depth):
+        if depth > max_depth or len(nodes) >= max_nodes:
+            return
+        try:
+            children = element.children()
+        except Exception:
+            return
+        for child in children:
+            if len(nodes) >= max_nodes:
+                return
+            try:
+                info = child.element_info
+                nodes.append(
+                    {
+                        "depth": depth,
+                        "control_type": getattr(info, "control_type", "") or "",
+                        "title": (info.name or ""),
+                        "auto_id": getattr(info, "automation_id", "") or "",
+                        "rect": _rect_to_box(child),
+                    }
+                )
+            except Exception:
+                continue
+            _walk(child, depth + 1)
+
+    _walk(top, 1)
+    return nodes
+
+
+# What an agent can act on. Text, panes, groups and the like are structure: they
+# would cost tokens in every snapshot and give nothing to click.
+ACTIONABLE_CONTROL_TYPES = frozenset({
+    "Button", "SplitButton", "Edit", "Document", "CheckBox", "RadioButton",
+    "ComboBox", "MenuItem", "ListItem", "TabItem", "Hyperlink", "TreeItem",
+    "DataItem", "Spinner", "Slider",
+})
+
+
+def select_actionable(nodes: list[dict]) -> list[dict]:
+    """Number the actionable controls of a walked tree, ready to be acted on by index.
+
+    Each item carries the exact selector that finds it again: title + control_type,
+    plus auto_id when it has one, plus ``found_index`` — counted over the SAME
+    criteria that selector will use (an empty auto_id is not a criterion), so two
+    "Close" buttons become found_index 0 and 1 and never get swapped.
+    """
+    items: list[dict] = []
+    for pos, node in enumerate(nodes):
+        ctype = node.get("control_type") or ""
+        if ctype not in ACTIONABLE_CONTROL_TYPES:
+            continue
+        title = node.get("title") or ""
+        auto_id = node.get("auto_id") or ""
+        found_index = sum(
+            1
+            for prev in nodes[:pos]
+            if (prev.get("control_type") or "") == ctype
+            and (prev.get("title") or "") == title
+            and (not auto_id or (prev.get("auto_id") or "") == auto_id)
+        )
+        items.append(
+            {
+                "index": len(items),
+                "control_type": ctype,
+                "title": title,
+                "auto_id": auto_id,
+                "found_index": found_index,
+                "rect": node.get("rect"),
+            }
+        )
+    return items
+
+
+def native_snapshot_nodes(
+    window=None,
+    pid=None,
+    *,
+    max_depth: int = 8,
+    timeout: float = 10.0,
+    connect_timeout: float = 2.0,
+    backend: str = "uia",
+) -> tuple[str, list[dict]]:
+    """``(window title, walked nodes)`` of the target window, deeper than
+    ``native_dump_tree`` (actionable controls sit several levels down in modern
+    apps). ``("", [])`` when pywinauto is missing, no window matches, or it times out."""
+    if not _ensure_pywinauto():
+        return "", []
+
+    def _job():
+        top = _connect_top(window, pid, connect_timeout, backend)
+        if top is None:
+            return "", []
+        try:
+            title = top.window_text() or ""
+        except Exception:
+            title = ""
+        return title, _walk_tree(top, max_depth)
+
+    result = _run_with_timeout(_job, timeout)
+    return ("", []) if result is _TIMEOUT_SENTINEL or result is None else result
 
 
 # ---------------------------------------------------------------------------

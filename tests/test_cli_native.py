@@ -76,7 +76,8 @@ class TestNativeText:
                 cli, ["native", "set-text", "hello", "--auto-id", "edit1"]
             )
         assert result.exit_code == 0
-        assert m.call_args.args[0] == "hello"
+        # `text` is keyword-only in native_set_text: the CLI always passes it by name
+        assert m.call_args.kwargs["text"] == "hello"
         assert m.call_args.kwargs["auto_id"] == "edit1"
 
     def test_get_text(self):
