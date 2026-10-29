@@ -86,6 +86,13 @@ def snapshot(window, pid, max_depth, max_items, timeout, backend, json_mode):
     title, nodes = native_rpa.native_snapshot_nodes(
         window=window, pid=pid, max_depth=max_depth, timeout=timeout, backend=backend
     )
+    if title is None:
+        target = f"window {window!r}" if window else (f"pid {pid}" if pid else "foreground window")
+        fail(
+            f"no {target} answered (no window matches, or it did not respond within "
+            f"{timeout:g}s) -- `window list` shows the open ones",
+            json_mode=json_mode,
+        )
     items = native_rpa.select_actionable(nodes)
     snap = {"window": window or title, "pid": pid, "backend": backend, "title": title, "items": items}
     path = _snapshot_path()

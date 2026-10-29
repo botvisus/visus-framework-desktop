@@ -51,6 +51,45 @@ def find_window(title_substring: str) -> int | None:
     return matches[0] if matches else None
 
 
+def window_region(title_substring: str) -> tuple[int, int, int, int] | None:
+    """``(x, y, w, h)`` of the window whose title contains ``title_substring``:
+    what an OCR / image search uses as its region with ``--window`` -- reading
+    one window instead of the whole screen is several times faster.
+
+    The visible frame (DWM's extended frame bounds), not ``GetWindowRect``,
+    which on Windows 10/11 includes invisible resize borders (-8,-8 on a
+    maximized window). ``None`` when no visible window matches or it is
+    minimized: OCR and image matching read pixels on screen, so a minimized
+    window has nothing to read.
+    """
+    if sys.platform != "win32":
+        return None
+    import ctypes
+    from ctypes import wintypes
+
+    import win32gui
+
+    hwnd = find_window(title_substring)
+    if hwnd is None or win32gui.IsIconic(hwnd):
+        return None
+    rect = wintypes.RECT()
+    dwmwa_extended_frame_bounds = 9
+    try:
+        hr = ctypes.windll.dwmapi.DwmGetWindowAttribute(
+            wintypes.HWND(hwnd), dwmwa_extended_frame_bounds,
+            ctypes.byref(rect), ctypes.sizeof(rect),
+        )
+    except (AttributeError, OSError):
+        hr = -1
+    if hr != 0:
+        left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+    else:
+        left, top, right, bottom = rect.left, rect.top, rect.right, rect.bottom
+    if right <= left or bottom <= top:
+        return None
+    return (int(left), int(top), int(right - left), int(bottom - top))
+
+
 # ---------------------------------------------------------------------------
 # Fast window-state primitive (win32 + psutil only -- no UIA, no OCR)
 #

@@ -49,6 +49,10 @@ class VirtualMouse:
         self.system = platform.system().lower()
 
         self.original_cursor_pos = None
+        # How the last click() went: "virtual" (window messages, cursor left
+        # alone), "physical", or "virtual-refused" (strict mode: the virtual
+        # click failed and the real mouse was deliberately NOT used).
+        self.last_click: Optional[str] = None
 
         # Detect whether the virtual mouse is available on the system
 
@@ -342,9 +346,18 @@ class VirtualMouse:
 
             x, y = center_x, center_y
 
+        # Strict: the caller promised the person their mouse stays theirs, so a
+        # failed virtual click must fail -- never quietly move the real cursor.
+        strict = bool(should_use_virtual and self.config.get("virtual_mouse_strict", False))
+
         # If it is only a movement, no virtual click is needed
 
         if button == "move_to":
+            if strict:
+                logger.warning("REFUSED: move_to needs the real cursor (virtual_mouse_strict)")
+                self.last_click = "virtual-refused"
+                return False
+            self.last_click = "physical"
             return self._move_to_physical(x, y)
 
         # Try the virtual mouse if available and configured
@@ -359,7 +372,7 @@ class VirtualMouse:
                     logger.info(
                         f"SUCCESS: Virtual click performed successfully at ({x}, {y})"
                     )
-
+                    self.last_click = "virtual"
                     return True
 
                 else:
@@ -374,7 +387,7 @@ class VirtualMouse:
                     logger.info(
                         f"SUCCESS: Linux virtual click performed successfully at ({x}, {y})"
                     )
-
+                    self.last_click = "virtual"
                     return True
 
                 else:
@@ -389,7 +402,7 @@ class VirtualMouse:
                     logger.info(
                         f"SUCCESS: macOS virtual click performed successfully at ({x}, {y})"
                     )
-
+                    self.last_click = "virtual"
                     return True
 
                 else:
@@ -399,6 +412,14 @@ class VirtualMouse:
 
         # Fallback to the physical mouse
 
+        if strict:
+            logger.warning(
+                f"REFUSED: virtual click at ({x}, {y}) failed and virtual_mouse_strict "
+                "forbids the physical fallback"
+            )
+            self.last_click = "virtual-refused"
+            return False
+
         if should_use_virtual:
             logger.warning(
                 f"FALLBACK: use_virtual_mouse=True but using the physical mouse at ({x}, {y})"
@@ -407,6 +428,7 @@ class VirtualMouse:
         else:
             logger.info(f"Performing PHYSICAL click at ({x}, {y}) with button {button}")
 
+        self.last_click = "physical"
         return self._click_physical(x, y, button)
 
     def _move_to_physical(self, x: int, y: int) -> bool:

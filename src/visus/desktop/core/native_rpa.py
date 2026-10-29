@@ -292,14 +292,15 @@ def native_snapshot_nodes(
 ) -> tuple[str, list[dict]]:
     """``(window title, walked nodes)`` of the target window, deeper than
     ``native_dump_tree`` (actionable controls sit several levels down in modern
-    apps). ``("", [])`` when pywinauto is missing, no window matches, or it times out."""
+    apps). ``(None, [])`` when pywinauto is missing, no window matches, or it
+    times out -- so "no such window" never reads as "a window with no controls"."""
     if not _ensure_pywinauto():
-        return "", []
+        return None, []
 
     def _job():
         top = _connect_top(window, pid, connect_timeout, backend)
         if top is None:
-            return "", []
+            return None, []
         try:
             title = top.window_text() or ""
         except Exception:
@@ -307,7 +308,7 @@ def native_snapshot_nodes(
         return title, _walk_tree(top, max_depth)
 
     result = _run_with_timeout(_job, timeout)
-    return ("", []) if result is _TIMEOUT_SENTINEL or result is None else result
+    return (None, []) if result is _TIMEOUT_SENTINEL or result is None else result
 
 
 # ---------------------------------------------------------------------------

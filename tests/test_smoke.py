@@ -21,8 +21,11 @@ requires_tesseract = pytest.mark.skipif(
 
 
 def test_version():
-    """The package exposes the expected version string."""
-    assert vd.__version__ == "0.1.0"
+    """``__version__`` matches the installed distribution (pyproject's version),
+    so a version bump can't leave the two disagreeing."""
+    from importlib.metadata import version
+
+    assert vd.__version__ == version("visus-desktop")
 
 
 def test_visusbot_is_botvision_alias():

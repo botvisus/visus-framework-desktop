@@ -1145,6 +1145,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         wait_until_disappears=False,
         wait_timeout=None,
         word_box=False,
+        enumerate_all=False,
     ):
         """
         Find text on screen using advanced OCR with all features.
@@ -1155,6 +1156,10 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             filter_type (str): Filter type ("numbers", "letters", "both") - equivalent to char_type
             confidence_threshold (float): Minimum confidence threshold
             occurrence (int): Which occurrence to look for (1 = first, 2 = second, etc.)
+            enumerate_all (bool): Count ``occurrence`` over the full,
+                reading-order list (what ``find_all_text`` / ``find-all`` prints)
+                even when it is 1, so the Nth here is always the #N there.
+                False keeps the fast early-exit search for occurrence 1.
             max_attempts (int): Maximum number of attempts if backtrack=True
             backtrack (bool): Whether to try multiple times with adjustments
             wait_until_found (bool): 🆕 v1.3.0+ - Waits for the text to appear automatically
@@ -1171,6 +1176,9 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         """
         import time
 
+        if confidence_threshold is None:  # same default as find_all_text
+            confidence_threshold = self.config.confidence_threshold
+
         # If there are wait parameters, build a task and use the executor with wait
         if wait_until_found or wait_until_disappears:
             temp_task = {
@@ -1179,6 +1187,8 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
                 "char_type": filter_type,
                 "confidence_threshold": confidence_threshold,
                 "occurrence": occurrence,
+                "enumerate_all": enumerate_all,
+                "word_box": word_box,
                 "wait_until_found": wait_until_found,
                 "wait_until_disappears": wait_until_disappears,
                 "wait_timeout": wait_timeout,
@@ -1217,7 +1227,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
                 text, occurrence, filter_type, backend, region,
             )
 
-            if occurrence > 1 or word_box:
+            if occurrence > 1 or word_box or enumerate_all:
                 # ``ocr_engine.find_text`` early-exits with only the first
                 # high-confidence match (and only at line granularity), so it
                 # can't serve the Nth occurrence nor a word-level box. Enumerate
@@ -1408,6 +1418,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         wait_until_disappears=False,
         wait_timeout=None,
         word_box=False,
+        enumerate_all=False,
     ):
         """
         Find and click on text with advanced features.
@@ -1423,6 +1434,9 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
                 • "double" or "double left" - Double left click
                 • "move_to" - Just moves the mouse without clicking
             occurrence (int): Which occurrence to click (1=first)
+            enumerate_all (bool): Count ``occurrence`` over the full,
+                reading-order list (what ``find-all`` prints) even when it
+                is 1, so the Nth here is always the #N there.
             backtrack (bool): Whether to use real backtracking between individual methods
             max_attempts (int): Maximum number of attempts
             sendtext (str, optional): Text to type after the click
@@ -1459,6 +1473,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
                 wait_until_disappears,
                 wait_timeout,
                 word_box,
+                enumerate_all,
                 backtrack=backtrack,
             )
 
@@ -1478,6 +1493,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             wait_until_disappears,
             wait_timeout,
             word_box,
+            enumerate_all,
         )
 
     def _click_text_internal(
@@ -1496,6 +1512,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         wait_until_disappears=False,
         wait_timeout=None,
         word_box=False,
+        enumerate_all=False,
     ):
         """Internal version of click_text without backtrack (for use by the backtrack system)."""
         # Use the global configuration if not specified
@@ -1526,6 +1543,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
                     wait_until_disappears=wait_until_disappears,
                     wait_timeout=wait_timeout,
                     word_box=word_box,
+                    enumerate_all=enumerate_all,
                 )
 
                 if location:
@@ -1542,7 +1560,9 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
                         return True
                     except Exception as e:
                         logger.error(f"Error clicking on text: {e}")
-                        if attempts >= max_attempts:
+                        if attempts >= max_attempts or self._virtual_click_refused():
+                            # a strict virtual mouse refusing is final: another
+                            # OCR pass would find the same spot and be refused again
                             return False
                         time.sleep(0.5)
                 else:
@@ -1573,6 +1593,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         wait_until_disappears=False,
         wait_timeout=None,
         occurrence=1,
+        enumerate_all=False,
     ):
         """Internal version of click_image without backtrack (for use by the backtrack system)."""
         # Use the global configuration if not specified
@@ -1592,6 +1613,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             False,
             wait_timeout,
             occurrence=occurrence,
+            enumerate_all=enumerate_all,
         )  # backtrack=False for find_image
 
         if location:
@@ -1781,6 +1803,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         wait_timeout=None,
         scales=None,
         occurrence=1,
+        enumerate_all=False,
     ):
         """
         Find an image on screen with all the advanced features.
@@ -1810,8 +1833,9 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         # occurrence > 1: a single-best match (the default find path) can't serve
         # the 2nd/3rd copy. Enumerate every match and pick the Nth in reading
         # order (top-to-bottom, left-to-right) -- mirrors click_text(occurrence=N).
-        if occurrence and occurrence > 1:
+        if occurrence and (occurrence > 1 or enumerate_all):
             from .core.locate import find_all as _find_all
+            from .core.reading_order import reading_order
 
             # Honor `specific` exactly like the single-match path below: restrict
             # to `region` only when specific=True. With specific=False (search the
@@ -1819,12 +1843,19 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             # `region`, so restricting find_all to it would only ever see 1 match
             # and the 2nd/3rd copies (outside that box) could never be selected.
             search_region = tuple(region) if (specific and region) else None
-            boxes = _find_all(
-                image_path,
-                region=search_region,
-                confidence=confidence,
-            )
-            boxes = sorted(boxes, key=lambda b: (b[1], b[0]))
+            # Same numbering as `image find-all`; and honor wait_until_found here
+            # too (this branch used to return before the wait handling below).
+            deadline = None
+            if wait_until_found:
+                timeout = wait_timeout if wait_timeout is not None else self.config.get("wait_timeout", 30)
+                deadline = time.monotonic() + float(timeout)
+            while True:
+                boxes = reading_order(
+                    _find_all(image_path, region=search_region, confidence=confidence)
+                )
+                if len(boxes) >= occurrence or deadline is None or time.monotonic() >= deadline:
+                    break
+                time.sleep(0.5)
             logger.info(
                 "Image '%s' found %d occurrence(s)", image_path, len(boxes)
             )
@@ -1955,6 +1986,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         wait_until_disappears=False,
         wait_timeout=None,
         occurrence=1,
+        enumerate_all=False,
     ):
         """
         Find and click on an image with all the advanced features.
@@ -2006,6 +2038,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
                 wait_until_disappears,
                 wait_timeout,
                 occurrence,
+                enumerate_all,
                 backtrack=backtrack,
             )
 
@@ -2024,7 +2057,15 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             wait_until_disappears,
             wait_timeout,
             occurrence,
+            enumerate_all,
         )
+
+    def _virtual_click_refused(self):
+        """True when the last click was refused by a strict virtual mouse
+        (``virtual_mouse_strict``): the window would not take a synthetic click
+        and the real cursor was, on purpose, left alone."""
+        mouse = getattr(getattr(self, "executor", None), "virtual_mouse", None)
+        return getattr(mouse, "last_click", None) == "virtual-refused"
 
     @_records_in_session("click")
     def click_at(self, location, mouse_button="left", delay=0, show_overlay=None):

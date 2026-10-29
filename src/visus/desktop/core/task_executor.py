@@ -909,11 +909,14 @@ class TaskExecutor:
 
         # occurrence > 1: the early-exit find_text returns only the first/best
         # match, so it can't serve the 2nd/3rd. Enumerate ALL matches (deduped,
-        # reading order) and pick the Nth.
+        # reading order) and pick the Nth. ``enumerate_all`` does the same for
+        # the 1st (so it is find-all's #1), and ``word_box`` needs the full scan.
         occurrence = task.get("occurrence", 1)
-        if occurrence and occurrence > 1:
+        word_box = bool(task.get("word_box"))
+        if occurrence and (occurrence > 1 or task.get("enumerate_all") or word_box):
             matches = self.ocr_engine.find_all_text(
-                region_img, target_text, filter_type, early_confidence_threshold
+                region_img, target_text, filter_type, early_confidence_threshold,
+                word_box=word_box,
             )
             if len(matches) >= occurrence:
                 box_rel = matches[occurrence - 1][1]

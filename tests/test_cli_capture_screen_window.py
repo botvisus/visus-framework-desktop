@@ -63,10 +63,14 @@ class TestCapture:
 
 class TestScreenshot:
     def test_screenshot(self, tmp_path):
-        out = {"path": str(tmp_path / "s.png"), "width": 100, "height": 50}
+        # save_screenshot returns the written path; the CLI reads the size back
+        from PIL import Image
+
+        out = str(tmp_path / "s.png")
+        Image.new("RGB", (100, 50)).save(out)
         with patch("visus.desktop.core.screen.save_screenshot", return_value=out) as m:
             result = runner.invoke(
-                cli, ["screenshot", out["path"], "--region", "0,0,100,50", "--json"]
+                cli, ["screenshot", out, "--region", "0,0,100,50", "--json"]
             )
         assert result.exit_code == 0
         assert json.loads(result.output)["width"] == 100

@@ -4,7 +4,17 @@ from __future__ import annotations
 
 import click
 
-from .._common import json_option, region_cb
+from .._common import (
+    click_human,
+    json_option,
+    occurrence_args,
+    occurrence_option,
+    region_cb,
+    search_region,
+    virtual_option,
+    virtual_overrides,
+    window_search_option,
+)
 from .._output import done
 
 
@@ -65,11 +75,13 @@ def _robustness_options(f):
     return f
 
 
-def _make_bot(ocr_backend):
+def _make_bot(ocr_backend, **overrides):
     """Build a VisusBot: persisted config + an optional --ocr override."""
     from .._common import build_bot
 
-    return build_bot(ocr_backend=ocr_backend)
+    if ocr_backend is not None:
+        overrides["ocr_backend"] = ocr_backend
+    return build_bot(**overrides)
 
 
 @text.command(name="find", help="Find on-screen text via OCR; print its box (no click).")
@@ -77,26 +89,28 @@ def _make_bot(ocr_backend):
 @click.option("--region", callback=region_cb, help="Search region 'X,Y,W,H' (else whole screen).")
 @_filter_option
 @click.option(
-    "--confidence-threshold", "confidence_threshold", type=float, default=75.0,
-    show_default=True, help="OCR confidence 0-100.",
+    "--confidence-threshold", "confidence_threshold", type=float, default=None,
+    help="OCR confidence 0-100 (defaults to the config value, like find-all).",
 )
-@click.option("--occurrence", type=int, default=1, show_default=True, help="Nth match (1-based).")
+@occurrence_option
+@window_search_option
 @_word_option
 @_robustness_options
 @_ocr_option
 @json_option
 def find(
-    query, region, filter_type, confidence_threshold, occurrence, word_box,
+    query, region, filter_type, confidence_threshold, occurrence, window_title, word_box,
     max_attempts, backtrack, wait_until_found, wait_until_disappears, wait_timeout,
     ocr_backend, json_mode,
 ):
+    region_arg = search_region(region, window_title, json_mode)
     bot = _make_bot(ocr_backend)
     box = bot.find_text(
         query,
-        region=tuple(region) if region else None,
+        region=region_arg,
         filter_type=filter_type,
         confidence_threshold=confidence_threshold,
-        occurrence=occurrence,
+        **occurrence_args(occurrence),
         max_attempts=max_attempts,
         backtrack=backtrack,
         wait_until_found=wait_until_found,
@@ -117,10 +131,11 @@ def find(
 @click.option("--region", callback=region_cb, help="Search region 'X,Y,W,H' (else whole screen).")
 @_filter_option
 @click.option(
-    "--confidence-threshold", "confidence_threshold", type=float, default=75.0,
-    show_default=True, help="OCR confidence 0-100.",
+    "--confidence-threshold", "confidence_threshold", type=float, default=None,
+    help="OCR confidence 0-100 (defaults to the config value, like find-all).",
 )
-@click.option("--occurrence", type=int, default=1, show_default=True, help="Nth match (1-based).")
+@occurrence_option
+@window_search_option
 @click.option(
     "--button", "mouse_button", default="left", show_default=True,
     type=click.Choice(["left", "right", "double", "move_to"]),
@@ -130,21 +145,23 @@ def find(
 @_word_option
 @_robustness_options
 @_ocr_option
+@virtual_option
 @json_option
 def click_cmd(
-    query, region, filter_type, confidence_threshold, occurrence,
+    query, region, filter_type, confidence_threshold, occurrence, window_title,
     mouse_button, delay, sendtext, word_box,
     max_attempts, backtrack, wait_until_found, wait_until_disappears, wait_timeout,
-    ocr_backend, json_mode,
+    ocr_backend, virtual, json_mode,
 ):
-    bot = _make_bot(ocr_backend)
+    region_arg = search_region(region, window_title, json_mode)
+    bot = _make_bot(ocr_backend, **virtual_overrides(virtual))
     ok = bool(
         bot.click_text(
             query,
-            region=tuple(region) if region else None,
+            region=region_arg,
             filter_type=filter_type,
             confidence_threshold=confidence_threshold,
-            occurrence=occurrence,
+            **occurrence_args(occurrence),
             mouse_button=mouse_button,
             delay=delay,
             sendtext=sendtext,
@@ -156,23 +173,25 @@ def click_cmd(
             word_box=word_box,
         )
     )
-    done(ok, json_mode=json_mode, ok=ok, human=("clicked" if ok else f"'{query}' not found"))
+    done(ok, json_mode=json_mode, ok=ok, human=click_human(bot, ok, "clicked", f"'{query}' not clicked (not found?)"))
 
 
 @text.command(
     name="find-all",
-    help="List EVERY on-screen occurrence of TEXT and overlay each one, numbered.",
+    help="List EVERY on-screen occurrence of TEXT, numbered (#N = --occurrence N).",
 )
 @click.argument("query")
 @click.option("--region", callback=region_cb, help="Search region 'X,Y,W,H' (else whole screen).")
+@window_search_option
 @_filter_option
 @click.option(
     "--confidence-threshold", "confidence_threshold", type=float, default=None,
     help="Minimum OCR confidence 0-100 (defaults to the config value).",
 )
 @click.option(
-    "--overlay/--no-overlay", "overlay", default=True, show_default=True,
-    help="Also paint a numbered overlay on screen (matching the printed #N).",
+    "--overlay/--no-overlay", "overlay", default=None,
+    help="Also paint a numbered overlay on screen (matching the printed #N). "
+         "Default: the config show_overlay (on unless turned off).",
 )
 @click.option("--color", default="red", show_default=True, help="Overlay color.")
 @click.option(
@@ -184,11 +203,15 @@ def click_cmd(
 @_ocr_option
 @json_option
 def find_all(
-    query, region, filter_type, confidence_threshold,
+    query, region, window_title, filter_type, confidence_threshold,
     overlay, color, duration, width, word_box, ocr_backend, json_mode,
 ):
+    region_arg = search_region(region, window_title, json_mode)
     bot = _make_bot(ocr_backend)
-    region_arg = tuple(region) if region else None
+    if overlay is None:
+        # painting holds the process for --duration: an agent turns it off once,
+        # in the config, instead of passing --no-overlay on every call
+        overlay = bool(bot.config.show_overlay)
     if overlay:
         # Draws the numbered overlay AND returns the same matches we list, so
         # the printed #N lines up with the number painted on screen.
@@ -240,6 +263,7 @@ def find_all(
 @text.command(name="show", help="Overlay every occurrence of TEXT on screen, numbered.")
 @click.argument("query")
 @click.option("--region", callback=region_cb, help="Search region 'X,Y,W,H' (else whole screen).")
+@window_search_option
 @_filter_option
 @click.option(
     "--confidence-threshold", "confidence_threshold", type=float, default=None,
@@ -255,13 +279,14 @@ def find_all(
 @_ocr_option
 @json_option
 def show(
-    query, region, filter_type, confidence_threshold, color, duration, width,
+    query, region, window_title, filter_type, confidence_threshold, color, duration, width,
     word_box, ocr_backend, json_mode,
 ):
+    region_arg = search_region(region, window_title, json_mode)
     bot = _make_bot(ocr_backend)
     matches = bot.show_text_occurrences(
         query,
-        region=tuple(region) if region else None,
+        region=region_arg,
         filter_type=filter_type,
         confidence_threshold=confidence_threshold,
         color=color,

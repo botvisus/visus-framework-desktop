@@ -4,7 +4,15 @@ from __future__ import annotations
 
 import click
 
-from .._common import build_bot, dry_run_option, json_option, smart_options
+from .._common import (
+    build_bot,
+    click_human,
+    dry_run_option,
+    json_option,
+    smart_options,
+    virtual_option,
+    virtual_overrides,
+)
 from .._output import done
 
 
@@ -46,12 +54,13 @@ def find(
 )
 @click.option("--retries", type=int, default=0, show_default=True)
 @click.option("--delay", type=float, default=0.3, show_default=True)
+@virtual_option
 @dry_run_option
 @json_option
 def click_cmd(
     query, image, coordinates, window, pid, control_type, auto_id,
     search_region, confidence, confidence_threshold, order, timeout,
-    button, retries, delay, dry_run, json_mode,
+    button, retries, delay, virtual, dry_run, json_mode,
 ):
     from visus.desktop.core.smart import smart_click, smart_find
 
@@ -73,14 +82,17 @@ def click_cmd(
         done(result, json_mode=json_mode, ok=ok, human=human)
         return
 
+    # native clicks through UIA (no mouse at all); --virtual covers the
+    # image / OCR / coordinate steps of the cascade
+    bot = build_bot(**virtual_overrides(virtual))
     result = smart_click(
         query, image=image, coordinates=coordinates, window=window, pid=pid,
         control_type=control_type, auto_id=auto_id, search_region=search_region,
         button=button, confidence=confidence,
         confidence_threshold=confidence_threshold, order=order, timeout=timeout,
-        retries=retries, delay=delay, bot=build_bot(),
+        retries=retries, delay=delay, bot=bot,
     )
     ok = bool(result.get("clicked"))
     tried = ", ".join(result.get("tried") or [])
-    human = f"clicked via {result.get('method')}" if ok else f"not clicked (tried: {tried})"
+    human = click_human(bot, ok, f"clicked via {result.get('method')}", f"not clicked (tried: {tried})")
     done(result, json_mode=json_mode, ok=ok, human=human)

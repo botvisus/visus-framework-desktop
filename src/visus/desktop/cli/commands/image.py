@@ -4,7 +4,18 @@ from __future__ import annotations
 
 import click
 
-from .._common import build_bot, json_option, region_cb
+from .._common import (
+    build_bot,
+    click_human,
+    json_option,
+    occurrence_args,
+    occurrence_option,
+    region_cb,
+    search_region,
+    virtual_option,
+    virtual_overrides,
+    window_search_option,
+)
 from .._output import done
 
 
@@ -48,21 +59,19 @@ def _robustness_options(f):
     help="--specific: search the region; --no-specific: whole screen + scale variations.",
 )
 @click.option("--backtrack", is_flag=True, help="Retry with adjustments on a miss.")
-@click.option(
-    "--occurrence", type=int, default=1, show_default=True,
-    help="Which match (1-based, reading order) when the template repeats.",
-)
+@occurrence_option
+@window_search_option
 @_robustness_options
 @json_option
 def find(
-    image_path, region, confidence, specific, backtrack, occurrence,
+    image_path, region, confidence, specific, backtrack, occurrence, window_title,
     max_attempts, wait_until_found, wait_until_disappears, wait_timeout, json_mode,
 ):
     box = build_bot().find_image(
-        image_path, region=tuple(region) if region else None, confidence=confidence,
+        image_path, region=search_region(region, window_title, json_mode), confidence=confidence,
         specific=specific, backtrack=backtrack, max_attempts=max_attempts,
         wait_until_found=wait_until_found, wait_until_disappears=wait_until_disappears,
-        wait_timeout=wait_timeout, occurrence=occurrence,
+        wait_timeout=wait_timeout, **occurrence_args(occurrence),
     )
     if box is None:
         done(None, json_mode=json_mode, ok=False, human="not on screen")
@@ -86,38 +95,44 @@ def find(
 @click.option("--delay", type=float, default=0, show_default=True, help="Pause after the click (s).")
 @click.option("--sendtext", default=None, help="Type this string right after clicking.")
 @click.option("--backtrack", is_flag=True, help="Retry earlier step(s) on a miss.")
-@click.option(
-    "--occurrence", type=int, default=1, show_default=True,
-    help="Which match (1-based, reading order) when the template repeats.",
-)
+@occurrence_option
+@window_search_option
 @_robustness_options
+@virtual_option
 @json_option
 def click_cmd(
     image_path, region, confidence, specific, mouse_button, delay, sendtext,
-    backtrack, occurrence, max_attempts, wait_until_found, wait_until_disappears,
-    wait_timeout, json_mode,
+    backtrack, occurrence, window_title, max_attempts, wait_until_found,
+    wait_until_disappears, wait_timeout, virtual, json_mode,
 ):
+    bot = build_bot(**virtual_overrides(virtual))
     ok = bool(
-        build_bot().click_image(
-            image_path, region=tuple(region) if region else None,
+        bot.click_image(
+            image_path, region=search_region(region, window_title, json_mode),
             confidence=confidence, specific=specific, mouse_button=mouse_button,
-            delay=delay, sendtext=sendtext, backtrack=backtrack, occurrence=occurrence,
+            delay=delay, sendtext=sendtext, backtrack=backtrack,
             max_attempts=max_attempts, wait_until_found=wait_until_found,
             wait_until_disappears=wait_until_disappears, wait_timeout=wait_timeout,
+            **occurrence_args(occurrence),
         )
     )
-    done(ok, json_mode=json_mode, ok=ok, human=("clicked" if ok else "not on screen"))
+    done(ok, json_mode=json_mode, ok=ok, human=click_human(bot, ok, "clicked", "not clicked (not on screen?)"))
 
 
-@image.command(name="find-all", help="Find EVERY occurrence of a template PNG (no click).")
+@image.command(name="find-all", help="Find EVERY occurrence of a template PNG, numbered (no click).")
 @click.argument("image_path")
 @click.option("--region", callback=region_cb, help="Search region 'X,Y,W,H' (else whole screen).")
+@window_search_option
 @click.option("--confidence", type=float, default=0.9, show_default=True, help="Match confidence 0-1.")
 @json_option
-def find_all_cmd(image_path, region, confidence, json_mode):
+def find_all_cmd(image_path, region, window_title, confidence, json_mode):
     from visus.desktop import find_all as _find_all
+    from visus.desktop.core.reading_order import reading_order
 
-    boxes = _find_all(image_path, region=tuple(region) if region else None, confidence=confidence)
+    # #N here is `image click --occurrence N`: both number in reading order
+    boxes = reading_order(
+        _find_all(image_path, region=search_region(region, window_title, json_mode), confidence=confidence)
+    )
     payload = [
         {"occurrence": i, "x": b[0], "y": b[1], "width": b[2], "height": b[3]}
         for i, b in enumerate(boxes, start=1)
@@ -184,13 +199,14 @@ def find_multiple_cmd(image_paths, region, confidence, json_mode):
     "--wait-timeout", "wait_timeout", type=int, default=None,
     help="Seconds for the wait options (default: config wait_timeout).",
 )
+@virtual_option
 @json_option
 def relative(
     anchor_image, target_image, max_distance, confidence, target_region,
     do_click, mouse_button, delay, sendtext, backtrack, max_attempts,
-    wait_until_found, wait_until_disappears, wait_timeout, json_mode,
+    wait_until_found, wait_until_disappears, wait_timeout, virtual, json_mode,
 ):
-    bot = build_bot()
+    bot = build_bot(**virtual_overrides(virtual))
     tregion = tuple(target_region) if target_region else None
     if do_click:
         ok = bool(
@@ -203,7 +219,7 @@ def relative(
                 wait_until_disappears=wait_until_disappears, wait_timeout=wait_timeout,
             )
         )
-        done(ok, json_mode=json_mode, ok=ok, human=("clicked" if ok else "target not found"))
+        done(ok, json_mode=json_mode, ok=ok, human=click_human(bot, ok, "clicked", "target not clicked"))
         return
     box = bot.find_relative_image(
         anchor_image, target_image, max_distance=max_distance,

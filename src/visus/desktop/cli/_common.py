@@ -61,8 +61,93 @@ def build_bot(**overrides):
     from visus.desktop import VisusBot
 
     cfg = load_persisted_config()
+    # A CLI's stderr is read by people and AI agents alike: the library's INFO
+    # chatter ("OCR search: ...") is opt-in (`config --set log_level=INFO --save`).
+    cfg.setdefault("log_level", "WARNING")
     cfg.update({k: v for k, v in overrides.items() if v is not None})
-    return VisusBot(config=cfg) if cfg else VisusBot()
+    return VisusBot(config=cfg)
+
+
+# --- background clicks: the virtual mouse --------------------------------------
+
+VIRTUAL_REFUSED_HINT = (
+    "the window did not take the virtual click (it must be visible at that point; "
+    "some apps -- Chrome, Electron, Store apps -- ignore synthetic clicks). Use "
+    "`native snapshot` + `native click N` (no mouse at all), or drop --virtual for "
+    "the real mouse"
+)
+
+
+def virtual_option(f):
+    return click.option(
+        "--virtual", is_flag=True,
+        help="Click with the virtual mouse (window messages): the real cursor does "
+             "not move, so the person keeps using the PC. Fails instead of quietly "
+             "falling back to the real mouse.",
+    )(f)
+
+
+def virtual_overrides(virtual):
+    """build_bot overrides for ``--virtual``: virtual AND strict (no fallback)."""
+    return {"use_virtual_mouse": True, "virtual_mouse_strict": True} if virtual else {}
+
+
+def click_human(bot, ok, done_text, failed_text):
+    """The human line for a click: which mouse did it, and why a virtual one failed."""
+    mouse = getattr(getattr(bot, "executor", None), "virtual_mouse", None)
+    mode = getattr(mouse, "last_click", None)
+    if ok:
+        if mode == "virtual":
+            # PostMessage can't know whether the app reacted (some read the real
+            # button state and ignore synthetic clicks): say so, so it gets checked
+            return f"{done_text} (virtual mouse: the cursor did not move -- check the result)"
+        return done_text
+    if mode == "virtual-refused":
+        return f"{failed_text}: {VIRTUAL_REFUSED_HINT}"
+    return failed_text
+
+
+# --- searching one window instead of the whole screen -----------------------------
+
+
+def window_search_option(f):
+    return click.option(
+        "--window", "window_title",
+        help="Search only inside this window (title substring) -- far faster than "
+             "the whole screen. --region wins when both are given.",
+    )(f)
+
+
+def search_region(region, window_title, json_mode):
+    """``--region`` as given, else ``--window``'s visible frame, else None (whole
+    screen). Exits 1 with what to do when the window can't be read."""
+    if region:
+        return tuple(region)
+    if not window_title:
+        return None
+    from visus.desktop.core import window as _window
+
+    found = _window.window_region(window_title)
+    if found is None:
+        from ._output import fail
+
+        fail(
+            f"no visible window matches {window_title!r} -- a minimized window can't be "
+            f"read (`window ensure --title {window_title!r}` restores it); "
+            "`window list` shows the open ones",
+            json_mode=json_mode,
+        )
+    return found
+
+
+def occurrence_option(f, help_text="Which match (1-based, reading order) -- the #N of find-all."):
+    return click.option("--occurrence", type=int, default=None, help=help_text)(f)
+
+
+def occurrence_args(occurrence):
+    """``--occurrence`` -> library kwargs. Given (even 1): counted over find-all's
+    list, so #N there is the Nth here. Omitted: the fast first match."""
+    return {"occurrence": occurrence or 1, "enumerate_all": occurrence is not None}
 
 
 def _int_csv(expected_len, label):

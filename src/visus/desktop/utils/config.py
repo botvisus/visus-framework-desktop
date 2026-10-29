@@ -168,6 +168,10 @@ class BotVisionConfig:
                   click via ``PostMessage`` so the physical cursor does not move
                   (Windows; falls back to physical if the target window cannot
                   receive synthetic input).
+                * ``virtual_mouse_strict`` (bool, default ``False``): With
+                  ``use_virtual_mouse``, a virtual click that fails returns
+                  False instead of falling back to the physical mouse -- for
+                  background automation, where the person keeps the real one.
                 * ``default_delay`` (float, default ``1.0``): Default pause (s)
                   between actions in higher-level flows.
 
@@ -327,6 +331,7 @@ class BotVisionConfig:
             "movement_duration": 0.1,
             # 🆕 NEW PARAMETERS v1.3.0+
             "use_virtual_mouse": False,  # Virtual mouse (cursor does not move)
+            "virtual_mouse_strict": False,  # With it: a failed virtual click fails (no physical fallback)
             "wait_timeout": 30,  # Global timeout for wait parameters (30-300s)
             "screenshot_delay": 0.1,  # Delay for screen capture
             # Failure artifacts (Phase 1 / O1)

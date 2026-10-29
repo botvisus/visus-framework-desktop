@@ -235,10 +235,41 @@ def find_all(
         return []
 
     try:
-        return [_box_to_tuple(box) for box in matches]
+        return _one_box_per_occurrence([_box_to_tuple(box) for box in matches])
     except Exception as exc:  # noqa: BLE001 - guard against odd iterables
         logger.debug("Failed iterating locateAllOnScreen results: %s", exc)
         return []
+
+
+def _one_box_per_occurrence(boxes: list[Box]) -> list[Box]:
+    """Collapse the near-duplicates OpenCV reports around ONE real occurrence.
+
+    Every offset scoring above the confidence comes back: a few pixels around a
+    sharp peak, a whole plateau for a low-texture template (a plain button gave
+    10,000 boxes for 2 buttons) -- and ``find-all`` / ``--occurrence N`` number
+    occurrences, so each must count once. Boxes whose top-left corners sit
+    within half the template's size of a cluster's first box are the same
+    occurrence, reported at the cluster's mean position (the plateau's center).
+    """
+    clusters: list[list[Box]] = []
+    for box in boxes:
+        x, y, w, h = box
+        for cluster in clusters:
+            cx, cy = cluster[0][0], cluster[0][1]
+            if abs(x - cx) <= w / 2 and abs(y - cy) <= h / 2:
+                cluster.append(box)
+                break
+        else:
+            clusters.append([box])
+    return [
+        (
+            round(sum(b[0] for b in cluster) / len(cluster)),
+            round(sum(b[1] for b in cluster) / len(cluster)),
+            cluster[0][2],
+            cluster[0][3],
+        )
+        for cluster in clusters
+    ]
 
 
 def find_multiple(

@@ -10,6 +10,8 @@ The console script is ``visus`` (``visus.desktop.cli:main``).
 
 from __future__ import annotations
 
+import sys
+
 import click
 
 from .commands import capture as capture_cmd
@@ -76,12 +78,43 @@ cli.add_command(config_cmd.configure)
 cli.add_command(repl_cmd)
 
 
+def _prepare_process():
+    """What every CLI process needs before it touches the screen or prints.
+
+    DPI: on a Windows display scaled above 100%, a process that never declares
+    itself DPI aware gets virtualized coordinates -- a screenshot (physical
+    pixels) and a ``mouse click`` disagree. Per-monitor awareness has to be
+    claimed before pyautogui/mss/pywinauto import (each claims a weaker mode on
+    import, and the first claim wins), so it happens here, first thing.
+
+    UTF-8: read through a pipe -- how an AI agent reads us -- Python falls back
+    to the Windows code page and "ação" arrives as garbage.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+    if sys.platform != "win32":
+        return
+    import ctypes
+
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+    except (AttributeError, OSError):
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()  # pre-8.1 fallback: system aware
+        except (AttributeError, OSError):
+            pass
+
+
 def main(argv=None):
     """Entry point for the ``visus`` console script and programmatic callers.
 
     Returns an integer exit code (it never raises ``SystemExit`` to the
     caller), so it is safe to call from tests, the REPL, and scripts.
     """
+    _prepare_process()
     try:
         rv = cli.main(args=argv, prog_name="visus", standalone_mode=False)
     except click.ClickException as exc:
@@ -98,6 +131,4 @@ def main(argv=None):
 
 
 if __name__ == "__main__":  # pragma: no cover - exercised via the console script
-    import sys
-
     sys.exit(main(sys.argv[1:]))

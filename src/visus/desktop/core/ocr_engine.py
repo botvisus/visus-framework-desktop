@@ -107,7 +107,9 @@ def _dedupe_in_reading_order(
         if any(_iou(box, k_box) > iou_threshold for _, k_box in kept):
             continue
         kept.append((conf, box))
-    return sorted(kept, key=lambda c: (c[1][1], c[1][0]))
+    from .reading_order import reading_order
+
+    return reading_order(kept, key=lambda c: c[1])
 
 
 class OCRResult:
@@ -701,6 +703,12 @@ class _TesseractBackend:
             raise OCRProcessingError(f"Extraction failed: {e}") from e
 
 
+# One RapidOCR per process (keyed by class + log level). VisusBot and its
+# TaskExecutor each build an OCREngine, and every RapidOCR() loads three ONNX
+# models: a CLI call used to load them twice (~1 s) before reading a pixel.
+_RAPIDOCR_ENGINES: dict = {}
+
+
 class _RapidOCRBackend:
     """RapidOCR-backed OCR pipeline (PP-OCR via ONNX Runtime).
 
@@ -719,14 +727,31 @@ class _RapidOCRBackend:
                 "ocr_backend='rapidocr' requires the optional dependency. "
                 "Install with: pip install 'visus-desktop[rapidocr]'"
             ) from exc
-        self._engine = rapidocr.RapidOCR()
+        self._rapidocr_cls = rapidocr.RapidOCR
+
+    @property
+    def engine(self):
+        """The shared RapidOCR, built on first use. Its INFO chatter (model
+        paths, engine name -- ~3 KB per call on stderr, which an AI agent reads)
+        is silenced unless the library's own log_level is DEBUG."""
+        debug = str(self.config.get("log_level", "")).upper() == "DEBUG"
+        level = "debug" if debug else "warning"
+        # The text-angle classifier fixes upside-down lines -- which screens don't
+        # have -- and costs ~15% of every pass (measured 3.55 s -> 3.00 s, same text).
+        use_cls = bool(self.config.get("rapidocr_use_cls", False))
+        key = (self._rapidocr_cls, level, use_cls)
+        engine = _RAPIDOCR_ENGINES.get(key)
+        if engine is None:
+            engine = self._rapidocr_cls(params={"Global.log_level": level, "Global.use_cls": use_cls})
+            _RAPIDOCR_ENGINES[key] = engine
+        return engine
 
     def _run(self, image: Image.Image):
         """Invoke RapidOCR and return ``(txts, boxes, scores)`` triples."""
         import numpy as np
 
         arr = np.array(image)
-        result = self._engine(arr)
+        result = self.engine(arr)
         if result is None:
             return [], [], []
         txts = list(getattr(result, "txts", []) or [])
@@ -762,7 +787,7 @@ class _RapidOCRBackend:
         """
         import numpy as np
 
-        result = self._engine(np.array(image), return_word_box=True)
+        result = self.engine(np.array(image), return_word_box=True)
         if result is None:
             return [], []
 

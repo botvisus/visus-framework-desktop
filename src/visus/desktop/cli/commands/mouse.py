@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import click
 
-from .._common import json_option
+from .._common import json_option, virtual_option
 from .._output import done
 
 
@@ -65,14 +65,17 @@ def triple_click_cmd(x, y, interval, json_mode):
     type=click.Choice(["left", "right", "double", "move_to"]),
 )
 @click.option("--delay", type=float, default=0, show_default=True, help="Pause after the click (s).")
+@virtual_option
 @json_option
-def click_cmd(x, y, width, height, mouse_button, delay, json_mode):
-    from .._common import build_bot
+def click_cmd(x, y, width, height, mouse_button, delay, virtual, json_mode):
+    from .._common import build_bot, click_human, virtual_overrides
 
-    ok = bool(
-        build_bot().click_at((x, y, width, height), mouse_button=mouse_button, delay=delay)
+    bot = build_bot(**virtual_overrides(virtual))
+    ok = bool(bot.click_at((x, y, width, height), mouse_button=mouse_button, delay=delay))
+    done(
+        ok, json_mode=json_mode, ok=ok,
+        human=click_human(bot, ok, f"clicked ({x}, {y})", f"click at ({x}, {y}) failed"),
     )
-    done(ok, json_mode=json_mode, ok=ok, human=f"clicked ({x}, {y})")
 
 
 @mouse.command(name="move", help="Move the cursor to (X,Y) with a light human jitter.")
