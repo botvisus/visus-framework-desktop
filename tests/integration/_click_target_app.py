@@ -93,6 +93,10 @@ def _wndproc(hwnd, msg, wparam, lparam):
     if msg == win32con.WM_RBUTTONDOWN:
         _record(hwnd, lparam, 3)
         return 0
+    if msg == win32con.WM_MOUSEWHEEL:
+        with (state / "wheel.jsonl").open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps({"delta": _signed(wparam >> 16)}) + "\n")
+        return 0
     if msg == win32con.WM_PAINT:
         _paint(hwnd)
         return 0

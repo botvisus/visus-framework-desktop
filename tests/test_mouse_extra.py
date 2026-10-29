@@ -11,32 +11,46 @@ import pyautogui
 from visus.desktop.core import mouse_extra
 
 
-def test_scroll_calls_pyautogui_scroll(monkeypatch):
-    """``scroll`` forwards amount and coordinates to ``pyautogui.scroll``."""
+def _record_scroll(monkeypatch):
     calls = []
     monkeypatch.setattr(
         pyautogui,
         "scroll",
         lambda amount, x=None, y=None: calls.append((amount, x, y)),
     )
+    monkeypatch.setattr(pyautogui, "moveTo", lambda *a, **k: calls.append(("moveTo", *a)))
+    return calls
+
+
+def test_scroll_no_windows_conta_em_cliques_de_roda(monkeypatch):
+    """No Windows o pyautogui repassa o numero cru como delta da roda, e um clique
+    vale WHEEL_DELTA (120): ``scroll(3)`` rolava 3/120 de um clique, que os apps
+    ignoram. ``amount`` e em cliques, como a doc sempre disse."""
+    calls = _record_scroll(monkeypatch)
+    monkeypatch.setattr(mouse_extra.sys, "platform", "win32")
 
     mouse_extra.scroll(10, x=100, y=200)
-
-    assert calls == [(10, 100, 200)]
-
-
-def test_scroll_negative_amount(monkeypatch):
-    """A negative amount (scroll down) is passed through unchanged."""
-    calls = []
-    monkeypatch.setattr(
-        pyautogui,
-        "scroll",
-        lambda amount, x=None, y=None: calls.append((amount, x, y)),
-    )
-
     mouse_extra.scroll(-5)
 
-    assert calls == [(-5, None, None)]
+    assert calls == [("moveTo", 100, 200), (1200, 100, 200), (-600, None, None)]
+
+
+def test_scroll_fora_do_windows_repassa(monkeypatch):
+    """No macOS/Linux o pyautogui ja conta em cliques: o valor passa como veio."""
+    calls = _record_scroll(monkeypatch)
+    monkeypatch.setattr(mouse_extra.sys, "platform", "linux")
+
+    mouse_extra.scroll(10, x=100, y=200)
+    mouse_extra.scroll(-5)
+
+    assert calls == [("moveTo", 100, 200), (10, 100, 200), (-5, None, None)]
+
+
+def test_scroll_vai_ate_o_ponto_antes_de_rolar(monkeypatch):
+    """Windows manda a roda para a janela SOB O CURSOR: com x/y, mover antes."""
+    calls = _record_scroll(monkeypatch)
+    mouse_extra.scroll(-2, x=10, y=20)
+    assert calls[0] == ("moveTo", 10, 20)
 
 
 def test_drag_moves_then_drags(monkeypatch):

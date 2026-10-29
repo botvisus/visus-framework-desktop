@@ -7,13 +7,18 @@ import click
 from .._common import json_option, virtual_option
 from .._output import done
 
+# Negative numbers are values here, not options: scrolling DOWN is `scroll -3`, and a
+# monitor left of the primary one has negative X. Without this Click reads `-3` as an
+# unknown option and the command fails ("No such option '-3'").
+_NUMBERS = {"ignore_unknown_options": True}
+
 
 @click.group(help="Low-level mouse gestures (coordinate-based).")
 def mouse():
     pass
 
 
-@mouse.command(name="scroll", help="Scroll the wheel (positive = up, negative = down).")
+@mouse.command(context_settings=_NUMBERS, name="scroll", help="Scroll the wheel (positive = up, negative = down).")
 @click.argument("amount", type=int)
 @click.option("--x", type=int, default=None, help="Move to this X before scrolling.")
 @click.option("--y", type=int, default=None, help="Move to this Y before scrolling.")
@@ -25,7 +30,7 @@ def scroll_cmd(amount, x, y, json_mode):
     done(True, json_mode=json_mode, ok=True, human=f"scrolled {amount}")
 
 
-@mouse.command(name="drag", help="Drag from (X1,Y1) to (X2,Y2).")
+@mouse.command(context_settings=_NUMBERS, name="drag", help="Drag from (X1,Y1) to (X2,Y2).")
 @click.argument("x1", type=int)
 @click.argument("y1", type=int)
 @click.argument("x2", type=int)
@@ -43,7 +48,7 @@ def drag_cmd(x1, y1, x2, y2, duration, button, json_mode):
     done(True, json_mode=json_mode, ok=True, human=f"dragged ({x1},{y1}) -> ({x2},{y2})")
 
 
-@mouse.command(name="triple-click", help="Triple-click at (X,Y) (or current cursor).")
+@mouse.command(context_settings=_NUMBERS, name="triple-click", help="Triple-click at (X,Y) (or current cursor).")
 @click.option("--x", type=int, default=None, help="X coordinate (else current position).")
 @click.option("--y", type=int, default=None, help="Y coordinate (else current position).")
 @click.option("--interval", type=float, default=0.05, show_default=True, help="Delay between clicks (s).")
@@ -55,7 +60,7 @@ def triple_click_cmd(x, y, interval, json_mode):
     done(True, json_mode=json_mode, ok=True, human="triple-clicked")
 
 
-@mouse.command(name="click", help="Click at absolute coordinates (X,Y). Last resort.")
+@mouse.command(context_settings=_NUMBERS, name="click", help="Click at absolute coordinates (X,Y). Last resort.")
 @click.argument("x", type=int)
 @click.argument("y", type=int)
 @click.option("--width", type=int, default=0, help="Box width (clicks the center if given).")
@@ -78,7 +83,7 @@ def click_cmd(x, y, width, height, mouse_button, delay, virtual, json_mode):
     )
 
 
-@mouse.command(name="move", help="Move the cursor to (X,Y) with a light human jitter.")
+@mouse.command(context_settings=_NUMBERS, name="move", help="Move the cursor to (X,Y) with a light human jitter.")
 @click.argument("x", type=int)
 @click.argument("y", type=int)
 @click.option("--max-offset", "max_offset", type=int, default=3, show_default=True)
@@ -91,7 +96,7 @@ def move_cmd(x, y, max_offset, duration, json_mode):
     done(True, json_mode=json_mode, ok=True, human=f"moved to ({x}, {y})")
 
 
-@mouse.command(name="down", help="Press a mouse button without releasing (pair with 'up').")
+@mouse.command(context_settings=_NUMBERS, name="down", help="Press a mouse button without releasing (pair with 'up').")
 @click.option("--x", type=int, default=None, help="X (else current position).")
 @click.option("--y", type=int, default=None, help="Y (else current position).")
 @click.option(
@@ -106,7 +111,7 @@ def down_cmd(x, y, button, json_mode):
     done(True, json_mode=json_mode, ok=True, human="button down")
 
 
-@mouse.command(name="up", help="Release a previously-pressed mouse button.")
+@mouse.command(context_settings=_NUMBERS, name="up", help="Release a previously-pressed mouse button.")
 @click.option("--x", type=int, default=None, help="X (else current position).")
 @click.option("--y", type=int, default=None, help="Y (else current position).")
 @click.option(

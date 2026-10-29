@@ -330,6 +330,30 @@ def test_type_virtual_no_campo_focado(alvo) -> None:
     assert _clipboard() == clipboard
 
 
+@pytest.mark.real_input
+def test_scroll_rola_cliques_de_roda_inteiros_no_ponto(alvo) -> None:
+    """`mouse scroll -3 --x --y`: três cliques de roda (WHEEL_DELTA 120 cada) entregues
+    à janela SOB o ponto — antes era 3/120 de um clique, entregue onde o cursor estava."""
+    import win32api
+
+    point = _empty_spot(alvo)
+    if not _ours(point, alvo["pid"]):
+        pytest.skip("outra janela cobre a janela de teste")
+    before = win32api.GetCursorPos()
+    try:
+        r = _cli("mouse", "scroll", "-3", "--x", str(point[0]), "--y", str(point[1]),
+                 config_dir=alvo["dir"])
+        assert r.returncode == 0, r.stdout + r.stderr
+        wheel = alvo["dir"] / "wheel.jsonl"
+        deadline = time.monotonic() + 5
+        while not wheel.exists() and time.monotonic() < deadline:
+            time.sleep(0.1)
+    finally:
+        win32api.SetCursorPos(before)
+    deltas = [json.loads(line)["delta"] for line in wheel.read_text(encoding="utf-8").splitlines()]
+    assert sum(deltas) == -360, deltas
+
+
 def test_display_size_igual_ao_print(tmp_path) -> None:
     size = _cli("display-size", "--json", config_dir=tmp_path)
     shot = _cli("screenshot", "--base64", "--json", config_dir=tmp_path)

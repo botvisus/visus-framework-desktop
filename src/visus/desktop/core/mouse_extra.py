@@ -12,20 +12,32 @@ display.
 from __future__ import annotations
 
 import random
+import sys
+
+# Windows measures the wheel in WHEEL_DELTA units: 120 is one notch.
+WHEEL_DELTA = 120
 
 
 def scroll(amount: int, x: int | None = None, y: int | None = None) -> None:
     """Scroll the mouse wheel.
 
     Args:
-        amount: Number of "clicks" to scroll. Positive values scroll up,
-            negative values scroll down.
+        amount: Number of wheel "clicks" (notches) to scroll. Positive values
+            scroll up, negative values scroll down.
         x: Optional x coordinate to move to before scrolling.
         y: Optional y coordinate to move to before scrolling.
     """
     import pyautogui
 
-    pyautogui.scroll(amount, x=x, y=y)
+    # On Windows pyautogui sends the number straight through as the wheel delta,
+    # so scroll(3) used to be 3/120 of a notch -- which apps ignore. Elsewhere
+    # pyautogui already counts notches.
+    clicks = amount * WHEEL_DELTA if sys.platform == "win32" else amount
+    if x is not None and y is not None:
+        # pyautogui does NOT move there first, and Windows sends the wheel to the
+        # window under the cursor -- the scroll would land wherever the cursor was.
+        pyautogui.moveTo(x, y)
+    pyautogui.scroll(clicks, x=x, y=y)
 
 
 def drag(
