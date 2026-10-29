@@ -21,6 +21,62 @@ success, `1` operation failed (not found / false), `2` usage error.
 visus smart find --query "Login" --json   # {"found": true, "box": {...}, "method": "native", "tried": [...]}
 ```
 
+## Driving it as an AI agent
+
+**Both libraries installed?** `visus` may be visus-web's command; `visus-desktop`
+is the name that only ever means this tool. Every example works under either.
+
+Pick the cheapest way that works, in this order:
+
+1. **Native (UIA): read the window as text, act by number.** No mouse, no
+   pixels; works with the window covered, and the person keeps using the PC.
+
+   ```bash
+   visus-desktop native snapshot --window Calculadora
+   # Window: Calculadora
+   #   0  Button       Sete #num7Button
+   #   1  Button       Mais #plusButton
+   visus-desktop native click 1          # also: set-text N "text", get-text N, get-state N
+   ```
+
+   Numbers stay valid until the next `snapshot` (each is stored with the exact
+   selector that finds it again, duplicates included). A window that does not
+   exist is an error (`window list` shows the open ones), never an empty list.
+
+2. **OCR text / template image, with the virtual mouse.** When there is no
+   accessibility tree (canvas, games, remote desktops, custom-drawn UIs):
+
+   ```bash
+   visus-desktop text find-all "Salvar" --window "Bloco de Notas" --no-overlay
+   # #1 (412, 88) 61x22 conf=98.1%
+   # #2 (930, 87) 61x22 conf=97.4%
+   visus-desktop text click "Salvar" --occurrence 2 --window "Bloco de Notas" --virtual
+   visus-desktop image find-all botao.png --window "App"   # same numbering for images
+   visus-desktop image click botao.png --occurrence 2 --window "App" --virtual
+   ```
+
+   - `--occurrence N` (when given, even 1) is always the **#N of `find-all`**:
+     reading order, one entry per occurrence, robust to 1–2 px of jitter.
+   - `--window TITLE` searches only that window — several times faster than
+     the whole screen. It must be visible (OCR reads pixels): restore a
+     minimized one with `window ensure`.
+   - `--virtual` clicks through window messages: **the real cursor does not
+     move** (proved to land on the same pixel as a physical click). It fails
+     instead of falling back to the real mouse; apps that read the physical
+     button state (Chrome, Electron, Tk, some Store apps) ignore it — then use
+     native, or the real mouse. Check the result after a virtual click.
+   - Also on `mouse click X Y --virtual` and `smart click --virtual`.
+
+3. **The real mouse/keyboard** (`mouse`, `type`, `key`) — last, because it
+   takes the PC from the person.
+
+Seeing the screen: `screenshot --base64 --jpeg --max-width 1280 --json` (a model
+pays an image by its resolution; `scale` maps image pixels back to the screen).
+Screenshots, `display-size` and every click share **physical pixels** (the CLI
+is per-monitor DPI aware). Output is UTF-8 even through a pipe; the library's
+INFO log stays off unless `configure --set log_level=INFO`. For agents,
+turn the on-screen highlight off once: `configure --set show_overlay=false`.
+
 ## Command groups (mirror of the MCP tools)
 
 50 commands total; `visus <group> <cmd> --help` shows every flag. Full
@@ -31,7 +87,7 @@ reference: `docs/cli.md`.
 | `visus smart` | `find`, `click` — cascade native → image → OCR → coordinates (`--order` to force/reorder; `--dry-run` to resolve only) |
 | `visus text` | `find`, `click`, `find-all`, `show` — OCR find/click a label, list every occurrence, or overlay them numbered (`--ocr tesseract\|rapidocr`) |
 | `visus image` | `find`, `click`, `find-all`, `find-multiple`, `relative` — template-PNG targeting |
-| `visus native` | `dump-tree`, `click`, `set-text`, `get-text`, `get-state`, `wait` — no-pixel RPA by directed selector |
+| `visus native` | `snapshot` (numbered — act with `click N`), `dump-tree`, `click`, `set-text`, `get-text`, `get-state`, `wait` — no-pixel RPA |
 | `visus mouse` | `click`, `scroll`, `drag`, `triple-click`, `move`, `down`, `up` — coordinate gestures |
 | `visus type` / `key` / `keys` | type text into the focused field / press a key chord / list valid tokens |
 | `visus capture` | coordinate-free capture by `--auto`/`--text`/`--native`/`--region` → saves template + annotated, optional `--click` |

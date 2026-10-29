@@ -62,7 +62,7 @@ def build_bot(**overrides):
 
     cfg = load_persisted_config()
     # A CLI's stderr is read by people and AI agents alike: the library's INFO
-    # chatter ("OCR search: ...") is opt-in (`config --set log_level=INFO --save`).
+    # chatter ("OCR search: ...") is opt-in (`configure --set log_level=INFO`).
     cfg.setdefault("log_level", "WARNING")
     cfg.update({k: v for k, v in overrides.items() if v is not None})
     return VisusBot(config=cfg)

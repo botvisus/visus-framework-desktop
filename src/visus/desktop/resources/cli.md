@@ -134,6 +134,15 @@ visus smart click --query "OK" --order native,ocr
 
 ## `visus text` — OCR find / click / discovery
 
+**Agents:** `find-all` numbers every match in reading order (one entry per
+occurrence, robust to 1–2 px of jitter); `--occurrence N`, when given (even 1),
+is always that list's #N — on `text` and `image` alike. `--window TITLE`
+searches only that (visible) window, several times faster than the screen.
+`click --virtual` clicks through window messages: the cursor does not move, and
+a refused click fails instead of falling back to the real mouse. `find-all`
+paints its numbered overlay unless the config's `show_overlay` is off (or
+`--no-overlay`).
+
 | Command | What it does |
 |---|---|
 | `text find QUERY` | Find text via OCR; print its box (no click). |
@@ -277,25 +286,45 @@ Bridge, some Electron); fall back to OCR/image there.
 | `--found-index` | int | Disambiguate multiple matches (0-based). |
 | `--backend` | choice | `uia` (default; modern WPF/WinUI/Electron/browsers) or `win32` (classic Win32 controls like Notepad's Edit — use it when `uia` returns nothing or stalls on a legacy app). |
 
+### `visus native snapshot` — the window numbered, for agents
+`--window`, `--pid`, `--max-depth` (`8`), `--max` (`200` printed), `--timeout`
+(`10.0`), `--backend uia|win32`, `--json`. One line per control you can act on
+(buttons, edits, check/radio boxes, combo boxes, menu/list/tab/tree items,
+links…), numbered:
+
+```bash
+visus native snapshot --window Calculadora
+# Window: Calculadora
+#   0  Button       Sete #num7Button
+#   1  Button       Mais #plusButton
+visus native click 1            # set-text N TEXT, get-text N, get-state N too
+```
+
+Each number is stored (next to `$VISUS_CONFIG`, else `~/.visus/desktop/`) with
+the selector that finds that control again — title, type, auto_id and a
+`found_index` counted over the same criteria, so two "Close" buttons never
+swap. It stays valid until the next `snapshot`. A window that does not exist is
+an error (exit 1), never an empty list.
+
 ### `visus native dump-tree`
 Print the control tree. Options: `--window`, `--pid`, `--max-depth` (int, `3`),
 `--timeout` (float, `5.0`), `--backend uia|win32` (default `uia`), `--json`. Each
 node: `{depth, control_type, title, auto_id, rect}`.
 
-### `visus native click`
-Selector options + `--button` (str, `left`), `--double` (flag),
+### `visus native click [N]`
+`N` = a `snapshot` number, or the selector options + `--button` (str, `left`), `--double` (flag),
 `--method invoke|click|auto` (default `auto`), `--timeout` (`5.0`),
 `--retries` (`0`), `--delay` (`0.3`), `--dry-run`, `--json`.
 
-### `visus native set-text TEXT`
-Selector options + `--timeout` (`5.0`), `--retries` (`0`), `--delay` (`0.3`),
+### `visus native set-text N TEXT` / `set-text TEXT`
+A `snapshot` number and the text, or the text + selector options; `--timeout` (`5.0`), `--retries` (`0`), `--delay` (`0.3`),
 `--dry-run`, `--json`.
 
-### `visus native get-text`
-Selector options + `--timeout` (`5.0`), `--json`. Prints the control's text.
+### `visus native get-text [N]`
+A `snapshot` number or selector options + `--timeout` (`5.0`), `--json`. Prints the control's text.
 
-### `visus native get-state`
-Selector options + `--timeout` (`5.0`), `--json`. Returns `{exists, visible,
+### `visus native get-state [N]`
+A `snapshot` number or selector options + `--timeout` (`5.0`), `--json`. Returns `{exists, visible,
 enabled, checked, value, control_type, rect}`.
 
 ### `visus native wait`
@@ -354,7 +383,11 @@ visus capture total --text "Total" --search-region 0,0,800,600
 Save a PNG to disk (the `find_image` / `capture` template format), or print a
 base64 PNG. Options: `--region X,Y,W,H`, `--monitor N` (1-based physical
 monitor), `--base64` (print base64 to stdout instead of saving — `PATH`
-optional then), `--json`.
+optional then), `--json`. With `--base64`: `--jpeg` / `--quality N` (`70`) and
+`--max-width N` — an AI model pays an image by its resolution, so shrinking
+saves tokens; `--json` adds `scale` (screen pixel = image pixel / scale).
+Screenshots, `display-size` and clicks all use **physical pixels** (the CLI is
+per-monitor DPI aware).
 
 ```bash
 visus screenshot btn.png --region 740,589,78,30
