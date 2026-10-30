@@ -6,6 +6,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-30
+
+Use the PC like a person: open an app, look, type into the window that is really in
+front, and act by the control's name — measured live in Excel (open, type a 5x10
+table, format it and save it in ~47 s, CLI only).
+
+### Added
+- `visus-desktop open TARGET [--wait-window TITLE]` — opens an app, a document or a URL
+  as Windows Run does (`excel`, `report.xlsx`) and waits until that window is ready and
+  in front. Also `open_app()` in the API and the `open_app` MCP tool.
+- Window guard: `type --window` / `key --window` (and `window=` on `VisusBot.type_text`,
+  `keyboard_command` and the MCP tools) bring the window to the front and CHECK it first
+  — with another window in front nothing is typed.
+- Human typing: one key per character with accents, real Tab/Enter, and the
+  `{tab}`/`{enter}`/`{ctrl}a` tokens anywhere in the text; 0.02 s per character.
+- `key` takes ANY key or chord, no fixed list (`Ctrl+;`, `Ctrl++`, `Win+Shift+S`,
+  `PrintScreen`), a key alone (`Alt`) and comma sequences (`"Alt, H, O, I"`).
+- `native snapshot` numbered, and act by number (`native click 3`); depth 25 by default
+  so it reaches the Office ribbon's buttons; `native_snapshot` MCP tool.
+- Virtual keyboard: type in the background without stealing focus or the clipboard.
+- Run report in the orchestrator's "Run report" look.
+- The `visus-desktop` console script (the name that only ever means this tool).
+
+### Changed
+- `smart` finds the native name fast (exact, then case-insensitive) and clicks once;
+  with `--window` the image/OCR steps read only that window, brought to the front.
+- RapidOCR keeps ONNX Runtime's memory arena: the first read (the only one a CLI call
+  makes) went from 7.8 s to 3.9 s.
+- `native set-text` types for real and verifies the value; `get-text` returns the value.
+
+### Fixed
+- Scrolling on Windows really scrolls, at the point; negative numbers in the CLI.
+- Strict virtual mouse, `--occurrence` = the #N of `find-all`, DPI and UTF-8 output.
+- The `mcp` extra is capped `<2` and only installed on Python 3.10+.
+
+## [0.2.0] - 2026-07-14
+
 ### Added
 - **Visus CLI Pro** — the `visus` terminal CLI was rebuilt in
   [Click](https://click.palletsprojects.com/) as an agent-native interface
