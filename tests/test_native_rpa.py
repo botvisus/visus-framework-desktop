@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock, patch
 
 from visus.desktop.core import native_rpa as nr
 
@@ -211,33 +211,54 @@ class TestClick:
 
 
 class TestSetText:
-    def test_set_edit_text(self):
-        ctrl = _ctrl()
-        ctrl.set_edit_text = MagicMock()
-        top = MagicMock(child_window=MagicMock(return_value=ctrl))
-        patches = _patch(top)
-        _enter(patches)
-        try:
-            ok = nr.native_set_text(pid=1, auto_id="edit", text="hello")
-        finally:
-            _exit(patches)
-        assert ok is True
-        ctrl.set_edit_text.assert_called_once_with("hello")
+    """Como uma pessoa: foca o campo, confere a janela na frente, seleciona tudo e
+    digita; o valor de UI Automation só quando a janela não vem para a frente (o
+    "Salvar como" MOSTRAVA o nome posto pelo valor e salvava com o antigo)."""
 
-    def test_falls_back_to_type_keys(self):
+    @staticmethod
+    def _field(value_after):
+        wrapper = MagicMock()
+        wrapper.element_info.handle = 99  # o campo; a raiz dele é a janela 42
+        type(wrapper).iface_value = PropertyMock(
+            return_value=MagicMock(CurrentValue=value_after)
+        )
         ctrl = _ctrl()
-        ctrl.set_edit_text = MagicMock(side_effect=RuntimeError("no value pattern"))
-        ctrl.set_focus = MagicMock()
-        ctrl.type_keys = MagicMock()
+        ctrl.wrapper_object = MagicMock(return_value=wrapper)
+        return ctrl, wrapper
+
+    def _set(self, ctrl, text, foreground):
         top = MagicMock(child_window=MagicMock(return_value=ctrl))
         patches = _patch(top)
         _enter(patches)
         try:
-            ok = nr.native_set_text(pid=1, auto_id="edit", text="hi")
+            with patch("win32gui.GetForegroundWindow", return_value=foreground), patch(
+                "win32gui.GetAncestor", return_value=42
+            ), patch("pyautogui.hotkey"), patch(
+                "visus.desktop.core.human_typing.type_like_a_person"
+            ) as typed:
+                ok = nr.native_set_text(pid=1, auto_id="edit", text=text)
         finally:
             _exit(patches)
+        return ok, typed
+
+    def test_digita_como_uma_pessoa_com_a_janela_na_frente(self):
+        ctrl, wrapper = self._field("hello")
+        ok, typed = self._set(ctrl, "hello", foreground=42)
         assert ok is True
-        ctrl.type_keys.assert_called_once()
+        typed.assert_called_once_with("hello", 0.01)
+        wrapper.set_edit_text.assert_not_called()
+
+    def test_sem_a_janela_na_frente_nao_digita_e_usa_o_valor(self):
+        ctrl, wrapper = self._field("hi")
+        ok, typed = self._set(ctrl, "hi", foreground=7)
+        assert ok is True
+        typed.assert_not_called()
+        wrapper.set_edit_text.assert_called_once_with("hi")
+
+    def test_valor_que_nao_pega_e_falha(self):
+        ctrl, _ = self._field("outro")
+        ok, _ = self._set(ctrl, "hi", foreground=7)
+        assert ok is False
 
 
 # ---------------------------------------------------------------------------
@@ -247,8 +268,14 @@ class TestSetText:
 
 class TestGetTextState:
     def test_get_text_window_text(self):
+        wrapper = MagicMock()
+        type(wrapper).iface_value = PropertyMock(
+            side_effect=RuntimeError("no value pattern")
+        )
+        wrapper.get_value = MagicMock(side_effect=AttributeError)
+        wrapper.window_text = MagicMock(return_value="hello world")
         ctrl = _ctrl()
-        ctrl.window_text = MagicMock(return_value="hello world")
+        ctrl.wrapper_object = MagicMock(return_value=wrapper)
         top = MagicMock(child_window=MagicMock(return_value=ctrl))
         patches = _patch(top)
         _enter(patches)
@@ -257,6 +284,23 @@ class TestGetTextState:
         finally:
             _exit(patches)
         assert txt == "hello world"
+
+    def test_get_text_de_um_campo_e_o_valor_nao_o_rotulo(self):
+        wrapper = MagicMock()
+        type(wrapper).iface_value = PropertyMock(
+            return_value=MagicMock(CurrentValue="relatorio.xlsx")
+        )
+        wrapper.window_text = MagicMock(return_value="File name:")
+        ctrl = _ctrl()
+        ctrl.wrapper_object = MagicMock(return_value=wrapper)
+        top = MagicMock(child_window=MagicMock(return_value=ctrl))
+        patches = _patch(top)
+        _enter(patches)
+        try:
+            txt = nr.native_get_text(pid=1, auto_id="1001")
+        finally:
+            _exit(patches)
+        assert txt == "relatorio.xlsx"
 
     def test_get_text_missing_returns_none(self):
         ctrl = _ctrl(exists=False)

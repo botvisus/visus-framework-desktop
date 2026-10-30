@@ -467,3 +467,65 @@ def close_window(title_substring: str) -> bool:
     from . import window_linux as _linux
 
     return _dispatch_or_raise(_win_close, _linux.close_window_linux, title_substring)
+
+
+def foreground_title() -> str:
+    """O título da janela em foco agora (onde o teclado vai cair), ou ""."""
+    if sys.platform == "win32":
+        import win32gui
+
+        return str(win32gui.GetWindowText(win32gui.GetForegroundWindow()) or "")
+    import shutil
+    import subprocess
+
+    if not shutil.which("xdotool"):
+        return ""
+    done = subprocess.run(  # noqa: S603,S607
+        ["xdotool", "getactivewindow", "getwindowname"], capture_output=True, text=True
+    )
+    return done.stdout.strip() if done.returncode == 0 else ""
+
+
+def wait_front_window(title_substring: str, *, timeout: float = 30.0) -> str | None:
+    """Espera a janela com ``title_substring`` ficar PRONTA: em foco e com o título
+    parado por um instante (3 olhadas, 0,5 s entre elas) -- a tela de carregamento
+    ("Opening - Excel") troca de título ou some. Devolve o título, ou None no prazo."""
+    import time
+
+    want = title_substring.lower()
+    deadline = time.monotonic() + max(0.0, timeout)
+    seen, steady = "", 0
+    while True:
+        found = ensure_window(title=title_substring, show=True, foreground=True)
+        front = foreground_title()
+        if found.get("found") and want in front.lower():
+            steady = steady + 1 if front == seen else 1
+            seen = front
+            if steady >= 3:
+                return front
+        else:
+            seen, steady = "", 0
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(0.5)
+
+
+def front_window(title_substring: str, *, timeout: float = 3.0) -> str | None:
+    """Traz para a frente a janela com ``title_substring`` e CONFERE que ela é a janela
+    em foco -- como uma pessoa olha antes de digitar. Devolve o título dela, ou None
+    quando outra janela continua na frente (aí nada deve ser digitado)."""
+    import time
+
+    want = title_substring.lower()
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            ensure_window(title=title_substring, show=True, foreground=True)
+        except Exception:  # noqa: BLE001 -- ainda sem a janela: tenta até o prazo
+            pass
+        current = foreground_title()
+        if want in current.lower():
+            return current
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(0.25)

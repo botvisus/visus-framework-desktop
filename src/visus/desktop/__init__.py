@@ -268,7 +268,13 @@ from .core.mouse_extra import (
 from .core.native import Backend, NativeError
 from .core.ocr_engine import OCREngine, OCRResult, find_text_with_multiple_preprocessing
 from .core.overlay import VisualOverlay, show_overlay
-from .core.process import find_process, is_process_running, kill_process, launch
+from .core.process import (
+    find_process,
+    is_process_running,
+    kill_process,
+    launch,
+    open_app,
+)
 from .core.relative_image import RelativeImageDetector  # NEW FEATURE
 from .core.screen import (
     Monitor,
@@ -398,6 +404,20 @@ def _build_event_task(type_field, method, args, kwargs):
         if key in kwargs and key not in task:
             task[key] = kwargs[key]
     return task
+
+
+def _window_in_front(window):
+    """Traz ``window`` para a frente e CONFERE antes do teclado -- como uma pessoa olha
+    antes de digitar. False (e nada é digitado) quando outra janela continua na frente."""
+    from .core.window import foreground_title, front_window
+
+    if front_window(window) is not None:
+        return True
+    logger.warning(
+        f"'{window}' is not the window in front (now: '{foreground_title()}') -- "
+        "nothing was typed"
+    )
+    return False
 
 
 class VisusBot(CapabilitiesMixin, KeyboardMixin):
@@ -2368,8 +2388,22 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             logger.error(f"Error clicking on coordinates ({x}, {y}): {e}")
             return False
 
+    def open_app(self, target, wait_window=None, timeout=30.0):
+        """
+        Open an app or a file as Windows Run does (``excel``, ``notepad``, a
+        ``.xlsx``, a URL) and, with ``wait_window``, wait for that window to be
+        ready and in front.
+
+        Returns:
+            dict: ``{"target", "window"}`` -- ``window`` is the ready window's title,
+            or None when it did not show up in ``timeout`` seconds
+        """
+        from .core.process import open_app
+
+        return open_app(target, wait_window=wait_window, timeout=timeout)
+
     @_records_in_session("type_text")
-    def type_text(self, text, interval=0.05, delay=0, backtrack=False):
+    def type_text(self, text, interval=0.02, delay=0, backtrack=False, window=None):
         """
         Type text with an interval between characters.
 
@@ -2378,6 +2412,9 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             interval (float): Interval between characters in seconds
             delay (float): Delay after typing
             backtrack (bool): Whether to use backtracking
+            window (str): Part of the title of the window that gets the text: it is
+                brought to the front and CHECKED first -- with another window in
+                front nothing is typed and this returns False
 
         Returns:
             bool: True if typed successfully
@@ -2386,6 +2423,8 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             >>> success = bot.type_text('Hello World!', interval=0.05, backtrack=True)
             >>> success = bot.type_text('{ctrl}a{del}New text', backtrack=True)
         """
+        if window and not _window_in_front(window):
+            return False
         if backtrack:
             return self._execute_with_individual_backtrack(
                 "type_text",
@@ -2401,13 +2440,12 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
     def _type_text_internal(self, text, interval, delay):
         """Internal implementation of text typing."""
         try:
-            # Check whether there are special commands
-            if any(
-                cmd in text.lower() for cmd in ["{ctrl}", "{del}", "{tab}", "{enter}"]
-            ):
-                self.executor.keyboard_commander.process_sendtext_command(text)
-            else:
-                self.executor.keyboard_commander.type_text(text, interval)
+            # Like a person at the keyboard: a key per character (accents included),
+            # Tab/Enter and the {tab}/{enter}/... tokens anywhere in the text. The old
+            # path lost accents (typewrite) and pasted mid-text tokens literally.
+            from .core.human_typing import type_like_a_person
+
+            type_like_a_person(text, interval)
 
             if delay > 0:
                 time.sleep(delay)
@@ -2417,14 +2455,17 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             return False
 
     @_records_in_session("keyboard_command")
-    def keyboard_command(self, command, delay=0, backtrack=False):
+    def keyboard_command(self, command, delay=0, backtrack=False, window=None):
         """
-        Run a keyboard command.
+        Run a keyboard command: a catalog token, any chord (``Ctrl+Shift+S``), a key
+        alone (``Alt``) or a comma sequence (``"Alt, H, O, I"``).
 
         Args:
             command (str): Name of the command to run
             delay (float): Delay after the command
             backtrack (bool): Whether to use backtracking
+            window (str): The window that gets the key, brought to the front and
+                checked first like ``type_text``'s
 
         Returns:
             bool: True if the command ran successfully
@@ -2433,6 +2474,8 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             >>> success = bot.keyboard_command('Ctrl+S', delay=1, backtrack=True)
             >>> success = bot.keyboard_command('F7', backtrack=True)  # Oracle Forms
         """
+        if window and not _window_in_front(window):
+            return False
         if backtrack:
             return self._execute_with_individual_backtrack(
                 "keyboard_command",
@@ -3470,6 +3513,7 @@ __all__ = [
     "smart_find",
     "smart_click",
     "launch",
+    "open_app",
     "find_process",
     "is_process_running",
     "kill_process",

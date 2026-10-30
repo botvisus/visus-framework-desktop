@@ -18,6 +18,22 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     import psutil
 
 
+def open_app(target: str, *, wait_window: str | None = None, timeout: float = 30.0) -> dict:
+    """Abre um app ou um arquivo como o "Executar" do Windows (``excel``, ``notepad``, um
+    ``.xlsx``, uma URL) e, com ``wait_window``, espera a janela ficar pronta e na frente
+    -- procurar a janela cedo demais dá "não está aberto".
+
+    Devolve ``{"target", "window"}``: ``window`` é o título da janela pronta, ou None
+    quando ela não apareceu no prazo (ou não foi pedida). ``OSError`` se não abriu.
+    """
+    launch(target)
+    if not wait_window:
+        return {"target": target, "window": None}
+    from .window import wait_front_window
+
+    return {"target": target, "window": wait_front_window(wait_window, timeout=timeout)}
+
+
 def launch(path: str) -> None:
     """Launch an application or open a file/document.
 
@@ -36,6 +52,10 @@ def launch(path: str) -> None:
     if platform.system() == "Windows":
         # ``os.startfile`` is only available on Windows.
         os.startfile(path)  # type: ignore[attr-defined]  # noqa: S606
+    elif os.path.exists(path) or "://" in path:
+        # a file or a URL: the desktop's default app, like a double click
+        opener = "open" if platform.system() == "Darwin" else "xdg-open"
+        subprocess.Popen([opener, path])  # noqa: S603
     else:
         import shlex
 

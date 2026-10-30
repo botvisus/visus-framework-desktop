@@ -6,11 +6,29 @@ for automation, including system-specific and general commands.
 """
 
 import logging
+import time
 from typing import Callable, Dict
 
 import pyautogui
 
 from ..exceptions import TaskExecutionError
+
+# every key name pyautogui can press -- the chord parser accepts all of them
+_PYAUTOGUI_KEYS = frozenset(k.lower() for k in pyautogui.KEYBOARD_KEYS)
+# what people (and AI agents) call a key -> pyautogui's name
+_KEY_ALIASES = {
+    "control": "ctrl", "cmd": "win", "super": "win", "windows": "win", "meta": "win",
+    "option": "alt", "return": "enter", "escape": "esc", "del": "delete",
+    "bksp": "backspace", "spacebar": "space", "pgup": "pageup", "pgdn": "pagedown",
+    "arrowup": "up", "arrowdown": "down", "arrowleft": "left", "arrowright": "right",
+    "prtsc": "printscreen", "prtscr": "printscreen", "prntscrn": "printscreen",
+    "menu": "apps", "contextmenu": "apps", "break": "pause", "ins": "insert",
+    "plus": "+", "minus": "-", "hyphen": "-", "comma": ",", "period": ".", "dot": ".",
+    "slash": "/", "backslash": "\\", "semicolon": ";", "colon": ":", "quote": "'",
+    "apostrophe": "'", "backquote": "`", "backtick": "`", "grave": "`", "equals": "=",
+    "equal": "=", "tilde": "~", "openbracket": "[", "closebracket": "]",
+    "volup": "volumeup", "voldown": "volumedown", "mute": "volumemute",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +215,16 @@ class KeyboardCommander:
                 self.command_mapping[command]()
                 logger.info(f"Command '{command}' executed successfully")
                 return True
+            steps = [step.strip() for step in command.split(",")]
+            if len(steps) > 1 and all(steps):
+                # one after another, like a person: Office's key tips "Alt, H, O, I"
+                # (Home > Format > AutoFit Column Width) in a single call
+                for n, step in enumerate(steps):
+                    if n:
+                        time.sleep(0.15)
+                    if not self.execute_command(step):
+                        return False
+                return True
             # Fall back to a generic chord parser so ANY modifier combo works
             # (e.g. "Ctrl+Shift+S", "Ctrl+Alt+Del") without a hardcoded entry.
             keys = self._parse_chord(command)
@@ -215,50 +243,53 @@ class KeyboardCommander:
 
     @staticmethod
     def _parse_chord(command: str):
-        """Parse 'Mod+Mod+Key' into pyautogui key names, or return None.
+        """Parse ANY key or chord into pyautogui key names, or return None.
 
-        Accepts any combination of the modifiers Ctrl/Control, Shift, Alt,
-        Win/Windows/Cmd/Super plus a final key (a letter, digit, F1-F24, or a
-        named key like Enter/Esc/Tab/Delete/Up). Case-insensitive. Returns the
-        ordered key list for ``pyautogui.hotkey(*keys)`` or ``None`` if it
-        doesn't look like a valid chord/key.
+        Free, not a list: every key pyautogui knows (Enter, Esc, F1-F24, PageDown,
+        PrintScreen, CapsLock, Apps, Num0-Num9, VolumeUp, PlayPause...), any single
+        character (``a``, ``7``, ``;``, ``/``, ``ç``) and any combination joined with
+        ``+`` -- ``Ctrl+Shift+S``, ``Ctrl+;``, ``Ctrl++``, ``Win+Shift+S``, ``Alt``
+        alone. Case-insensitive; spaces inside a name are ignored ("Page Down").
+        Aliases: Control, Cmd/Super/Windows/Meta (Win), Option (Alt), Plus, Minus,
+        Comma, Period, Slash, Semicolon, Equals... Returns the ordered key list for
+        ``pyautogui.hotkey(*keys)`` or ``None`` when a part is not a key.
         """
         if not command or not isinstance(command, str):
             return None
-        mods = {
-            "ctrl": "ctrl", "control": "ctrl", "shift": "shift", "alt": "alt",
-            "win": "win", "windows": "win", "cmd": "win", "super": "win",
-        }
-        named = {
-            "enter": "enter", "return": "enter", "esc": "esc", "escape": "esc",
-            "tab": "tab", "space": "space", "backspace": "backspace",
-            "delete": "delete", "del": "delete", "insert": "insert",
-            "home": "home", "end": "end", "pageup": "pageup",
-            "pagedown": "pagedown", "up": "up", "down": "down", "left": "left",
-            "right": "right",
-        }
-        parts = [p.strip() for p in command.replace(" ", "").split("+") if p.strip()]
-        if len(parts) < 2:
-            return None  # a bare single key goes through the normal mapping
-        keys = []
-        for i, part in enumerate(parts):
-            low = part.lower()
-            is_last = i == len(parts) - 1
-            if not is_last:
-                if low not in mods:
-                    return None  # non-modifier before the final key -> invalid
-                keys.append(mods[low])
-                continue
-            # final element = the key
-            if low in named:
-                keys.append(named[low])
-            elif len(low) == 1 and low.isalnum():
-                keys.append(low)
-            elif len(low) >= 2 and low[0] == "f" and low[1:].isdigit():
-                keys.append(low)  # function key f1..f24
+        text = command.strip()
+        if len(text) == 1:
+            return [text.lower()] if text.isprintable() else None
+        # "Ctrl++" / "Ctrl+Shift++": the last key IS the plus sign
+        trailing_plus = text.endswith("+")
+        if trailing_plus:
+            text = text[:-1]
+        parts = [p.strip() for p in text.split("+")]
+        if trailing_plus:
+            # "Ctrl+" split is ["Ctrl", ""]: that empty last part is the plus key
+            if parts[-1]:
+                parts.append("+")
             else:
+                parts[-1] = "+"
+        keys = []
+        for part in parts:
+            key = KeyboardCommander._key_name(part)
+            if key is None:
                 return None
-        return keys
+            keys.append(key)
+        return keys or None
+
+    @staticmethod
+    def _key_name(part: str):
+        """One key's pyautogui name, or None when it isn't a key."""
+        if len(part) == 1:
+            return part.lower() if part.isprintable() and not part.isspace() else None
+        low = part.lower().replace(" ", "").replace("_", "")
+        if not low:
+            return None
+        low = _KEY_ALIASES.get(low, low)
+        if len(low) == 1 or low in _PYAUTOGUI_KEYS:
+            return low
+        return None
 
     def get_available_commands(self) -> list:
         """

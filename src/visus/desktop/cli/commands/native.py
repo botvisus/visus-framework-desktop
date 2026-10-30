@@ -66,8 +66,10 @@ def _format_item(item):
 @native.command(name="snapshot", help="List the window's actionable controls, numbered (act with `click N`).")
 @click.option("--window", help="Window title substring (else foreground).")
 @click.option("--pid", type=int, help="Process id (else foreground).")
-@click.option("--max-depth", "max_depth", type=int, default=8, show_default=True)
-@click.option("--max", "max_items", type=int, default=200, show_default=True, help="Print at most this many.")
+# 25: a faixa de opções do Office põe os botões (Bold, Shading, a paleta de cores) além
+# do nível 8 -- medido no Excel, ~1 s do mesmo jeito
+@click.option("--max-depth", "max_depth", type=int, default=25, show_default=True)
+@click.option("--max", "max_items", type=int, default=400, show_default=True, help="Print at most this many.")
 @click.option("--timeout", type=float, default=10.0, show_default=True)
 @click.option(
     "--backend", default="uia", show_default=True, type=click.Choice(["uia", "win32"]),

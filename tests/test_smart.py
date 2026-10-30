@@ -126,10 +126,26 @@ class TestSmartFindOrder:
 # ---------------------------------------------------------------------------
 
 
+_FOUND = {"exists": True, "rect": {"x": 1, "y": 2, "width": 3, "height": 4}}
+_MISSING = {"exists": False}
+
+
+def _native(found=_FOUND, clicked=True):
+    """Simula o nativo: a consulta (qual nome acha o controle) e o clique."""
+    state = patch.object(
+        _smart, "native_get_state",
+        side_effect=found if isinstance(found, list) else None,
+        return_value=None if isinstance(found, list) else found,
+    )
+    click = patch.object(_smart, "native_click", return_value=clicked)
+    return state, click
+
+
 class TestSmartClick:
     def test_native_click_first(self):
         bot = _bot()
-        with patch.object(_smart, "native_click", return_value=True) as nc:
+        state, click = _native()
+        with state, click as nc:
             out = _smart.smart_click("Salvar", image="s.png", bot=bot)
         assert out["clicked"] is True
         assert out["method"] == "native"
@@ -139,37 +155,59 @@ class TestSmartClick:
     def test_falls_to_image_click(self):
         bot = _bot()
         bot.click_image.return_value = True
-        with patch.object(_smart, "native_click", return_value=False):
+        state, click = _native(found=_MISSING)
+        with state, click:
             out = _smart.smart_click("Salvar", image="s.png", bot=bot)
         assert out["method"] == "image"
 
     def test_falls_to_ocr_click(self):
         bot = _bot()
         bot.click_text.return_value = True
-        with patch.object(_smart, "native_click", return_value=False):
+        state, click = _native(found=_MISSING)
+        with state, click:
             out = _smart.smart_click("Salvar", image="s.png", bot=bot)
         assert out["method"] == "ocr"
 
     def test_falls_to_coordinates_click(self):
         bot = _bot()
-        with patch.object(_smart, "native_click", return_value=False):
-            out = _smart.smart_click(
-                "Salvar", coordinates=[300, 400], bot=bot
-            )
+        state, click = _native(found=_MISSING)
+        with state, click:
+            out = _smart.smart_click("Salvar", coordinates=[300, 400], bot=bot)
         assert out["method"] == "coordinates"
         bot.click_at.assert_called_once()
 
     def test_force_native_only(self):
+        """Sem o controle, o nativo não clica (nem pelo OCR, fora da ordem pedida) e
+        desiste rápido: só a consulta, ~1,5 s por nome, em vez de esperar o prazo."""
         bot = _bot()
-        with patch.object(_smart, "native_click", return_value=False) as nc:
+        state, click = _native(found=_MISSING)
+        with state as ns, click as nc:
             out = _smart.smart_click("X", order=["native"], window="App", bot=bot)
         assert out["clicked"] is False
+        nc.assert_not_called()
+        names = [{k: v for k, v in c.kwargs.items() if k.startswith("title")} for c in ns.call_args_list]
+        assert names == [{"title": "X"}, {"title_re": "(?i)^X$"}]
+        assert all(c.kwargs["timeout"] <= 1.5 for c in ns.call_args_list)
+        bot.click_text.assert_not_called()
+
+    def test_texto_da_tela_com_outra_caixa_acha_pelo_nativo(self):
+        """O Office mostra "INSERT" e o nome UIA é "Insert": ainda o nativo (~1 s), não o
+        OCR (~7 s) -- e o clique sai UMA vez, com o prazo inteiro (o invoke de um link
+        segura até o app reagir; com 1 s o smart clicava de novo pelo OCR)."""
+        bot = _bot()
+        state, click = _native(found=[_MISSING, _FOUND])
+        with state, click as nc:
+            out = _smart.smart_click("INSERT", window="Excel", bot=bot, timeout=5.0)
+        assert out == {"clicked": True, "method": "native", "tried": ["native"]}
         nc.assert_called_once()
+        assert nc.call_args.kwargs["title_re"] == "(?i)^INSERT$"
+        assert nc.call_args.kwargs["timeout"] == 5.0
         bot.click_text.assert_not_called()
 
     def test_native_selector_forwarded(self):
         bot = _bot()
-        with patch.object(_smart, "native_click", return_value=True) as nc:
+        state, click = _native()
+        with state, click as nc:
             _smart.smart_click(
                 "Salvar", window="App", control_type="Button",
                 auto_id="btnSave", bot=bot,
@@ -179,6 +217,60 @@ class TestSmartClick:
         assert kwargs["control_type"] == "Button"
         assert kwargs["auto_id"] == "btnSave"
         assert kwargs["window"] == "App"
+
+
+class TestSmartWindowArea:
+    """Com --window, a imagem e o OCR leem só a moldura da janela -- várias vezes mais
+    rápido que a tela inteira -- e, para clicar, a janela vem para a frente antes."""
+
+    def test_ocr_le_so_a_janela_que_veio_para_a_frente(self):
+        bot = _bot()
+        bot.click_text.return_value = True
+        state, click = _native(found=_MISSING)
+        with state, click, \
+                patch.object(_smart.sys, "platform", "win32"), \
+                patch.object(_smart, "front_window", return_value="Book1 - Excel") as fw, \
+                patch.object(_smart, "window_region", return_value=(10, 20, 300, 400)):
+            out = _smart.smart_click("Salvar", window="Excel", bot=bot)
+        assert out["method"] == "ocr"
+        fw.assert_called_once_with("Excel")
+        assert bot.click_text.call_args.kwargs["region"] == (10, 20, 300, 400)
+
+    def test_janela_que_nao_vem_para_a_frente_nao_recebe_clique(self):
+        """Outra janela por cima: clicar pelo pixel acertaria ELA -- os métodos por
+        pixel são pulados e o resultado diz que não clicou."""
+        bot = _bot()
+        bot.click_text.return_value = True
+        state, click = _native(found=_MISSING)
+        with state, click, \
+                patch.object(_smart, "front_window", return_value=None):
+            out = _smart.smart_click("Salvar", image="s.png", window="Excel", bot=bot)
+        assert out["clicked"] is False
+        bot.click_image.assert_not_called()
+        bot.click_text.assert_not_called()
+
+    def test_regiao_dada_vence_a_janela(self):
+        bot = _bot()
+        bot.click_text.return_value = True
+        state, click = _native(found=_MISSING)
+        with state, click, \
+                patch.object(_smart, "front_window", return_value="Excel"), \
+                patch.object(_smart, "window_region") as wr:
+            _smart.smart_click("Salvar", window="Excel", search_region=[1, 2, 3, 4], bot=bot)
+        wr.assert_not_called()
+        assert bot.click_text.call_args.kwargs["region"] == (1, 2, 3, 4)
+
+    def test_find_le_a_janela_sem_trazer_para_a_frente(self):
+        bot = _bot()
+        bot.find_text.return_value = (11, 22, 33, 44)
+        with patch.object(_smart, "native_get_state", return_value=_MISSING), \
+                patch.object(_smart.sys, "platform", "win32"), \
+                patch.object(_smart, "front_window") as fw, \
+                patch.object(_smart, "window_region", return_value=(10, 20, 300, 400)):
+            out = _smart.smart_find("Salvar", window="Excel", bot=bot)
+        assert out["method"] == "ocr"
+        fw.assert_not_called()
+        assert bot.find_text.call_args.kwargs["region"] == (10, 20, 300, 400)
 
 
 # ---------------------------------------------------------------------------

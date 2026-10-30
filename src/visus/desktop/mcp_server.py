@@ -116,8 +116,11 @@ WORKFLOW — follow in order:
    scopes every later search. Don't use `native_dump_tree` just to test
    existence — that's slow.
 
-2. SEE THE UI: `native_dump_tree(window=...)`. If it returns controls, the app
-   is ACCESSIBLE — act by control (`native_click` / `native_set_text` /
+2. SEE THE UI: `native_snapshot(window=...)` (numbered actionable controls, deep
+   enough for the Office ribbon; `native_dump_tree` is the shallow raw tree). To
+   OPEN an app use `open_app("excel", wait_window="Excel")`, and pass `window=` to
+   `type_text` / `keyboard_command` so the keys never land in another window.
+   If it returns controls, the app is ACCESSIBLE — act by control (`native_click` / `native_set_text` /
    `native_get_text` / `native_wait`). This is the most robust path (no pixels,
    immune to theme/DPI/resolution/language) and needs NO templates. Native
    targeting by `control_type`/`auto_id`/`found_index` is EXACT — act and trust
@@ -916,7 +919,11 @@ def find_multiple(
 
 @mcp.tool()
 def type_text(
-    text: str, interval: float = 0.05, delay: float = 0, backtrack: bool = False
+    text: str,
+    interval: float = 0.02,
+    delay: float = 0,
+    backtrack: bool = False,
+    window: str | None = None,
 ) -> bool:
     """Type ``text`` into the CURRENTLY FOCUSED field (click/focus it first).
 
@@ -926,16 +933,23 @@ def type_text(
     PARAMS: ``interval`` is the per-character delay (raise it for apps that
     drop fast keystrokes); ``delay`` pauses after typing; ``backtrack`` retries
     within a task session on failure.
-    RETURNS: True once typed. Does NOT move focus — make sure the right field
-    is focused (e.g. ``native_click`` / ``click_text`` it first).
+    ``window`` (title substring): that window is brought to the front and CHECKED
+    first -- with another window in front nothing is typed (returns False). Pass it
+    whenever you know the app: without it the text lands in whatever has focus.
+    RETURNS: True once typed. Does NOT move focus inside the window — make sure the
+    right field is focused (e.g. ``native_click`` / ``click_text`` it first).
     """
     return bool(
-        get_bot().type_text(text, interval=interval, delay=delay, backtrack=backtrack)
+        get_bot().type_text(
+            text, interval=interval, delay=delay, backtrack=backtrack, window=window
+        )
     )
 
 
 @mcp.tool()
-def keyboard_command(command: str, delay: float = 0, backtrack: bool = False) -> bool:
+def keyboard_command(
+    command: str, delay: float = 0, backtrack: bool = False, window: str | None = None
+) -> bool:
     """Press a named key or shortcut — this is the visus way; never pyautogui.
 
     USE WHEN: pressing a single key or chord (not typing text).
@@ -946,9 +960,15 @@ def keyboard_command(command: str, delay: float = 0, backtrack: bool = False) ->
     ``Ctrl+Shift+F12`` … (modifiers: Ctrl/Control, Shift, Alt, Win/Cmd/Super;
     case-insensitive for chords). So you NEVER need ``pyautogui.hotkey`` — a
     generated script must call this instead.
+    A KEY ALONE (``Alt``, ``H``) and a SEQUENCE separated by commas, pressed one after
+    another (``"Alt, H, O, I"`` -- Office key tips: Home > Format > AutoFit Column
+    Width) work too. ``window`` brings that window to the front and checks it first,
+    like ``type_text``.
     RETURNS: True if recognized and sent; False otherwise.
     """
-    return bool(get_bot().keyboard_command(command, delay=delay, backtrack=backtrack))
+    return bool(
+        get_bot().keyboard_command(command, delay=delay, backtrack=backtrack, window=window)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1339,6 +1359,62 @@ def native_dump_tree(
     return _fn(
         window=window, pid=pid, max_depth=max_depth, timeout=timeout, backend=backend
     )
+
+
+@mcp.tool()
+def native_snapshot(
+    window: str | None = None,
+    pid: int | None = None,
+    max_depth: int = 25,
+    max_items: int = 400,
+    timeout: float = 10.0,
+    backend: str = "uia",
+) -> dict:
+    """The window's ACTIONABLE controls, numbered -- how an agent sees a native UI
+    deep enough to reach the Office ribbon's buttons (Bold, Fill Color's palette),
+    which ``native_dump_tree`` (3 levels) misses.
+
+    Each item is ``{index, control_type, title, auto_id, found_index, rect}``: pass
+    ``title`` + ``control_type`` (+ ``auto_id``) + ``found_index`` to ``native_click``
+    / ``native_set_text`` / ``native_get_text`` to act on exactly that control (two
+    "Close" buttons get found_index 0 and 1). The name is the accessibility name,
+    which may differ from the label on screen (Excel's "Fill Color" is "Shading").
+    RETURNS: ``{window, items, more}`` -- ``more`` counts the items past ``max_items``.
+    """
+    from .core.native_rpa import native_snapshot_nodes, select_actionable
+
+    title, nodes = native_snapshot_nodes(
+        window=window, pid=pid, max_depth=max_depth, timeout=timeout, backend=backend
+    )
+    items = select_actionable(nodes) if title is not None else []
+    return {
+        "window": title,
+        "items": items[:max_items],
+        "more": max(0, len(items) - max_items),
+    }
+
+
+@mcp.tool()
+def open_app(target: str, wait_window: str | None = None, timeout: float = 30.0) -> dict:
+    """Open an app or a file as Windows Run does -- ``excel``, ``notepad``, ``calc``,
+    a ``.xlsx`` in its default program, a URL in the browser.
+
+    USE WHEN: the person asks to open an app. Prefer it to ``launch`` (a raw
+    executable: ``excel`` is not on the PATH and a document doesn't open).
+    ``wait_window`` (title substring, e.g. "Excel") waits until that window is
+    READY -- in front, title steady -- so the next step doesn't act on a loading
+    screen; then look at the screen before typing.
+    RETURNS: ``{target, window, opened}`` -- ``window`` is the ready window's title
+    or None when it did not show up in ``timeout`` seconds; ``opened`` is False with
+    ``error`` when the target could not be opened.
+    """
+    from .core.process import open_app as _open
+
+    try:
+        result = _open(target, wait_window=wait_window, timeout=timeout)
+    except OSError as exc:
+        return {"target": target, "window": None, "opened": False, "error": str(exc)}
+    return {**result, "opened": True}
 
 
 @mcp.tool()
@@ -2081,8 +2157,8 @@ for _name, _obj in list(globals().items()):
             "click_at", "hybrid_find", "type_text", "keyboard_command",
             "take_screenshot", "save_screenshot", "capture_element",
             "get_window", "get_monitors", "wait_for_stable_screen",
-            "native_dump_tree", "native_click", "native_set_text",
-            "native_get_text", "native_get_state", "native_wait",
+            "native_dump_tree", "native_snapshot", "native_click", "native_set_text",
+            "native_get_text", "native_get_state", "native_wait", "open_app",
             "smart_find", "smart_click",
             "wait_for_file", "wait_for_file_stable", "get_clipboard",
             "copy_to_clipboard", "extract_text_from_region", "launch",

@@ -307,8 +307,15 @@ def test_rapidocr_carrega_uma_vez_e_quieto(monkeypatch: pytest.MonkeyPatch) -> N
     b = ocr_engine._RapidOCRBackend({"log_level": "INFO"})
     assert built == [], "carrega só no 1º uso"
     assert a.engine is b.engine
-    # quiet, and without the text-angle classifier (screen text is never upside down)
-    assert built == [{"Global.log_level": "warning", "Global.use_cls": False}]
+    # quiet, without the text-angle classifier (screen text is never upside down) and
+    # with ONNX Runtime's memory arena (the first pass twice as fast)
+    assert built == [
+        {
+            "Global.log_level": "warning",
+            "Global.use_cls": False,
+            "EngineConfig.onnxruntime.enable_cpu_mem_arena": True,
+        }
+    ]
 
 
 def test_cli_loga_so_warning_por_padrao() -> None:

@@ -59,7 +59,9 @@ def _run_with_timeout(fn, timeout: float):
     return box["value"]
 
 
-def _selector_kwargs(title, control_type, auto_id, found_index, backend="uia") -> dict:
+def _selector_kwargs(
+    title, control_type, auto_id, found_index, backend="uia", title_re=None
+) -> dict:
     """Build the ``child_window`` kwargs from the selector arguments.
 
     The ``win32`` backend has no UIA ``control_type``/``auto_id`` concept, so
@@ -69,6 +71,8 @@ def _selector_kwargs(title, control_type, auto_id, found_index, backend="uia") -
     kwargs: dict = {}
     if title is not None:
         kwargs["title"] = title
+    elif title_re is not None:
+        kwargs["title_re"] = title_re
     if control_type is not None:
         if backend == "win32":
             kwargs["class_name"] = control_type
@@ -239,11 +243,25 @@ def _walk_tree(top, max_depth: int, max_nodes: int = 5000) -> list[dict]:
 
 # What an agent can act on. Text, panes, groups and the like are structure: they
 # would cost tokens in every snapshot and give nothing to click.
-ACTIONABLE_CONTROL_TYPES = frozenset({
-    "Button", "SplitButton", "Edit", "Document", "CheckBox", "RadioButton",
-    "ComboBox", "MenuItem", "ListItem", "TabItem", "Hyperlink", "TreeItem",
-    "DataItem", "Spinner", "Slider",
-})
+ACTIONABLE_CONTROL_TYPES = frozenset(
+    {
+        "Button",
+        "SplitButton",
+        "Edit",
+        "Document",
+        "CheckBox",
+        "RadioButton",
+        "ComboBox",
+        "MenuItem",
+        "ListItem",
+        "TabItem",
+        "Hyperlink",
+        "TreeItem",
+        "DataItem",
+        "Spinner",
+        "Slider",
+    }
+)
 
 
 def select_actionable(nodes: list[dict]) -> list[dict]:
@@ -285,7 +303,7 @@ def native_snapshot_nodes(
     window=None,
     pid=None,
     *,
-    max_depth: int = 8,
+    max_depth: int = 25,
     timeout: float = 10.0,
     connect_timeout: float = 2.0,
     backend: str = "uia",
@@ -332,6 +350,7 @@ def native_click(
     retries: int = 0,
     delay: float = 0.3,
     backend: str = "uia",
+    title_re=None,
 ) -> bool:
     """Click a control located by selector -- no coordinates, no image.
 
@@ -350,7 +369,7 @@ def native_click(
             if top is None:
                 return False
             ctrl = top.child_window(
-                **_selector_kwargs(title, control_type, auto_id, found_index, backend)
+                **_selector_kwargs(title, control_type, auto_id, found_index, backend, title_re)
             )
             if not ctrl.exists(timeout=timeout):
                 return False
@@ -387,10 +406,14 @@ def native_set_text(
     delay: float = 0.3,
     backend: str = "uia",
 ) -> bool:
-    """Set the text of an editable control located by selector.
+    """Set the text of an editable control located by selector -- like a person.
 
-    Uses ``set_edit_text`` (UIA value pattern) with a ``type_keys``
-    fallback. Returns True on success.
+    Focuses the control, checks its window is the one in front, selects all and
+    types the text key by key, then reads it back. Many apps only take what comes
+    from the keyboard: the Save As name box SHOWED a name set through the UIA value
+    pattern and still saved under the old one. When the window cannot come to the
+    front (nothing is typed then), the value pattern is the fallback. Returns True
+    when the control ends up holding ``text``.
     """
     if not _ensure_pywinauto():
         return False
@@ -405,20 +428,79 @@ def native_set_text(
             )
             if not ctrl.exists(timeout=timeout):
                 return False
-            try:
-                ctrl.set_edit_text(text)
+            wrapper = ctrl.wrapper_object()
+            if _type_into(wrapper, text):
                 return True
+            try:
+                wrapper.set_edit_text(text)
             except Exception:
-                try:
-                    ctrl.set_focus()
-                    ctrl.type_keys(text, with_spaces=True)
-                    return True
-                except Exception:
-                    return False
+                return False
+            value = _control_value(wrapper)
+            return value is None or value == text
 
         return _run_with_timeout(_job, timeout + connect_timeout) is True
 
     return bool(_with_retries(_attempt, retries, delay))
+
+
+def _control_value(wrapper):
+    """O texto escrito num campo (UIA ValuePattern), ou None quando não há um."""
+    for read in (
+        lambda: wrapper.iface_value.CurrentValue,
+        lambda: wrapper.get_value(),
+    ):
+        try:
+            value = read()
+        except Exception:
+            continue
+        if value is not None:
+            return str(value)
+    return None
+
+
+def _type_into(wrapper, text: str) -> bool:
+    """Foca o campo e, com a janela dele na frente, seleciona tudo e digita como uma
+    pessoa; confere o resultado. False quando a janela não vem para a frente (aí
+    nenhuma tecla sai) ou o campo não ficou com o texto."""
+    import sys
+
+    try:
+        wrapper.set_focus()
+    except Exception:
+        return False
+    if sys.platform == "win32":
+        import win32gui
+
+        # a janela-RAIZ do próprio campo (pela cadeia de pais, não a do dono): um campo
+        # do "Salvar como" fica no diálogo, que é a janela em foco -- o
+        # top_level_parent() subia até a janela do Excel, dona do diálogo
+        element = wrapper
+        handle = 0
+        for _ in range(30):
+            handle = int(
+                getattr(getattr(element, "element_info", None), "handle", 0) or 0
+            )
+            if handle:
+                break
+            try:
+                element = element.parent()
+            except Exception:
+                return False
+            if element is None:
+                return False
+        if not handle:
+            return False
+        root = win32gui.GetAncestor(handle, 2)  # GA_ROOT
+        if int(win32gui.GetForegroundWindow() or 0) != int(root):
+            return False
+    import pyautogui
+
+    from visus.desktop.core.human_typing import type_like_a_person
+
+    pyautogui.hotkey("ctrl", "a", _pause=False)
+    type_like_a_person(text, 0.01)
+    value = _control_value(wrapper)
+    return value is None or value == text
 
 
 def native_get_text(
@@ -446,13 +528,16 @@ def native_get_text(
         )
         if not ctrl.exists(timeout=timeout):
             return None
+        # o VALOR de um campo (o que está escrito nele) vem antes do nome: o nome de um
+        # Edit é o rótulo ("File name:"), não o texto
+        wrapper = ctrl.wrapper_object()
+        value = _control_value(wrapper)
+        if value:
+            return value
         try:
-            return ctrl.window_text()
+            return wrapper.window_text()
         except Exception:
-            try:
-                return ctrl.get_value()
-            except Exception:
-                return None
+            return value
 
     result = _run_with_timeout(_job, timeout + connect_timeout)
     return None if result is _TIMEOUT_SENTINEL else result
@@ -469,6 +554,7 @@ def native_get_state(
     timeout: float = 5.0,
     connect_timeout: float = 2.0,
     backend: str = "uia",
+    title_re=None,
 ) -> dict | None:
     """Return a control's state snapshot, or ``None`` if not found.
 
@@ -484,7 +570,9 @@ def native_get_state(
         if top is None:
             return None
         ctrl = top.child_window(
-            **_selector_kwargs(title, control_type, auto_id, found_index, backend)
+            **_selector_kwargs(
+                title, control_type, auto_id, found_index, backend, title_re
+            )
         )
         if not ctrl.exists(timeout=timeout):
             return {"exists": False}

@@ -47,6 +47,48 @@ class TestExecuteCommand:
     def test_invalid_chord_still_returns_false(self, commander):
         assert commander.execute_command("Ctrl+Banana") is False
 
+    def test_a_key_alone_even_a_modifier(self, commander):
+        """Alt alone opens Office's key tips; a lone letter answers them."""
+        with patch("pyautogui.hotkey") as hotkey:
+            assert commander.execute_command("Alt") is True
+            assert commander.execute_command("H") is True
+        assert [c.args for c in hotkey.call_args_list] == [("alt",), ("h",)]
+
+    def test_sequence_presses_one_after_another(self, commander):
+        with patch("pyautogui.hotkey") as hotkey,                 patch("visus.desktop.core.keyboard_commands.time.sleep"):
+            assert commander.execute_command("Alt, H, O, I") is True
+        assert [c.args for c in hotkey.call_args_list] == [
+            ("alt",), ("h",), ("o",), ("i",)
+        ]
+
+    @pytest.mark.parametrize(
+        ("command", "keys"),
+        [
+            ("Ctrl+;", ("ctrl", ";")),
+            ("Ctrl++", ("ctrl", "+")),
+            ("Ctrl+Shift++", ("ctrl", "shift", "+")),
+            ("Win+Shift+S", ("win", "shift", "s")),
+            ("PrintScreen", ("printscreen",)),
+            ("page up", ("pageup",)),
+            ("Num5", ("num5",)),
+            ("VolumeUp", ("volumeup",)),
+            ("Control+Option+Escape", ("ctrl", "alt", "esc")),
+            ("Ctrl+Comma", ("ctrl", ",")),
+            ("ç", ("ç",)),
+        ],
+    )
+    def test_any_key_or_chord_no_fixed_list(self, commander, command, keys):
+        """Not a list: every pyautogui key name, any character, any combination."""
+        assert command not in commander.command_mapping
+        with patch("pyautogui.hotkey") as hotkey:
+            assert commander.execute_command(command) is True
+        hotkey.assert_called_once_with(*keys)
+
+    def test_sequence_stops_at_an_unknown_step(self, commander):
+        with patch("pyautogui.hotkey") as hotkey,                 patch("visus.desktop.core.keyboard_commands.time.sleep"):
+            assert commander.execute_command("Alt, Banana, I") is False
+        assert [c.args for c in hotkey.call_args_list] == [("alt",)]
+
     def test_exception_inside_mapping_raises_task_execution_error(self, commander):
         def explodes():
             raise RuntimeError("boom")

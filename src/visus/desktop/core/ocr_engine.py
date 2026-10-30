@@ -742,7 +742,16 @@ class _RapidOCRBackend:
         key = (self._rapidocr_cls, level, use_cls)
         engine = _RAPIDOCR_ENGINES.get(key)
         if engine is None:
-            engine = self._rapidocr_cls(params={"Global.log_level": level, "Global.use_cls": use_cls})
+            engine = self._rapidocr_cls(
+                params={
+                    "Global.log_level": level,
+                    "Global.use_cls": use_cls,
+                    # the ONNX Runtime memory arena: without it the FIRST pass -- the
+                    # only one a CLI call makes -- reallocates every buffer (measured
+                    # on a 1920x1080 screen: 7.8 s -> 3.9 s, same 181 texts)
+                    "EngineConfig.onnxruntime.enable_cpu_mem_arena": True,
+                }
+            )
             _RAPIDOCR_ENGINES[key] = engine
         return engine
 
