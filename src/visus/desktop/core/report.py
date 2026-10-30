@@ -3,22 +3,16 @@
 Reads the ``events.jsonl`` from a session zip (see
 ``visus.desktop.core.session``) and renders a self-contained HTML file
 suitable for emailing, attaching to a CI artefact, or pinning in a
-bug ticket. Every PNG referenced by ``failure_screenshot`` is embedded
-as a base64 data URI so the report has no external dependencies.
+bug ticket. Every PNG referenced by ``screenshot`` or ``failure_screenshot``
+is embedded as a base64 data URI so the report has no external dependencies.
 
-The styling follows the design tokens documented in
-``D:\\bot_vision\\DESIGN.md`` (Anthropic Claude design system):
-
-  * cream canvas ``#faf9f5``  -- page floor
-  * surface card ``#efe9de``  -- feature card backgrounds
-  * dark navy ``#181715``     -- code / terminal / footer surfaces
-  * coral ``#cc785c``         -- primary CTA / KPI accent
-  * ink ``#141413``           -- headlines + body emphasis
-  * body ``#3d3d3a``          -- running text
-  * muted ``#6c6a64``         -- captions and labels
-  * hairline ``#e6dfd8``      -- 1px dividers
-  * EB Garamond / Tiempos / Cormorant fallback for serif display
-    headlines; Inter / system sans for body; JetBrains Mono for code
+The look is the orchestrator's (RunPilot) own run report -- the same one
+visus.web renders -- so a run reads the same on the desktop and in the web
+console: a white sheet on a light-grey floor, the GMES crimson ``#E0205C`` for
+the eyebrow, a KPI band with mono numbers, the task timeline as bordered cards
+with green OK / red FAILED badges, errors in red tints and the logs in a light
+box. Geist when installed, the system sans otherwise. It is always a light
+document: a report is printed and shared as a PDF.
 """
 
 from __future__ import annotations
@@ -27,6 +21,7 @@ import base64
 import json
 import os
 import zipfile
+from datetime import datetime
 from html import escape
 from pathlib import Path
 from typing import Any, Iterable
@@ -36,312 +31,256 @@ _SCREENSHOTS_DIR = "screenshots/"
 
 _CSS = """
 :root {
-  --canvas: #faf9f5;
-  --surface-card: #efe9de;
-  --surface-cream-strong: #e8e0d2;
-  --surface-dark: #181715;
-  --surface-dark-soft: #1f1e1b;
-  --ink: #141413;
-  --body: #3d3d3a;
-  --muted: #6c6a64;
-  --muted-soft: #8e8b82;
-  --hairline: #e6dfd8;
-  --primary: #cc785c;
-  --primary-active: #a9583e;
-  --on-primary: #ffffff;
-  --on-dark: #faf9f5;
-  --on-dark-soft: #a09d96;
-  --success: #5db872;
-  --error: #c64545;
-  --serif: Copernicus, 'Tiempos Headline', 'EB Garamond', 'Cormorant Garamond', Garamond, 'Times New Roman', serif;
-  --sans: StyreneB, Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --floor: #f5f5f5;
+  --paper: #ffffff;
+  --soft: #fafafa;
+  --line: #e5e5e5;
+  --line-soft: #f5f5f5;
+  --ink: #171717;
+  --text: #262626;
+  --body: #404040;
+  --sub: #525252;
+  --muted: #737373;
+  --faint: #a3a3a3;
+  --crimson: #E0205C;
+  --ok: #047857;
+  --ok-strong: #059669;
+  --ok-bg: #ecfdf5;
+  --ok-line: #a7f3d0;
+  --err: #b91c1c;
+  --err-strong: #dc2626;
+  --err-text: #991b1b;
+  --err-soft: #ef4444;
+  --err-bg: #fef2f2;
+  --err-line: #fecaca;
+  --warn: #b45309;
+  --warn-bg: #fffbeb;
+  --warn-line: #fde68a;
+  --sans: Geist, "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: "Geist Mono", "Cascadia Mono", Consolas, ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 * { box-sizing: border-box; }
-html, body {
-  margin: 0;
-  padding: 0;
-  background: var(--canvas);
-  color: var(--body);
+html, body { margin: 0; padding: 0; }
+body {
+  background: var(--floor);
+  color: var(--ink);
   font-family: var(--sans);
-  font-size: 16px;
-  line-height: 1.55;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 24px 16px;
+  -webkit-font-smoothing: antialiased;
 }
-main { max-width: 1200px; margin: 0 auto; padding: 0 32px; }
-header.hero {
-  padding: 96px 32px 48px;
-  max-width: 1200px;
+.sheet {
+  max-width: 896px;
   margin: 0 auto;
-}
-header.hero h1 {
-  font-family: var(--serif);
-  font-weight: 400;
-  font-size: 64px;
-  line-height: 1.05;
-  letter-spacing: -1.5px;
-  color: var(--ink);
-  margin: 0 0 16px;
-}
-header.hero p.lede {
-  font-family: var(--sans);
-  font-size: 18px;
-  color: var(--muted);
-  margin: 0;
-}
-header.hero .run-meta {
-  display: flex;
-  gap: 12px;
-  margin-top: 24px;
-  flex-wrap: wrap;
-}
-.badge-pill {
-  display: inline-block;
-  background: var(--surface-card);
-  color: var(--ink);
-  font-size: 13px;
-  font-weight: 500;
-  padding: 4px 12px;
-  border-radius: 9999px;
-}
-.badge-coral {
-  display: inline-block;
-  background: var(--primary);
-  color: var(--on-primary);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  padding: 4px 12px;
-  border-radius: 9999px;
-}
-.badge-success {
-  display: inline-block;
-  background: var(--surface-card);
-  color: var(--success);
-  font-size: 13px;
-  font-weight: 500;
-  padding: 4px 12px;
-  border-radius: 9999px;
-}
-.badge-failure {
-  display: inline-block;
-  background: var(--primary);
-  color: var(--on-primary);
-  font-size: 13px;
-  font-weight: 500;
-  padding: 4px 12px;
-  border-radius: 9999px;
-}
-section.kpis {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  margin-bottom: 96px;
-}
-.kpi-card {
-  background: var(--surface-card);
-  border-radius: 12px;
-  padding: 32px;
-}
-.kpi-card .label {
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 12px;
-}
-.kpi-card .value {
-  font-family: var(--serif);
-  font-weight: 400;
-  font-size: 36px;
-  line-height: 1.15;
-  letter-spacing: -0.5px;
-  color: var(--ink);
-}
-section.timeline {
-  margin-bottom: 96px;
-}
-section.timeline h2 {
-  font-family: var(--serif);
-  font-weight: 400;
-  font-size: 36px;
-  line-height: 1.15;
-  letter-spacing: -0.5px;
-  color: var(--ink);
-  margin: 0 0 32px;
-}
-article.task {
-  border-top: 1px solid var(--hairline);
-  padding: 24px 0;
-  display: grid;
-  grid-template-columns: 56px 1fr auto;
-  gap: 24px;
-  align-items: start;
-}
-article.task:first-of-type { border-top: none; }
-article.task .index {
-  font-family: var(--serif);
-  font-weight: 400;
-  font-size: 28px;
-  line-height: 1.2;
-  letter-spacing: -0.3px;
-  color: var(--muted-soft);
-}
-article.task .body h3 {
-  margin: 0 0 6px;
-  font-size: 18px;
-  font-weight: 500;
-  color: var(--ink);
-}
-article.task .body .meta {
-  font-size: 14px;
-  color: var(--muted);
-}
-article.task .status {
-  text-align: right;
-  min-width: 140px;
-}
-article.task pre.error {
-  font-family: var(--mono);
-  font-size: 14px;
-  line-height: 1.6;
-  margin-top: 12px;
-  padding: 16px 20px;
-  background: var(--surface-dark);
-  color: var(--on-dark);
-  border-radius: 12px;
-  overflow-x: auto;
-  white-space: pre-wrap;
-}
-.screenshot-card {
-  margin-top: 16px;
-  padding: 24px;
-  background: var(--surface-dark);
-  border-radius: 12px;
-}
-.screenshot-card .header {
-  color: var(--on-dark-soft);
-  font-family: var(--mono);
-  font-size: 12px;
-  margin-bottom: 12px;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-}
-.screenshot-card img {
-  max-width: 100%;
-  height: auto;
-  display: block;
+  background: var(--paper);
+  border: 1px solid var(--line);
   border-radius: 8px;
-  background: var(--surface-dark-soft);
+  padding: 32px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / .05);
+  print-color-adjust: exact;
+  -webkit-print-color-adjust: exact;
 }
-footer.site {
-  background: var(--surface-dark);
-  color: var(--on-dark-soft);
-  padding: 64px 32px;
-  font-size: 14px;
+header.report { border-bottom: 1px solid var(--line); padding-bottom: 20px; }
+.head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.head > div { min-width: 0; }
+.eyebrow {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--crimson);
 }
-footer.site .inner {
-  max-width: 1200px;
-  margin: 0 auto;
+h1 {
+  margin: 4px 0 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -.01em;
+  color: var(--ink);
+  overflow-wrap: anywhere;
 }
-footer.site .wordmark {
-  color: var(--on-dark);
-  font-family: var(--serif);
-  font-weight: 400;
+.run-id { margin: 4px 0 0; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.pill {
+  flex-shrink: 0;
+  border: 1px solid;
+  border-radius: 9999px;
+  padding: 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.tone-ok { border-color: var(--ok-line); background: var(--ok-bg); color: var(--ok); }
+.tone-failed { border-color: var(--err-line); background: var(--err-bg); color: var(--err); }
+.tone-neutral { border-color: var(--line); background: var(--line-soft); color: var(--sub); }
+.meta { margin-top: 20px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 24px; }
+.meta > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.meta .v {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+section.kpis { margin-top: 24px; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+.kpi-card { border: 1px solid var(--line); background: var(--soft); border-radius: 8px; padding: 12px 16px; }
+.kpi-card .value {
+  font-family: var(--mono);
   font-size: 22px;
-  letter-spacing: -0.3px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.kpi-card .label { margin-top: 6px; }
+.kpi-card.ok .value { color: var(--ok-strong); }
+.kpi-card.failed .value { color: var(--err-strong); }
+.kpi-card.quiet .value { color: var(--muted); }
+section.block { margin-top: 32px; }
+.block-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--body);
+}
+h2.errors { color: var(--err); }
+.error-card {
+  border: 1px solid var(--err-line);
+  background: var(--err-bg);
+  border-radius: 8px;
+  padding: 16px;
   margin-bottom: 12px;
 }
-.run-header {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  margin: 48px 0 8px;
-  flex-wrap: wrap;
-}
-.run-header h3 {
-  font-family: var(--serif);
-  font-weight: 400;
-  font-size: 22px;
-  letter-spacing: -0.3px;
-  color: var(--ink);
+.error-card p.message {
   margin: 0;
-}
-.run-header .run-sub { font-size: 13px; color: var(--muted); }
-.chip {
-  display: inline-block;
-  font-family: var(--mono);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  padding: 2px 8px;
-  border-radius: 6px;
-  background: var(--surface-cream-strong);
-  color: var(--body);
-  margin-right: 8px;
-  vertical-align: middle;
-}
-article.task .body h3 code { font-family: var(--mono); font-size: 15px; }
-dl.kv {
-  margin: 8px 0 0;
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 2px 16px;
   font-size: 13px;
+  font-weight: 500;
+  line-height: 1.6;
+  color: var(--err-text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
-dl.kv dt { color: var(--muted-soft); font-family: var(--mono); }
-dl.kv dd { margin: 0; color: var(--body); font-family: var(--mono); }
-.screenshot-card.step { background: var(--surface-cream-strong); }
-.screenshot-card.step .header { color: var(--muted); }
-.screenshot-card.step img { background: var(--canvas); }
-details.logs {
-  margin-top: 16px;
-  background: var(--surface-dark);
-  border-radius: 12px;
-  padding: 12px 20px;
-  color: var(--on-dark-soft);
-  font-family: var(--mono);
+.error-card .when { margin: 8px 0 0; font-family: var(--mono); font-size: 10px; color: var(--err-soft); }
+.run-header { display: flex; align-items: baseline; gap: 8px; margin: 20px 0 8px; flex-wrap: wrap; }
+.run-header:first-child { margin-top: 0; }
+.run-header h3 { margin: 0; font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--body); }
+.run-header .run-sub { font-size: 11px; color: var(--muted); }
+.steps { display: flex; flex-direction: column; gap: 12px; }
+article.task { border: 1px solid var(--line); background: var(--paper); border-radius: 8px; padding: 16px; }
+.task .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.task .index { font-family: var(--mono); font-size: 11px; font-weight: 500; color: var(--faint); }
+.task .name { font-size: 13px; font-weight: 500; color: var(--ink); overflow-wrap: anywhere; }
+.badge-success, .badge-failure, .badge-backtrack {
+  border: 1px solid;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
 }
+.badge-success { border-color: var(--ok-line); background: var(--ok-bg); color: var(--ok); }
+.badge-failure { border-color: var(--err-line); background: var(--err-bg); color: var(--err); }
+.badge-backtrack { border-color: var(--warn-line); background: var(--warn-bg); color: var(--warn); }
+.task .duration { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.task .action { margin: 4px 0 0; font-family: var(--mono); font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.task .action b { font-weight: 400; color: var(--body); }
+.task .step-error {
+  display: inline-block;
+  margin: 8px 0 0;
+  border: 1px solid var(--err-line);
+  background: var(--err-bg);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--err);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+dl.kv { margin: 8px 0 0; display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; }
+dl.kv dt { font-family: var(--mono); font-size: 10.5px; color: var(--muted); }
+dl.kv dd { margin: 0; min-width: 0; font-family: var(--mono); font-size: 10.5px; color: var(--body); overflow-wrap: anywhere; }
+details.logs { margin-top: 12px; border: 1px solid var(--line); background: var(--soft); border-radius: 8px; overflow: hidden; }
 details.logs > summary {
   cursor: pointer;
-  font-size: 12px;
-  letter-spacing: 1.5px;
+  padding: 6px 12px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .08em;
   text-transform: uppercase;
-  color: var(--on-dark);
-  padding: 4px 0;
+  color: var(--sub);
 }
-details.logs > summary::marker { color: var(--primary); }
-details.logs pre.log-output {
-  margin: 12px 0 4px;
-  font-size: 12.5px;
-  line-height: 1.55;
-  color: var(--on-dark);
-  white-space: pre-wrap;
-  word-break: break-word;
+details.logs > summary::marker { color: var(--crimson); }
+.log-output { border-top: 1px solid var(--line); max-height: 360px; overflow-y: auto; }
+.log-line { display: flex; gap: 12px; padding: 4px 12px; border-bottom: 1px solid var(--line-soft); }
+.log-line:last-child { border-bottom: 0; }
+.log-line .lvl {
+  flex-shrink: 0;
+  min-width: 56px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--sub);
+}
+.log-line .msg { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--mono); font-size: 10.5px; color: var(--body); }
+.lvl-DEBUG .lvl { color: var(--faint); }
+.lvl-WARNING .lvl { color: var(--warn); }
+.lvl-ERROR .lvl, .lvl-CRITICAL .lvl { color: var(--err); }
+pre.json {
+  margin: 0;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
   max-height: 360px;
-  overflow-y: auto;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--body);
+  white-space: pre-wrap;
 }
-details.logs pre.log-output .lvl-DEBUG { color: var(--on-dark-soft); }
-details.logs pre.log-output .lvl-INFO { color: var(--on-dark); }
-details.logs pre.log-output .lvl-WARNING { color: #e2b35a; }
-details.logs pre.log-output .lvl-ERROR { color: #e07171; }
-details.logs pre.log-output .lvl-CRITICAL { color: #e07171; font-weight: 700; }
-@media (max-width: 900px) {
-  section.kpis { grid-template-columns: repeat(2, 1fr); }
-  header.hero h1 { font-size: 44px; letter-spacing: -1px; }
-  article.task { grid-template-columns: 40px 1fr; }
-  article.task .status { grid-column: 2; text-align: left; }
+figure.shot { margin: 12px 0 0; max-width: 672px; }
+figure.shot img { display: block; width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; }
+figure.shot.failure img { border-color: var(--err-line); }
+figure.shot figcaption { margin-top: 4px; font-family: var(--mono); font-size: 10px; color: var(--faint); }
+.empty {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 32px 16px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
 }
-@media (max-width: 600px) {
-  section.kpis { grid-template-columns: 1fr; }
-  main, header.hero { padding: 48px 20px; }
+footer.report { margin-top: 32px; border-top: 1px solid var(--line); padding-top: 16px; font-size: 10px; color: var(--faint); }
+@media (max-width: 860px) {
+  section.kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 560px) {
+  body { padding: 0; }
+  .sheet { border-radius: 0; border-left: 0; border-right: 0; padding: 20px 16px; }
+  .meta, section.kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media print {
+  html, body { background: #fff !important; padding: 0 !important; }
+  .sheet { max-width: none; margin: 0; padding: 0; border: 0; box-shadow: none; }
+  article.task, .error-card, figure.shot { break-inside: avoid; }
+  @page { margin: 12mm; }
 }
 """.strip()
 
 
-def write_report(zip_path: str | os.PathLike[str], html_path: str | os.PathLike[str]) -> None:
+def write_report(
+    zip_path: str | os.PathLike[str], html_path: str | os.PathLike[str]
+) -> None:
     """Render a session zip into a single-file HTML report."""
     events, screenshots = _read_session(Path(zip_path))
     html = _render_html(events, screenshots)
@@ -379,14 +318,19 @@ def _kpis(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
             "success_rate_pct": 0,
             "total_duration_ms": 0,
             "failed": 0,
+            "attempts": 0,
+            "retries": 0,
         }
     succeeded = sum(1 for e in events if e.get("success"))
     total_duration = sum(int(e.get("duration_ms") or 0) for e in events)
+    attempts = [int(e.get("attempts") or 0) for e in events]
     return {
         "total": total,
         "success_rate_pct": round(succeeded / total * 100),
         "total_duration_ms": total_duration,
         "failed": total - succeeded,
+        "attempts": sum(attempts),
+        "retries": sum(max(a - 1, 0) for a in attempts),
     }
 
 
@@ -410,91 +354,208 @@ def _group_runs(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return runs
 
 
-def _render_html(
-    events: list[dict[str, Any]], screenshots: dict[str, bytes]
-) -> str:
+# --- formatting (the orchestrator's: 391ms, 2.4s, 1m 3s; en-US instants) ----------
+
+
+def _duration(ms: float | None) -> str:
+    if ms is None or ms < 0:
+        return "—"
+    if ms < 1000:
+        return f"{round(ms)}ms"
+    seconds = ms / 1000
+    if seconds < 60:
+        text = f"{seconds:.1f}"
+        return (text[:-2] if text.endswith(".0") else text) + "s"
+    minutes = int(seconds // 60)
+    if minutes < 60:
+        return f"{minutes}m {round(seconds % 60)}s"
+    return f"{minutes // 60}h {minutes % 60}m"
+
+
+def _moment(value: Any) -> datetime | None:
+    try:
+        return datetime.fromisoformat(str(value)).astimezone()
+    except (TypeError, ValueError):
+        return None
+
+
+def _instant(value: Any) -> str:
+    """``10/30/2026, 9:06:53 AM`` in the reader's local time (or the raw value)."""
+    if not value:
+        return "—"
+    moment = _moment(value)
+    if moment is None:
+        return str(value)
+    hour = moment.hour % 12 or 12
+    half = "AM" if moment.hour < 12 else "PM"
+    return (
+        f"{moment.month}/{moment.day}/{moment.year}, "
+        f"{hour}:{moment.minute:02d}:{moment.second:02d} {half}"
+    )
+
+
+def _short_time(iso_ts: str) -> str:
+    """HH:MM:SS of an ISO timestamp in the reader's local time, like the dates
+    above it (fallback: the raw string)."""
+    moment = _moment(iso_ts)
+    return moment.strftime("%H:%M:%S") if moment else iso_ts
+
+
+def _wall_ms(events: list[dict[str, Any]]) -> float | None:
+    """First task's start to the last one's end. A task is stamped when it ends,
+    so the first one's own duration is added back."""
+    moments = [_moment(e.get("timestamp")) for e in events]
+    stamped = [m for m in moments if m is not None]
+    if not stamped:
+        return None
+    first = int(events[0].get("duration_ms") or 0)
+    return max(0.0, (max(stamped) - min(stamped)).total_seconds() * 1000 + first)
+
+
+def _meta(label: str, value: str) -> str:
+    return (
+        f'<div><span class="label">{escape(label)}</span>'
+        f'<span class="v">{escape(value)}</span></div>'
+    )
+
+
+def _kpi(label: str, value: Any, tone: str = "") -> str:
+    cls = f"kpi-card {tone}".strip()
+    return (
+        f'<div class="{cls}"><div class="value">{escape(str(value))}</div>'
+        f'<div class="label">{escape(label)}</div></div>'
+    )
+
+
+def _render_html(events: list[dict[str, Any]], screenshots: dict[str, bytes]) -> str:
     kpis = _kpis(events)
     runs = _group_runs(events)
-    last_ts = events[-1]["timestamp"] if events else ""
-    run_label = f"{len(runs)} run{'s' if len(runs) != 1 else ''}"
+    ordered = [e for run in runs for e in run["events"]]
+    numbered = list(enumerate(ordered, start=1))
+
+    if not events:
+        status, tone = "No tasks", "tone-neutral"
+    elif kpis["failed"]:
+        status, tone = "Failed", "tone-failed"
+    else:
+        status, tone = "Completed", "tone-ok"
+    run_ids = ", ".join(run["run_id"] for run in runs) or "—"
+    last_task = next(
+        (str(e["task_name"]) for e in reversed(ordered) if e.get("task_name")), "—"
+    )
+    meta = "".join(
+        [
+            _meta("Run", run_ids),
+            _meta("Started", _instant(ordered[0].get("timestamp")) if ordered else "—"),
+            _meta(
+                "Finished", _instant(ordered[-1].get("timestamp")) if ordered else "—"
+            ),
+            _meta("Duration", _duration(_wall_ms(ordered)) if ordered else "—"),
+            _meta("Attempts", str(kpis["attempts"])),
+            _meta("Last task", last_task),
+        ]
+    )
+    kpi_band = "".join(
+        [
+            _kpi("Tasks", kpis["total"]),
+            _kpi("OK", kpis["total"] - kpis["failed"], "ok"),
+            _kpi("Failed", kpis["failed"], "failed"),
+            _kpi("Retries", kpis["retries"], "quiet"),
+            _kpi("Success", f"{kpis['success_rate_pct']}%"),
+            _kpi("Duration", _duration(kpis["total_duration_ms"])),
+        ]
+    )
+
+    failures = [(n, e) for n, e in numbered if not e.get("success")]
+    errors_block = ""
+    if failures:
+        cards = "".join(_render_error(e, screenshots, n) for n, e in failures)
+        errors_block = (
+            f'<section class="block"><div class="block-head">'
+            f'<h2 class="errors">Errors ({len(failures)})</h2></div>{cards}</section>'
+        )
 
     if runs:
         sections = []
+        number = 0
         for run in runs:
-            tasks_html = "\n".join(
-                _render_task(e, screenshots, n + 1)
-                for n, e in enumerate(run["events"])
-            )
             failed = run["total"] - run["ok"]
-            status = (
-                f'{run["ok"]}/{run["total"]} ok'
-                if not failed
-                else f'{run["ok"]}/{run["total"]} ok &middot; {failed} failed'
+            summary = f"{run['ok']}/{run['total']} ok" + (
+                f" · {failed} failed" if failed else ""
             )
-            sections.append(
-                f'<div class="run-header"><h3>Run {escape(run["run_id"])}</h3>'
-                f'<span class="run-sub">{escape(str(run["ts"]))} &middot; {status}</span></div>'
-                f"{tasks_html}"
-            )
-        task_rows = "\n".join(sections)
+            header = ""
+            if len(runs) > 1:
+                header = (
+                    f'<div class="run-header"><h3>Run {escape(run["run_id"])}</h3>'
+                    f'<span class="run-sub">{escape(_instant(run["ts"]))} · '
+                    f"{summary}</span></div>"
+                )
+            cards = []
+            for event in run["events"]:
+                number += 1
+                cards.append(_render_task(event, screenshots, number))
+            sections.append(header + f'<div class="steps">{"".join(cards)}</div>')
+        timeline = "\n".join(sections)
     else:
-        task_rows = ""
+        timeline = '<p class="empty">No tasks recorded.</p>'
 
+    generated = _instant(datetime.now().astimezone().isoformat())
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Visus Desktop -- Run report</title>
+  <title>Visus Desktop — Run report</title>
   <style>{_CSS}</style>
 </head>
 <body>
-  <header class="hero">
-    <h1>Visus Desktop run report</h1>
-    <p class="lede">A timeline of every task, with durations, attempts and failure
-       screenshots embedded inline.</p>
-    <div class="run-meta">
-      <span class="badge-pill">{run_label}</span>
-      <span class="badge-pill">{escape(last_ts)}</span>
-      {('<span class="badge-coral">failures present</span>' if kpis['total'] and kpis['success_rate_pct'] < 100 else '')}
-    </div>
-  </header>
+  <div class="sheet">
+    <header class="report">
+      <div class="head">
+        <div>
+          <p class="eyebrow">Visus Desktop — Run report</p>
+          <h1>Desktop automation</h1>
+          <p class="run-id">{escape(run_ids)}</p>
+        </div>
+        <span class="pill {tone}">{status}</span>
+      </div>
+      <div class="meta">{meta}</div>
+    </header>
 
-  <main>
-    <section class="kpis" aria-label="Run summary">
-      <div class="kpi-card">
-        <div class="label">Total tasks</div>
-        <div class="value">{kpis['total']}</div>
-      </div>
-      <div class="kpi-card">
-        <div class="label">Success rate</div>
-        <div class="value">{kpis['success_rate_pct']}%</div>
-      </div>
-      <div class="kpi-card">
-        <div class="label">Total duration</div>
-        <div class="value">{kpis['total_duration_ms']} ms</div>
-      </div>
-      <div class="kpi-card">
-        <div class="label">Failures</div>
-        <div class="value">{kpis['failed']}</div>
-      </div>
+    <section class="kpis" aria-label="Run summary">{kpi_band}</section>
+
+    {errors_block}
+
+    <section class="block">
+      <div class="block-head"><h2>Task timeline</h2></div>
+      {timeline}
     </section>
 
-    <section class="timeline">
-      <h2>Timeline</h2>
-      {task_rows if task_rows else '<p style="color: var(--muted);">No tasks recorded.</p>'}
-    </section>
-  </main>
-
-  <footer class="site">
-    <div class="inner">
-      <div class="wordmark">* Visus Desktop</div>
-      <div>Generated from <code>{escape(_EVENTS_FILE)}</code>. Design system: cream canvas + coral CTA + dark navy product surfaces.</div>
-    </div>
-  </footer>
+    <footer class="report">
+      Generated by Visus Desktop on {escape(generated)} · Run {escape(run_ids)} ·
+      every task in order, with its duration, attempts and screenshots.
+    </footer>
+  </div>
 </body>
 </html>
 """
+
+
+def _render_error(
+    event: dict[str, Any], screenshots: dict[str, bytes], number: int
+) -> str:
+    message = str(event.get("error") or "failed")
+    shot = ""
+    if event.get("failure_screenshot"):
+        shot = _render_screenshot(
+            event["failure_screenshot"], screenshots, kind="failure"
+        )
+    when = _short_time(str(event.get("timestamp") or ""))
+    name = str(event.get("task_name") or event.get("type") or "")
+    return (
+        f'<div class="error-card"><p class="message">{escape(message)}</p>{shot}'
+        f'<p class="when">{escape(when)} · task #{number} · {escape(name)}</p></div>'
+    )
 
 
 def _render_task(
@@ -502,27 +563,21 @@ def _render_task(
 ) -> str:
     success = bool(event.get("success"))
     badge = (
-        '<span class="badge-success">SUCCESS</span>'
+        '<span class="badge-success">OK</span>'
         if success
         else '<span class="badge-failure">FAILED</span>'
     )
-    ttype = escape(str(event.get("type") or "task"))
-    target = event.get("target") or event.get("task_name") or "(unnamed)"
-    title = f'<span class="chip">{ttype}</span><code>{escape(str(target))}</code>'
-
-    error = event.get("error")
-    error_block = (
-        f'<div class="kv"><dt>error</dt><dd></dd></div>'
-        f'<pre class="error">{escape(str(error))}</pre>'
-        if error
-        else ""
+    ttype = str(event.get("type") or "task")
+    name = str(event.get("task_name") or event.get("target") or ttype)
+    target = event.get("target")
+    action_line = f"<b>{escape(ttype)}</b>" + (
+        f" → {escape(str(target))}" if target else ""
     )
 
-    # Detail rows that actually help debugging / telemetry.
-    rows: list[tuple[str, str]] = [
-        ("duration", f"{int(event.get('duration_ms') or 0)} ms"),
-        ("attempts", str(int(event.get("attempts") or 0))),
-    ]
+    error = event.get("error")
+    error_block = f'<p class="step-error">{escape(str(error))}</p>' if error else ""
+
+    rows: list[tuple[str, str]] = [("attempts", str(int(event.get("attempts") or 0)))]
     if event.get("location") not in (None, "skip"):
         rows.append(("location", str(event.get("location"))))
     if event.get("region"):
@@ -531,27 +586,22 @@ def _render_task(
         rows.append(("time", _short_time(str(event.get("timestamp")))))
     kv = "".join(f"<dt>{escape(k)}</dt><dd>{escape(v)}</dd>" for k, v in rows)
 
-    # Prefer the per-step screenshot; fall back to the failure screenshot.
-    step_shot = event.get("screenshot")
-    fail_shot = event.get("failure_screenshot")
-    shot_block = ""
-    if step_shot:
-        shot_block = _render_screenshot(step_shot, screenshots, kind="step")
-    elif fail_shot:
-        shot_block = _render_screenshot(fail_shot, screenshots, kind="failure")
-
-    log_block = _render_logs(event.get("logs") or [])
+    shot = ""
+    if event.get("screenshot"):
+        shot = _render_screenshot(event["screenshot"], screenshots, kind="step")
 
     return f"""<article class="task">
-        <div class="index">#{number}</div>
-        <div class="body">
-          <h3>{title}</h3>
-          <dl class="kv">{kv}</dl>
-          {error_block}
-          {log_block}
-          {shot_block}
+        <div class="row">
+          <span class="index">#{number}</span>
+          <span class="name">{escape(name)}</span>
+          {badge}
+          <span class="duration">{_duration(int(event.get("duration_ms") or 0))}</span>
         </div>
-        <div class="status">{badge}</div>
+        <p class="action">{action_line}</p>
+        {error_block}
+        <dl class="kv">{kv}</dl>
+        {_render_logs(event.get("logs") or [])}
+        {shot}
       </article>"""
 
 
@@ -559,34 +609,28 @@ def _render_logs(lines: list[str]) -> str:
     """Render the per-task log lines as a collapsible ``<details>`` block.
 
     Lines come in shaped as ``"[LEVEL] logger.name: message"`` (set by
-    :func:`_attach_logs_to_events`). We wrap each in a ``<span>`` tagged
-    with its level so CSS can colourise DEBUG / INFO / WARNING / ERROR.
+    :func:`_attach_logs_to_events`): one row each, the level coloured.
     """
     if not lines:
         return ""
     rendered: list[str] = []
     for line in lines:
-        level = "INFO"
+        level, message = "INFO", line
         if line.startswith("[") and "]" in line:
             level = line[1 : line.index("]")] or "INFO"
+            message = line[line.index("]") + 1 :].strip()
         safe_class = "".join(c for c in level if c.isalnum()).upper() or "INFO"
         rendered.append(
-            f'<span class="lvl-{safe_class}">{escape(line)}</span>'
+            f'<div class="log-line lvl-{safe_class}">'
+            f'<span class="lvl">{escape(safe_class)}</span>'
+            f'<span class="msg">{escape(message)}</span></div>'
         )
-    body = "\n".join(rendered)
     return (
         f'<details class="logs">'
-        f"<summary>Logs &middot; {len(lines)} line(s)</summary>"
-        f'<pre class="log-output">{body}</pre>'
+        f"<summary>Logs · {len(lines)} line(s)</summary>"
+        f'<div class="log-output">{"".join(rendered)}</div>'
         "</details>"
     )
-
-
-def _short_time(iso_ts: str) -> str:
-    """Return just HH:MM:SS from an ISO timestamp (fallback: the raw string)."""
-    if "T" in iso_ts and len(iso_ts) >= 19:
-        return iso_ts[11:19]
-    return iso_ts
 
 
 def _render_screenshot(
@@ -598,10 +642,10 @@ def _render_screenshot(
         return ""
     encoded = base64.b64encode(data).decode("ascii")
     label = "Step result" if kind == "step" else "Failure screenshot"
-    cls = "screenshot-card step" if kind == "step" else "screenshot-card"
     return (
-        f'<div class="{cls}">'
-        f'<div class="header">{label} &middot; {escape(basename)}</div>'
-        f'<img src="data:image/png;base64,{encoded}" alt="{kind} screenshot" />'
-        "</div>"
+        f'<figure class="shot {kind}">'
+        f'<img src="data:image/png;base64,{encoded}" alt="{kind} screenshot" '
+        f'loading="eager" />'
+        f"<figcaption>{label} · {escape(basename)}</figcaption>"
+        "</figure>"
     )

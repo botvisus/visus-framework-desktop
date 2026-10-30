@@ -158,7 +158,7 @@ class TestReportSmoke:
         assert 'class="value">50%</div>' in html
 
     def test_report_follows_design_system_anchor_colors(self, tmp_path):
-        """The cream canvas, coral accent and dark navy are present in the CSS."""
+        """The orchestrator's run report look: GMES crimson, white sheet, grey floor."""
         zip_path = tmp_path / "run.zip"
         html_path = tmp_path / "report.html"
         _make_zip(
@@ -179,10 +179,11 @@ class TestReportSmoke:
         )
         Session.write_report(zip_path, html_path)
         html = html_path.read_text(encoding="utf-8")
-        assert "#faf9f5" in html  # cream canvas
-        assert "#cc785c" in html  # coral primary
-        assert "#181715" in html  # dark navy surface
-        assert "#141413" in html  # ink text
+        assert "#E0205C" in html  # GMES crimson (the orchestrator's accent)
+        assert "#ffffff" in html  # the white sheet
+        assert "#f5f5f5" in html  # the grey floor around it
+        assert "#171717" in html  # ink text
+        assert "#cc785c" not in html, "the old coral palette is gone"
 
     def test_empty_recording_writes_valid_empty_report(self, tmp_path):
         zip_path = tmp_path / "empty.zip"
