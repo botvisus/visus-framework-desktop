@@ -5,6 +5,8 @@ from __future__ import annotations
 import sys
 from unittest.mock import MagicMock, PropertyMock, patch
 
+import pytest
+
 from visus.desktop.core import native_rpa as nr
 
 
@@ -210,6 +212,7 @@ class TestClick:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="API do Windows (win32gui)")
 class TestSetText:
     """Como uma pessoa: foca o campo, confere a janela na frente, seleciona tudo e
     digita; o valor de UI Automation só quando a janela não vem para a frente (o

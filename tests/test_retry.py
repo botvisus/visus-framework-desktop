@@ -74,7 +74,10 @@ class TestRetry:
         sleeps: list = []
 
         with patch(
-            "visus.desktop.utils.retry.time.sleep",
+            # not "visus.desktop.utils.retry.time.sleep": utils re-exports the
+            # retry FUNCTION under the module's name and Python 3.10's patch
+            # resolves the dotted path to it ("'retry' is not a package")
+            "time.sleep",
             side_effect=lambda s: sleeps.append(s),
         ):
 
@@ -93,7 +96,10 @@ class TestRetry:
         sleeps: list = []
 
         with patch(
-            "visus.desktop.utils.retry.time.sleep",
+            # not "visus.desktop.utils.retry.time.sleep": utils re-exports the
+            # retry FUNCTION under the module's name and Python 3.10's patch
+            # resolves the dotted path to it ("'retry' is not a package")
+            "time.sleep",
             side_effect=lambda s: sleeps.append(s),
         ):
 

@@ -140,9 +140,12 @@ class TestGetTessdataPath:
         assert result == str(tessdata)
 
     def test_returns_none_when_nothing_matches(self, tmp_path):
-        result = self._cfg()._get_tessdata_path(
-            str(tmp_path / "nowhere" / "tesseract")
-        )
+        # the lookup also tries the system folders (/usr/share/tesseract-ocr/...):
+        # on a machine with Tesseract installed they exist, so they are hidden here
+        with patch.object(_cfg.os.path, "isdir", return_value=False):
+            result = self._cfg()._get_tessdata_path(
+                str(tmp_path / "nowhere" / "tesseract")
+            )
         assert result is None
 
 

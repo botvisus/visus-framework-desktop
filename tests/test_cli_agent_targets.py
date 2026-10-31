@@ -199,6 +199,7 @@ def test_type_virtual_exige_window() -> None:
     assert "--window" in r.output
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="API do Windows (win32con/win32gui)")
 def test_send_text_um_wm_char_por_unidade_utf16() -> None:
     from visus.desktop.core import virtual_keyboard
 

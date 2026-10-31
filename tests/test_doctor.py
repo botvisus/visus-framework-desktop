@@ -11,6 +11,8 @@ from __future__ import annotations
 import sys
 from unittest.mock import patch
 
+import pytest
+
 from visus.desktop import doctor
 
 
@@ -64,6 +66,8 @@ class TestCheckFunctions:
         assert ok is False
         assert "display" in detail.lower()
 
+    # off Windows check_pywinauto() is a deliberate no-op (the test below covers it)
+    @pytest.mark.skipif(sys.platform != "win32", reason="pywinauto só existe no Windows")
     def test_check_pywinauto_ok_when_import_succeeds(self):
         # Avoid touching the real pywinauto stack so the test is portable.
         fake_module = type(sys)("pywinauto")
