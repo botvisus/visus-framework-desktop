@@ -22,6 +22,6 @@ Reference and guides for [`visus-desktop`](https://github.com/matheuszwilk/visus
 
 ## Playbooks (agent-facing)
 
-The [`skills/`](../skills/) directory holds task playbooks for AI agents:
+The [`skills/`](../src/visus/desktop/skills/) directory holds task playbooks for AI agents:
 login forms, table scraping, captchas, downloads, file dialogs, record/replay,
 and the CLI/MCP usage skills.

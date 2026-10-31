@@ -475,11 +475,9 @@ class TestVisusBotWrappers:
             assert bot.click_at((10, 20, 30, 30)) is True
 
     def test_type_text_standalone(self, bot):
-        with patch.object(
-            bot.executor.keyboard_commander, "type_text"
-        ) as tt:
+        with patch("visus.desktop.core.human_typing.type_like_a_person") as tt:
             bot.type_text("hello", interval=0.01)
-        tt.assert_called_once()
+        tt.assert_called_once_with("hello", 0.01)
 
     def test_keyboard_command_standalone(self, bot):
         with patch.object(

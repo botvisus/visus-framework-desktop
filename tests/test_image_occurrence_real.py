@@ -19,8 +19,6 @@ them top-to-bottom / left-to-right, and ``occurrence=N`` returns/clicks the Nth.
 
 from __future__ import annotations
 
-import os
-
 import pytest
 from PIL import Image, ImageDraw
 

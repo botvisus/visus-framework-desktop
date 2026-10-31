@@ -270,11 +270,12 @@ class TestFindTextWithWait:
 class TestProcessSendtext:
     def test_ctrl_a_then_text(self, executor):
         with patch("pyautogui.hotkey") as hk, patch("pyperclip.copy") as cp, patch(
-            "time.sleep"
-        ):
+            "pyperclip.paste", return_value="what the person had"
+        ), patch("time.sleep"):
             executor._process_sendtext("{ctrl}aremaining")
         hk.assert_any_call("ctrl", "a")
-        cp.assert_called_once_with("remaining")
+        # the paste borrows the clipboard and gives the person's content back
+        assert [c.args for c in cp.call_args_list] == [("remaining",), ("what the person had",)]
 
     def test_del_command(self, executor):
         with patch("pyautogui.press") as press, patch("pyautogui.hotkey"), patch(
@@ -298,9 +299,17 @@ class TestProcessSendtext:
         press.assert_any_call("enter")
 
     def test_no_special_commands_just_pastes(self, executor):
+        with patch("pyautogui.hotkey") as hk, patch("pyperclip.copy") as cp, patch(
+            "pyperclip.paste", return_value="what the person had"
+        ), patch("time.sleep"):
+            executor._process_sendtext("plain text")
+        hk.assert_called_once_with("ctrl", "v")
+        assert [c.args for c in cp.call_args_list] == [("plain text",), ("what the person had",)]
+
+    def test_an_unreadable_clipboard_is_not_restored(self, executor):
         with patch("pyautogui.hotkey"), patch("pyperclip.copy") as cp, patch(
-            "time.sleep"
-        ):
+            "pyperclip.paste", side_effect=RuntimeError("no text on the clipboard")
+        ), patch("time.sleep"):
             executor._process_sendtext("plain text")
         cp.assert_called_once_with("plain text")
 

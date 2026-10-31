@@ -6,6 +6,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-31
+
+### Changed
+- The agent playbooks (`skills/`) now ship INSIDE the package
+  (`visus/desktop/skills/`), so `pip install visus-desktop` brings them — before,
+  they lived only at the repository root and a pip install had none to give an
+  agent.
+
 ## [0.3.0] - 2026-10-30
 
 Use the PC like a person: open an app, look, type into the window that is really in

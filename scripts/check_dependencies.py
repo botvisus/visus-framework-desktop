@@ -6,9 +6,8 @@ This script checks whether all required dependencies are installed
 with the correct versions.
 """
 
-import sys
 import importlib
-import pkg_resources
+import sys
 
 # Required dependencies with specific versions
 REQUIRED_PACKAGES = {
@@ -121,11 +120,11 @@ def main():
     print("-" * 40)
 
     try:
-        from visus.desktop import BotVision, execute_tasks, click_images
+        from visus.desktop import BotVision, click_images, execute_tasks  # noqa: F401
         print("visus.desktop    | Imported   | OK")
 
         # Test basic initialization
-        bot = BotVision()
+        _bot = BotVision()
         print("BotVision()      | Instance   | OK")
 
     except ImportError as e:

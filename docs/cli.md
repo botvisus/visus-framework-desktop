@@ -537,4 +537,4 @@ visus capture save --auto "Save" --window "Notepad" --click
 ```
 
 See also: the MCP reference at [`mcp.md`](mcp.md) and the agent playbook at
-[`../skills/using-visus-cli.md`](../skills/using-visus-cli.md).
+[`../skills/using-visus-cli.md`](../src/visus/desktop/skills/using-visus-cli.md).

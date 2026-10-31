@@ -277,7 +277,7 @@ pip install 'visus-desktop[mcp]'
 }
 ```
 
-See [`docs/mcp.md`](docs/mcp.md) for the full tool reference (all 57 tools, every parameter), and [`skills/`](skills/) for ready-to-use playbooks (login forms, table scraping, captchas, downloads, file dialogs, record/replay). The agent-facing playbook is [`skills/using-visus-desktop.md`](skills/using-visus-desktop.md).
+See [`docs/mcp.md`](docs/mcp.md) for the full tool reference (all 57 tools, every parameter), and [`skills/`](src/visus/desktop/skills/) for ready-to-use playbooks (login forms, table scraping, captchas, downloads, file dialogs, record/replay). The agent-facing playbook is [`skills/using-visus-desktop.md`](src/visus/desktop/skills/using-visus-desktop.md).
 
 ### Or drive it from the shell — Visus CLI Pro
 
@@ -294,7 +294,7 @@ visus repl                                        # interactive shell
 ```
 
 Run `visus --help` (or `visus <group> --help`) for inline help. The agent-facing
-playbook lives in [`skills/using-visus-cli.md`](skills/using-visus-cli.md) and the
+playbook lives in [`skills/using-visus-cli.md`](src/visus/desktop/skills/using-visus-cli.md) and the
 full reference in [`docs/cli.md`](docs/cli.md).
 
 <details>

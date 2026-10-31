@@ -1,6 +1,6 @@
 """Tests for the Skills bundle.
 
-Skills are markdown files under ``skills/`` with YAML frontmatter
+Skills are markdown files under ``src/visus/desktop/skills/`` with YAML frontmatter
 (``name``, ``description``, ``when_to_use``). Each skill must:
   * exist on disk
   * carry the three required frontmatter keys
@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-SKILLS = Path(__file__).resolve().parent.parent / "skills"
+SKILLS = Path(__file__).resolve().parent.parent / "src" / "visus" / "desktop" / "skills"
 
 REQUIRED_SKILLS = {
     "using-visus-desktop.md",
@@ -96,3 +96,13 @@ def test_skills_only_reference_registered_tools():
             raise AssertionError(
                 f"{name}: references unknown MCP tool '{candidate}'"
             )
+
+
+def test_skills_ship_inside_the_package():
+    """`pip install` must bring the playbooks: they are package data of visus.desktop,
+    not a folder at the repository root that no wheel carries."""
+    from importlib.resources import files
+
+    shipped = files("visus.desktop") / "skills"
+    assert (shipped / "using-visus-desktop.md").is_file()
+    assert (shipped / "README.md").is_file()

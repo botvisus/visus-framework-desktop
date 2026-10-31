@@ -220,7 +220,7 @@ smart cascade try them in order. Everything is also exposed as an MCP server
         # or smart_click(query="Save", window="App")
         start_recording("run.zip"); execute_tasks([...]); stop_recording()
         render_report("run.zip", "run.html")
-    Full reference: docs/mcp.md. Agent playbooks: skills/.
+    Full reference: docs/mcp.md. Agent playbooks: the ``skills/`` folder inside this package.
 
 ═══════════════════════════════════════════════════════════════════════════════
 ⌨️  TERMINAL CLI — "Visus CLI Pro" (the `visus` command)
@@ -318,7 +318,7 @@ from .utils.retry import retry
 from .utils.text_filters import clean_text, limpar_texto, matches_filter
 
 # Library version
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 __author__ = "Matheus Pereira"
 __email__ = "matheuszwilkdev@gmail.com"
 __license__ = "MIT"

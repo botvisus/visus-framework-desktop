@@ -224,107 +224,55 @@ class TestClickCoordinates:
 # type_text (~10 tests)
 # --------------------------------------------------------------------------- #
 class TestTypeText:
-    def test_plain_text_routes_to_type_text_backend(self, monkeypatch):
-        bot = _make_bot()
-        seen = {}
+    # type_text types like a person (core.human_typing): ONE path for plain text and
+    # for {tab}/{enter}/{ctrl}a/{del} anywhere in it. Every test replaces that path --
+    # left real, it would type on the keyboard of whoever runs the suite.
+    @staticmethod
+    def _record_typing(monkeypatch):
+        calls = []
         monkeypatch.setattr(
-            bot.executor.keyboard_commander,
-            "type_text",
-            lambda text, interval: seen.update(text=text, interval=interval),
+            "visus.desktop.core.human_typing.type_like_a_person",
+            lambda text, interval: calls.append((text, interval)),
         )
+        return calls
+
+    def test_plain_text_is_typed_like_a_person(self, monkeypatch):
+        bot = _make_bot()
+        calls = self._record_typing(monkeypatch)
         assert bot.type_text("hello world") is True
-        assert seen["text"] == "hello world"
+        assert calls == [("hello world", 0.02)]
 
-    def test_interval_forwarded_to_backend(self, monkeypatch):
+    def test_interval_forwarded(self, monkeypatch):
         bot = _make_bot()
-        seen = {}
-        monkeypatch.setattr(
-            bot.executor.keyboard_commander,
-            "type_text",
-            lambda text, interval: seen.update(interval=interval),
-        )
+        calls = self._record_typing(monkeypatch)
         bot.type_text("abc", interval=0.2)
-        assert seen["interval"] == 0.2
+        assert calls == [("abc", 0.2)]
 
-    def test_plain_text_does_not_call_special_handler(self, monkeypatch):
+    @pytest.mark.parametrize(
+        "text", ["{ctrl}a", "New Text{enter}", "a{tab}b", "{del}gone", "olá, ação"]
+    )
+    def test_tokens_and_accents_go_through_untouched(self, monkeypatch, text):
         bot = _make_bot()
-        special_calls = []
-        monkeypatch.setattr(
-            bot.executor.keyboard_commander, "type_text", lambda *a, **k: None
-        )
-        monkeypatch.setattr(
-            bot.executor.keyboard_commander,
-            "process_sendtext_command",
-            lambda *a, **k: special_calls.append(a),
-        )
+        calls = self._record_typing(monkeypatch)
+        assert bot.type_text(text) is True
+        assert calls == [(text, 0.02)]
+
+    def test_the_old_paste_paths_are_not_used(self, monkeypatch):
+        """The old routing lost accents (typewrite) and pasted mid-text tokens."""
+        bot = _make_bot()
+        self._record_typing(monkeypatch)
+        old = []
+        for name in ("type_text", "process_sendtext_command"):
+            monkeypatch.setattr(
+                bot.executor.keyboard_commander, name, lambda *a, **k: old.append(a)
+            )
         bot.type_text("just text")
-        assert special_calls == []
-
-    def test_special_sequence_ctrl_routes_to_special_handler(self, monkeypatch):
-        bot = _make_bot()
-        seen = {}
-        monkeypatch.setattr(
-            bot.executor.keyboard_commander,
-            "process_sendtext_command",
-            lambda text: seen.setdefault("text", text),
-        )
-        assert bot.type_text("{ctrl}a") is True
-        assert seen["text"] == "{ctrl}a"
-
-    def test_special_sequence_enter_routes_to_special_handler(self, monkeypatch):
-        bot = _make_bot()
-        seen = {}
-        monkeypatch.setattr(
-            bot.executor.keyboard_commander,
-            "process_sendtext_command",
-            lambda text: seen.setdefault("text", text),
-        )
-        bot.type_text("New Text{enter}")
-        assert seen["text"] == "New Text{enter}"
-
-    def test_special_sequence_tab_routes_to_special_handler(self, monkeypatch):
-        bot = _make_bot()
-        seen = {}
-        monkeypatch.setattr(
-            bot.executor.keyboard_commander,
-            "process_sendtext_command",
-            lambda text: seen.setdefault("text", text),
-        )
-        bot.type_text("a{tab}b")
-        assert seen["text"] == "a{tab}b"
-
-    def test_special_sequence_del_routes_to_special_handler(self, monkeypatch):
-        bot = _make_bot()
-        seen = {}
-        monkeypatch.setattr(
-            bot.executor.keyboard_commander,
-            "process_sendtext_command",
-            lambda text: seen.setdefault("text", text),
-        )
-        bot.type_text("{del}gone")
-        assert seen["text"] == "{del}gone"
-
-    def test_special_sequence_does_not_call_plain_handler(self, monkeypatch):
-        bot = _make_bot()
-        plain_calls = []
-        monkeypatch.setattr(
-            bot.executor.keyboard_commander,
-            "type_text",
-            lambda *a, **k: plain_calls.append(a),
-        )
-        monkeypatch.setattr(
-            bot.executor.keyboard_commander,
-            "process_sendtext_command",
-            lambda *a, **k: None,
-        )
         bot.type_text("{ctrl}a")
-        assert plain_calls == []
+        assert old == []
 
     def test_delay_sleeps_after_typing(self, monkeypatch):
         bot = _make_bot()
-        monkeypatch.setattr(
-            bot.executor.keyboard_commander, "type_text", lambda *a, **k: None
-        )
+        self._record_typing(monkeypatch)
         slept = []
         monkeypatch.setattr("time.sleep", lambda s: slept.append(s))
         bot.type_text("hi", delay=1.0)
@@ -336,7 +284,7 @@ class TestTypeText:
         def boom(*a, **k):
             raise RuntimeError("typing exploded")
 
-        monkeypatch.setattr(bot.executor.keyboard_commander, "type_text", boom)
+        monkeypatch.setattr("visus.desktop.core.human_typing.type_like_a_person", boom)
         assert bot.type_text("oops") is False
 
     def test_backtrack_true_routes_through_backtrack_path(self, monkeypatch):

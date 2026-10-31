@@ -9,6 +9,7 @@ import os
 import sys
 from pathlib import Path
 
+
 def check_file_exists(file_path, description):
     """Check if a file exists and report the result."""
     if Path(file_path).exists():
@@ -106,15 +107,15 @@ def validate_basic_functionality():
     print("=" * 40)
 
     try:
-        from visus.desktop.utils.config import BotVisionConfig
         from visus.desktop import BotVision
+        from visus.desktop.utils.config import BotVisionConfig
 
         # Test configuration creation
         config = BotVisionConfig()
         print("OK Configuration creation")
 
         # Test BotVision instantiation
-        bot = BotVision(config=config)
+        _bot = BotVision(config=config)
         print("OK BotVision instantiation")
 
         # Test configuration validation
@@ -122,7 +123,7 @@ def validate_basic_functionality():
         print("OK Configuration validation")
 
         # Test task format validation (basic)
-        sample_task = {
+        _sample_task = {
             "task_name": "test",
             "description": "Test task",
             "steps": [
@@ -146,7 +147,7 @@ def validate_package_metadata():
 
     # Check pyproject.toml
     try:
-        with open("pyproject.toml", "r", encoding="utf-8") as f:
+        with open("pyproject.toml", encoding="utf-8") as f:
             toml_content = f.read()
             if "[build-system]" in toml_content:
                 print("OK pyproject.toml contains build system config")

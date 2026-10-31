@@ -7,11 +7,20 @@ name: Publish to PyPI
 on:
   release:
     types: [published]
-  workflow_dispatch: # allow a manual run from the Actions tab
+  workflow_dispatch: # deliberately inert -- see the guard on every job
 
+# Every job runs only for a published Release: a manual dispatch from any branch
+# would otherwise put that branch on PyPI, unversioned and untested.
 jobs:
+  test:
+    name: Tests
+    if: github.event_name == 'release'
+    uses: ./.github/workflows/test.yml
+
   build:
     name: Build distribution
+    if: github.event_name == 'release'
+    needs: [test]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +35,24 @@ jobs:
           python -m build
           twine check dist/*
 
+      # `twine check` reads metadata only. The agent playbooks are package data:
+      # a packaging regression would ship a wheel with nothing to teach an agent.
+      - name: Assert the wheel ships the agent skills
+        run: |
+          python - "$(ls dist/*.whl)" <<'PY'
+          import sys, zipfile
+          names = set(zipfile.ZipFile(sys.argv[1]).namelist())
+          required = [
+              "visus/desktop/skills/using-visus-desktop.md",
+              "visus/desktop/skills/using-visus-cli.md",
+              "visus/desktop/py.typed",
+          ]
+          missing = [item for item in required if item not in names]
+          print(f"{sys.argv[1]}: {len(names)} entries; missing: {missing or 'none'}")
+          if missing:
+              sys.exit(f"wheel is missing required files: {missing}")
+          PY
+
       - uses: actions/upload-artifact@v4
         with:
           name: dist
@@ -33,7 +60,8 @@ jobs:
 
   publish:
     name: Publish to PyPI
-    needs: build
+    if: github.event_name == 'release'
+    needs: [build]
     runs-on: ubuntu-latest
     # The environment name MUST match what you set on PyPI's trusted publisher.
     environment:

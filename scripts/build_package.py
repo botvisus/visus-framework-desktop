@@ -7,10 +7,11 @@ skipping the test execution.
 """
 
 import os
-import sys
-import subprocess
 import shutil
+import subprocess
+import sys
 from pathlib import Path
+
 
 def run_command(cmd, description, check=True):
     """Run a command with error handling."""

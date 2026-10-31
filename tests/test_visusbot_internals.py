@@ -183,9 +183,8 @@ class TestVisusBotInternals:
             assert bot._keyboard_command_internal("Tab", 0) is False
 
     def test_type_text_internal_handles_exception(self, bot):
-        with patch.object(
-            bot.executor.keyboard_commander,
-            "type_text",
+        with patch(
+            "visus.desktop.core.human_typing.type_like_a_person",
             side_effect=RuntimeError("io"),
         ):
             assert bot._type_text_internal("hello", 0.01, 0) is False
