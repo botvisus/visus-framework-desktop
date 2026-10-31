@@ -314,13 +314,21 @@ class VisualOverlay:
         Args:
             region (tuple): (x, y, width, height) of the region
         """
+        # macOS: Tk (Cocoa) only runs on the MAIN thread -- from any other thread
+        # it aborts the whole process ("Fatal Python error: Aborted"), and show()
+        # runs this on a background thread unless blocking=True
+        tk_allowed = (
+            sys.platform != "darwin"
+            or threading.current_thread() is threading.main_thread()
+        )
+
         # Method 1: Try Tkinter directly
-        if self._tkinter_available:
+        if tk_allowed and self._tkinter_available:
             if self._create_overlay_tkinter(region):
                 return
 
         # Method 2: Try to fix Tkinter and use it
-        if self._fix_tkinter_environment():
+        if tk_allowed and self._fix_tkinter_environment():
             if self._create_overlay_tkinter(region):
                 return
 

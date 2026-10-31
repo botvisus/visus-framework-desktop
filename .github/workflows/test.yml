@@ -58,7 +58,13 @@ jobs:
         if: runner.os != 'Linux'
         run: pytest -v
 
+      # pyautogui opens the X display at import: on Linux the import needs xvfb too
+      - name: Verify import (Linux, headless via xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python -c "import visus.desktop; print('Import OK on ${{ matrix.os }} / Python ${{ matrix.python-version }}')"
+
       - name: Verify import
+        if: runner.os != 'Linux'
         run: python -c "import visus.desktop; print('Import OK on ${{ matrix.os }} / Python ${{ matrix.python-version }}')"
 
   build:
