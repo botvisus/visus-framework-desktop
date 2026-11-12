@@ -47,6 +47,11 @@ The run report in one line, the same `rpa()` as visus.web.
 - `backtrack=True` after a recorded direct call no longer crashes (report-only entries
   went into the backtrack history).
 
+### CI
+- Publishing requires the test matrix on Windows and Ubuntu (the supported platforms).
+  macOS still runs on every push but no longer gates a release: GitHub's arm64 Mac
+  queue cancelled the jobs before they ran, blocking a release with every test green.
+
 ## [0.3.1] - 2026-10-31
 
 ### Changed

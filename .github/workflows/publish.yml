@@ -16,6 +16,14 @@ jobs:
     name: Tests
     if: github.event_name == 'release'
     uses: ./.github/workflows/test.yml
+    with:
+      # Windows and Linux are the supported platforms (README, "Platform
+      # support"). macOS stays in the push matrix but does not gate a release:
+      # the hosted arm64 Macs sit in GitHub's capacity queue until the job is
+      # cancelled ("not acquired by Runner ... even after multiple attempts"),
+      # which blocked 0.4.0 with every test green. The wheel is py3-none-any,
+      # so macOS users get the very same package either way.
+      os: '["ubuntu-latest", "windows-latest"]'
 
   build:
     name: Build distribution

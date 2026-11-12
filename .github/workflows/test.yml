@@ -5,8 +5,14 @@ on:
     branches: [ main, develop ]
   pull_request:
     branches: [ main ]
-  # publish.yml runs this whole matrix first: nothing reaches PyPI untested
+  # publish.yml runs this matrix first (on the systems it passes in `os`):
+  # nothing reaches PyPI untested
   workflow_call:
+    inputs:
+      os:
+        description: JSON list of runner labels to test on
+        type: string
+        default: '["ubuntu-latest", "windows-latest", "macos-latest"]'
 
 jobs:
   test:
@@ -14,7 +20,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # push / pull_request: every system. publish.yml narrows it via `os`.
+        os: ${{ fromJSON(inputs.os || '["ubuntu-latest", "windows-latest", "macos-latest"]') }}
         # 3.8 / 3.9: the runner images no longer ship them (Ubuntu 26.04, arm64
         # macOS), and an editable install on 3.8 cannot even parse the SPDX
         # `license` field with the setuptools that still runs there
