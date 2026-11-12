@@ -27,6 +27,7 @@ from . import screen as _screen
 from . import window as _window
 from .image_map import ImageMap
 from .native import Backend, NativeError
+from .recording import records_step
 
 
 class CapabilitiesMixin:
@@ -178,6 +179,7 @@ class CapabilitiesMixin:
             # Overlay is purely visual; never let it break the action.
             pass
 
+    @records_step("scroll")
     def scroll(
         self,
         amount: int,
@@ -190,6 +192,7 @@ class CapabilitiesMixin:
         if delay:
             time.sleep(delay)
 
+    @records_step("drag")
     def drag(
         self,
         start_x: int,
@@ -213,6 +216,7 @@ class CapabilitiesMixin:
         if delay:
             time.sleep(delay)
 
+    @records_step("triple_click")
     def triple_click(
         self,
         x: int | None = None,

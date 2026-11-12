@@ -15,6 +15,9 @@ contains:
 ``Session.replay(path)`` reads the zip back into the in-memory event
 list, ready to be fed into a report, an assertion, or a future
 disk-source-driven replay run.
+
+For the one-liner that also opens the bot, writes the HTML report and prints
+a summary, see :func:`visus.desktop.rpa`.
 """
 
 from __future__ import annotations
@@ -25,20 +28,62 @@ import os
 import shutil
 import zipfile
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 _EVENTS_LOGGER = "visus.desktop.task_events"
 _EVENTS_FILE = "events.jsonl"
+_MANIFEST_FILE = "manifest.json"
 _SCREENSHOTS_DIR = "screenshots"
+
+
+class Recording:
+    """What one ``Session.start_recording`` block captured.
+
+    Yielded by the ``with`` (``with Session.start_recording(z) as rec:``) so the
+    caller can read the run without parsing the zip: :attr:`events` and
+    :meth:`summary`. The zip is written when the block ends.
+    """
+
+    def __init__(self, zip_path: Path | None, name: str | None = None):
+        self.zip_path = zip_path
+        self.name = name
+        self.lines: list[str] = []
+        self.written = False  # True once the zip is on disk
+
+    @property
+    def events(self) -> list[dict[str, Any]]:
+        """The task events recorded so far, oldest first."""
+        out: list[dict[str, Any]] = []
+        for line in self.lines:
+            try:
+                out.append(json.loads(line))
+            except ValueError:
+                continue
+        return out
+
+    def summary(self) -> dict[str, Any]:
+        """``{total, failures, retries, steps: [(label, ok), ...]}`` of the run."""
+        events = self.events
+        attempts = [int(e.get("attempts") or 0) for e in events]
+        return {
+            "total": len(events),
+            "failures": sum(1 for e in events if not e.get("success")),
+            "retries": sum(max(a - 1, 0) for a in attempts),
+            "steps": [
+                (str(e.get("type") or e.get("task_name") or "task"), bool(e.get("success")))
+                for e in events
+            ],
+        }
 
 
 class _MemoryHandler(logging.Handler):
     """Capture each JSON event line into an in-memory list."""
 
-    def __init__(self):
+    def __init__(self, lines: list[str] | None = None):
         super().__init__()
-        self.lines: list[str] = []
+        self.lines: list[str] = lines if lines is not None else []
 
     def emit(self, record: logging.LogRecord) -> None:  # noqa: D401
         try:
@@ -99,25 +144,35 @@ class Session:
 
     @staticmethod
     @contextmanager
-    def start_recording(zip_path: str | os.PathLike[str]):
+    def start_recording(
+        zip_path: str | os.PathLike[str] | None, *, name: str | None = None
+    ):
         """Context manager that writes a session zip on exit.
 
         Captures two streams simultaneously:
 
-        * structured task events on ``visus.desktop.task_events`` (the
-          JSON lines written to ``events.jsonl``);
-        * every other ``visus.*`` log record at whatever level the host
-          configured via ``BotVisionConfig`` -- bundled per task in the
-          ``logs`` array of each event so reports show the step-by-step
-          forensics (``DEBUG`` shows the OCR / matcher decision trail;
-          ``INFO`` only marks the milestones).
+        * structured task events (the JSON lines written to ``events.jsonl``)
+          -- from ``execute_tasks`` and, inside ``bot.start_task_session()``,
+          from direct calls such as ``bot.click_text``. ``log_format`` does not
+          matter: with ``'json'`` they also go to the ``visus.desktop.task_events``
+          logger, with the default ``'text'`` they reach the recording directly;
+        * every other log record at whatever level the host configured via
+          ``BotVisionConfig`` -- bundled per task in the ``logs`` array of each
+          event so reports show the step-by-step forensics (``DEBUG`` shows the
+          OCR / matcher decision trail; ``INFO`` only marks the milestones).
+
+        Yields a :class:`Recording` (``.events``, ``.summary()``). ``name``
+        labels the run in the zip's ``manifest.json`` (the report's headline).
+        Pass ``zip_path=None`` to capture without writing anything.
 
         Usage::
 
-            with Session.start_recording('run.zip'):
+            with Session.start_recording('run.zip') as rec:
                 bot.execute_tasks(...)
+            print(rec.summary())
         """
-        event_handler = _MemoryHandler()
+        recording = Recording(Path(zip_path) if zip_path else None, name)
+        event_handler = _MemoryHandler(recording.lines)
         log_handler = _LogTailHandler()
 
         event_logger = logging.getLogger(_EVENTS_LOGGER)
@@ -142,12 +197,16 @@ class Session:
         from . import task_executor as _task_executor
 
         _task_executor.set_active_log_records(log_handler.records)
+        # Events emitted without JSON logs come straight to this recording.
+        sink = recording.lines.append
+        _task_executor.add_event_sink(sink)
 
         try:
-            yield
+            yield recording
         finally:
             event_logger.removeHandler(event_handler)
             root_logger.removeHandler(log_handler)
+            _task_executor.remove_event_sink(sink)
             if prior_event_level != event_logger.level:
                 event_logger.setLevel(prior_event_level)
             _task_executor.set_active_log_records(None)
@@ -155,8 +214,14 @@ class Session:
             # orchestrator (the SaaS run report IS the report), so skip the local
             # run.zip / report. Handlers are always detached above, so no handler
             # leaks either way.
-            if not os.environ.get("RUNPILOT_RUN_TOKEN"):
-                _write_zip(zip_path, event_handler.lines, log_handler.records)
+            if recording.zip_path is not None and not _streamed_to_orchestrator():
+                _write_zip(
+                    recording.zip_path,
+                    recording.lines,
+                    log_handler.records,
+                    name=recording.name,
+                )
+                recording.written = True
 
     @staticmethod
     def replay(zip_path: str | os.PathLike[str]) -> list[dict[str, Any]]:
@@ -175,16 +240,48 @@ class Session:
         return [json.loads(line) for line in raw.splitlines() if line.strip()]
 
 
+def _streamed_to_orchestrator() -> bool:
+    """True when every step went live to the RunPilot orchestrator instead.
+
+    Needs the run token AND a working reporter: with the token but no
+    ``runpilot`` installed nothing was streamed, so the local zip is kept.
+    """
+    if not os.environ.get("RUNPILOT_RUN_TOKEN"):
+        return False
+    from . import task_executor as _task_executor
+
+    return _task_executor._run_reporter() is not None
+
+
 def _write_zip(
     zip_path: str | os.PathLike[str],
     event_lines: list[str],
     log_records: list[tuple[float, str, str, str]] | None = None,
+    *,
+    name: str | None = None,
 ) -> None:
     """Bundle captured events (enriched with per-task logs) + screenshots."""
     target = Path(zip_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     enriched_lines = _attach_logs_to_events(event_lines, log_records or [])
+    events: list[dict[str, Any]] = []
+    for line in enriched_lines:
+        try:
+            events.append(json.loads(line))
+        except ValueError:
+            continue
+    manifest = {
+        "schema_version": 1,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "name": name,
+        "run_ids": sorted({str(e.get("run_id")) for e in events if e.get("run_id")}),
+        "counts": {
+            "tasks": len(events),
+            "failures": sum(1 for e in events if not e.get("success")),
+        },
+    }
     with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(_MANIFEST_FILE, json.dumps(manifest, indent=2))
         zf.writestr(_EVENTS_FILE, "\n".join(enriched_lines))
         seen: set[str] = set()
         for line in enriched_lines:
@@ -256,12 +353,12 @@ def _attach_logs_to_events(
     return enriched
 
 
-def _delegate_write_report(zip_path, html_path):
+def _delegate_write_report(zip_path, html_path, title=None):
     """Forward to ``report.write_report`` (kept as a function so the
     ``Session`` namespace stays small but still exposes the report API)."""
     from . import report as _report
 
-    return _report.write_report(zip_path, html_path)
+    return _report.write_report(zip_path, html_path, title=title)
 
 
 # Expose ``Session.write_report(zip, html)`` as a static method without

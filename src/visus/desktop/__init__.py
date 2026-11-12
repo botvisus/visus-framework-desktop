@@ -28,12 +28,20 @@ smart cascade try them in order. Everything is also exposed as an MCP server
 ═══════════════════════════════════════════════════════════════════════════════
 🚀 QUICKSTART
 ═══════════════════════════════════════════════════════════════════════════════
+    >>> from visus.desktop import rpa
+    >>> with rpa("login", app="notepad", window="Bloco de notas",
+    ...          open_report=True) as bot:          # bot + recording + report
+    ...     bot.click_text("Login")                  # OCR-find text and click
+    ...     bot.type_text("admin")                    # type into focused field
+    ...     bot.click_image("save_button.png")       # template-match and click
+    # -> ./visus-runs/login-<ts>/run.zip + report.html, summary printed;
+    #    a failed step stops the run (exit 1) and is in the report.
+
+    Without the report:
     >>> from visus.desktop import VisusBot, ensure_window
     >>> ensure_window(process="notepad.exe")        # open/restore/focus first
     >>> bot = VisusBot()
-    >>> bot.click_text("Login")                      # OCR-find text and click
-    >>> bot.type_text("admin")                        # type into focused field
-    >>> bot.click_image("save_button.png")           # template-match and click
+    >>> bot.click_text("Login")
 
 ═══════════════════════════════════════════════════════════════════════════════
 🧱 THE API — every public name, by category
@@ -151,10 +159,24 @@ smart cascade try them in order. Everything is also exposed as an MCP server
     ImageMap(mapping)            # named templates -> reuse by key
     find_all(image, region=None) ;  find_multiple(images)
 
-▶ SESSIONS / REPORTS
-    Session.start_recording(zip)  # context manager around execute_tasks
+▶ RUN REPORT (the simple way — same contract as visus.web's rpa())
+    rpa(name="run", *, config=None, app=None, window=None, timeout=30,
+        outdir=None, report=True, summary=True, open_report=False,
+        screenshots=True, stop_on_failure=True, reraise=False) -> VisusBot
+        Context manager: every bot action (click_text, click_image, type_text,
+        keyboard_command, open_app, extract_text_from_region, scroll, drag,
+        execute_tasks...) becomes a report step with duration, OK/FAILED + reason,
+        a screenshot and its logs. Writes ./visus-runs/<name>-<ts>/run.zip +
+        report.html even when a step fails; prints a summary; exit code 1 on failure.
+    bot.step("label")    # with-block: record any other code (native_click...) as a step
+    bot.type_text(pwd, secret=True)            # typed, but masked in the report
+    ActionFailedError    # raised by a failed action inside rpa() (stop_on_failure)
+
+▶ SESSIONS / REPORTS (manual control)
+    Session.start_recording(zip, name=None) -> Recording   # .events, .summary()
+        records execute_tasks and, inside bot.start_task_session(), direct calls
     Session.replay(zip) -> [events]            # reads events; does NOT re-run
-    Session.write_report(zip, html)            # styled HTML report
+    Session.write_report(zip, html, title=None)  # styled HTML report
 
 ▶ CORE CLASSES (advanced)
     TaskExecutor, TaskResult, OCREngine, OCRResult, ImageProcessor,
@@ -179,7 +201,7 @@ smart cascade try them in order. Everything is also exposed as an MCP server
     show_overlay(region)                 locate_image_with_retry(image, ...)
 
 ▶ EXCEPTIONS
-    BotVisionError (base), ImageNotFoundError, TextNotFoundError,
+    BotVisionError (base), ActionFailedError, ImageNotFoundError, TextNotFoundError,
     TaskExecutionError, ImageProcessingError, OCRProcessingError,
     TesseractNotFoundError, InvalidRegionError, ConfigurationError,
     NotSupportedOnThisOS, NativeError
@@ -245,7 +267,7 @@ smart cascade try them in order. Everything is also exposed as an MCP server
     • Run `visus doctor` (or the doctor MCP tool) to diagnose the environment.
 """
 
-import functools
+import contextlib
 import logging
 import time
 
@@ -275,6 +297,12 @@ from .core.process import (
     launch,
     open_app,
 )
+from .core.recording import (
+    exception_text,
+    mark_recorded,
+    records_step,
+    short_output,
+)
 from .core.relative_image import RelativeImageDetector  # NEW FEATURE
 from .core.screen import (
     Monitor,
@@ -299,6 +327,7 @@ from .core.window import (
     minimize_window,
 )
 from .exceptions import (
+    ActionFailedError,
     BotVisionError,
     ConfigurationError,
     ImageNotFoundError,
@@ -310,6 +339,7 @@ from .exceptions import (
     TesseractNotFoundError,
     TextNotFoundError,
 )
+from .rpa import rpa
 from .utils.clipboard import copy as copy_to_clipboard
 from .utils.clipboard import get_clipboard, paste
 from .utils.config import BotVisionConfig, get_default_config
@@ -318,7 +348,7 @@ from .utils.retry import retry
 from .utils.text_filters import clean_text, limpar_texto, matches_filter
 
 # Library version
-__version__ = "0.3.1"
+__version__ = "0.4.0"
 __author__ = "Matheus Pereira"
 __email__ = "matheuszwilkdev@gmail.com"
 __license__ = "MIT"
@@ -327,83 +357,30 @@ __license__ = "MIT"
 logger = logging.getLogger(__name__)
 
 
-# Keys we copy from the wrapped method's kwargs into the recorded event
-# so reports show the relevant context per call (the executor's own
-# ``_emit_task_event`` picks these up via ``_task_type`` / ``_task_target``).
-_RECORDED_KWARGS = (
-    "text", "image", "image_path", "anchor_image", "target_image",
-    "command", "region", "x", "y", "confidence", "confidence_threshold",
-    "mouse_button", "occurrence", "specific", "max_distance", "filter_type",
-)
+# Each public action records itself as one step of the run report while a task
+# session is open (``rpa()`` opens one) -- see ``core/recording.py``.
+_records_in_session = records_step
 
 
-def _records_in_session(type_field):
-    """Decorator: emit a structured ``task_event`` for the wrapped call.
-
-    Applied to public ``VisusBot`` action methods (``click_text``,
-    ``click_image``, ``type_text``, …). When the call happens inside a
-    ``with bot.start_task_session()`` scope, the result is forwarded to
-    :meth:`VisusBot._emit_direct_call_event` so a parallel
-    :class:`Session.start_recording` zip contains the same event line +
-    per-step / failure screenshot it would have captured via
-    :meth:`execute_tasks`. Outside a session the wrapper is transparent.
-    """
-    def decorator(method):
-        @functools.wraps(method)
-        def wrapper(self, *args, **kwargs):
-            if not getattr(self, "task_session_active", False):
-                return method(self, *args, **kwargs)
-
-            started = time.monotonic()
-            try:
-                result = method(self, *args, **kwargs)
-            except Exception as exc:
-                self._emit_direct_call_event(
-                    _build_event_task(type_field, method, args, kwargs),
-                    success=False,
-                    started_at=started,
-                    error=str(exc),
-                )
-                raise
-
-            success = bool(result) if isinstance(result, bool) else True
-            self._emit_direct_call_event(
-                _build_event_task(type_field, method, args, kwargs),
-                success=success,
-                started_at=started,
-                error=None if success else f"{method.__name__} returned falsy",
-            )
-            return result
-        return wrapper
-    return decorator
+def _open_app_outcome(result, params):
+    """``open_app`` failed when it was asked to wait for a window that never came."""
+    window = (result or {}).get("window") if isinstance(result, dict) else None
+    wanted = params.get("wait_window")
+    if wanted and not window:
+        timeout = params.get("timeout", 30.0)
+        return (
+            False,
+            f"'{params.get('target')}' was opened but the window '{wanted}' did "
+            f"not show up in front within {timeout}s",
+            None,
+        )
+    return True, None, (f"window: {window}" if window else None)
 
 
-def _build_event_task(type_field, method, args, kwargs):
-    """Construct the task dict consumed by ``_emit_task_event``.
-
-    Maps the first positional arg to a sensible task field based on
-    ``type_field`` (so ``click_text("Login")`` ends up as
-    ``{"type": "text", "text": "Login"}``), and folds in any recognized
-    kwargs that add useful context to the event.
-    """
-    task = {"type": type_field}
-    if args:
-        primary_key = {
-            "text": "text",
-            "image": "image",
-            "click": "x",  # click_at / click_coordinates -- args[0] is x or location
-            "relative_image": "anchor_image",
-            "type_text": "text",
-            "keyboard_command": "command",
-        }.get(type_field)
-        if primary_key:
-            task[primary_key] = args[0]
-        else:
-            task["arg"] = args[0]
-    for key in _RECORDED_KWARGS:
-        if key in kwargs and key not in task:
-            task[key] = kwargs[key]
-    return task
+def _extract_text_outcome(result, params):
+    """Reading text always succeeds (an empty region is a valid answer); the
+    text read goes to the report."""
+    return True, None, short_output(result)
 
 
 def _window_in_front(window):
@@ -576,6 +553,13 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         self.max_backtrack_attempts = 2  # Maximum backtrack attempts per task
         self.task_session_active = False  # Whether it is in an individual task session
 
+        # Run report (``rpa()`` / a task session inside Session.start_recording).
+        # stop_on_failure: a recorded action that fails raises ActionFailedError
+        # instead of returning False (rpa() turns it on, like visus.web).
+        self.stop_on_failure = False
+        self._step_depth = 0  # >0 while a recorded action runs (nested = 1 step)
+        self._recorded_steps = 0  # task_id of the next recorded direct call
+
     def _add_to_task_history(self, method_name, args, kwargs):
         """Add a method to the individual task history."""
         task_info = {
@@ -606,9 +590,13 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         self.task_session_active = True
         self.individual_task_history = []
         self.current_task_index = -1
+        self._recorded_steps = 0
         # Tag every event emitted during this session with a stable run id
-        # so the resulting events.jsonl groups cleanly in reports.
-        self.executor.current_run_id = uuid.uuid4().hex[:8]
+        # so the resulting events.jsonl groups cleanly in reports -- pinned, so
+        # an ``execute_tasks`` inside the session joins the same run.
+        run_id = uuid.uuid4().hex[:8]
+        self.executor.current_run_id = run_id
+        self.executor.pinned_run_id = run_id
         logger.debug(
             "Task session started (run_id=%s) -- direct calls will be recorded",
             self.executor.current_run_id,
@@ -626,34 +614,44 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             successful_tasks, total_tasks, self.executor.current_run_id,
         )
         self.executor.current_run_id = None
+        self.executor.pinned_run_id = None
         return successful_tasks, total_tasks
 
     def _emit_direct_call_event(
-        self, task_for_event, success, started_at, location=None, error=None
+        self,
+        task_for_event,
+        success,
+        started_at,
+        location=None,
+        error=None,
+        output=None,
     ):
         """Emit a structured ``task_event`` for a direct method call.
 
-        No-op unless a task session is open (so direct calls outside a
-        session keep their original "no zip noise" behavior). Mirrors the
-        shape of :meth:`TaskExecutor._emit_task_event`, including the
-        success / failure screenshot decision driven by
+        No-op unless a task session is open AND something listens -- a
+        ``Session.start_recording`` block (``rpa()`` opens one) or JSON logs --
+        so direct calls outside a recording keep their original "no zip noise"
+        behavior. Mirrors the shape of :meth:`TaskExecutor._emit_task_event`,
+        including the success / failure screenshot decision driven by
         ``screenshot_steps`` and ``screenshot_on_failure``.
         """
+        from .core import task_executor as _task_executor
+
         if not getattr(self, "task_session_active", False):
             return
-        if self.config.get("log_format", "text") != "json":
+        if (
+            self.config.get("log_format", "text") != "json"
+            and not _task_executor.recording_active()
+        ):
             return
 
-        task_index = len(self.individual_task_history)
-        self.individual_task_history.append({
-            "method": task_for_event.get("type") or task_for_event.get("text") or "direct",
-            "success": bool(success),
-        })
+        # Own counter: the backtrack history (individual_task_history) holds
+        # replayable calls only and must not get report-only entries.
+        task_index = self._recorded_steps
+        self._recorded_steps += 1
 
-        target = (
-            task_for_event.get("text")
-            or task_for_event.get("image")
-            or task_for_event.get("type", "direct_call")
+        target = self.executor._task_target(task_for_event) or task_for_event.get(
+            "type", "direct_call"
         )
         # If the caller (decorator) didn't pass a location, fall back to
         # the one stashed by ``TaskExecutor._perform_action`` -- that's
@@ -667,6 +665,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         result.attempts = 1
         result.duration_ms = int((time.monotonic() - started_at) * 1000)
         result.error = error
+        result.output = output
         if success and self.config.get("screenshot_steps"):
             result.step_screenshot = self.executor._capture_step_screenshot(
                 task_index, location=effective_location
@@ -676,6 +675,51 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
                 task_index, location=effective_location
             )
         self.executor._emit_task_event(result, task_for_event)
+
+    @contextlib.contextmanager
+    def step(self, name):
+        """Record any block of code as ONE step of the run report.
+
+        The bot's own actions (``click_text``, ``type_text``...) record
+        themselves; use ``step`` for the rest -- a ``native_click``, a
+        ``smart_click``, your own check -- so it shows up in the report with
+        its duration, OK/FAILED, a screenshot and the logs it produced::
+
+            with rpa("sap") as bot:
+                with bot.step("Login pelo controle nativo"):
+                    native_click(window="SAP", title="Entrar")
+
+        An exception inside the block marks the step FAILED and propagates.
+        Outside a recording it just runs the block.
+        """
+        self.executor.last_action_location = None
+        started = time.monotonic()
+        task = {"type": "step", "name": str(name)}
+        try:
+            yield self
+        except Exception as exc:
+            self._emit_direct_call_event(
+                task, success=False, started_at=started, error=exception_text(exc)
+            )
+            mark_recorded(exc)
+            raise
+        self._emit_direct_call_event(task, success=True, started_at=started)
+
+    def _record_run_failure(self, exc):
+        """Add the error that stopped the run as a last FAILED step (with a
+        screenshot), when it did not come from a recorded action -- e.g. an
+        ``assert`` in the script or an unexpected exception."""
+        self.executor.last_action_location = None
+        if isinstance(exc, KeyboardInterrupt):
+            message = "Interrupted (Ctrl+C)"
+        else:
+            message = exception_text(exc)
+        self._emit_direct_call_event(
+            {"type": "error", "name": type(exc).__name__},
+            success=False,
+            started_at=time.monotonic(),
+            error=message,
+        )
 
     # Overlay control properties
     @property
@@ -1660,6 +1704,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
 
         return False
 
+    @_records_in_session("extract_text", check=_extract_text_outcome)
     def extract_text_from_region(
         self,
         region=None,
@@ -2388,6 +2433,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             logger.error(f"Error clicking on coordinates ({x}, {y}): {e}")
             return False
 
+    @_records_in_session("open_app", check=_open_app_outcome)
     def open_app(self, target, wait_window=None, timeout=30.0):
         """
         Open an app or a file as Windows Run does (``excel``, ``notepad``, a
@@ -2403,7 +2449,9 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         return open_app(target, wait_window=wait_window, timeout=timeout)
 
     @_records_in_session("type_text")
-    def type_text(self, text, interval=0.02, delay=0, backtrack=False, window=None):
+    def type_text(
+        self, text, interval=0.02, delay=0, backtrack=False, window=None, secret=False
+    ):
         """
         Type text with an interval between characters.
 
@@ -2415,6 +2463,8 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
             window (str): Part of the title of the window that gets the text: it is
                 brought to the front and CHECKED first -- with another window in
                 front nothing is typed and this returns False
+            secret (bool): A password or token -- typed normally, but shown as
+                ``••••••`` in the run report and the logs
 
         Returns:
             bool: True if typed successfully
@@ -2422,6 +2472,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         Examples:
             >>> success = bot.type_text('Hello World!', interval=0.05, backtrack=True)
             >>> success = bot.type_text('{ctrl}a{del}New text', backtrack=True)
+            >>> success = bot.type_text(password, secret=True)
         """
         if window and not _window_in_front(window):
             return False
@@ -2432,12 +2483,13 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
                 text,
                 interval,
                 delay,
+                secret,
                 backtrack=backtrack,
             )
 
-        return self._type_text_internal(text, interval, delay)
+        return self._type_text_internal(text, interval, delay, secret)
 
-    def _type_text_internal(self, text, interval, delay):
+    def _type_text_internal(self, text, interval, delay, secret=False):
         """Internal implementation of text typing."""
         try:
             # Like a person at the keyboard: a key per character (accents included),
@@ -2451,7 +2503,8 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
                 time.sleep(delay)
             return True
         except Exception as e:
-            logger.error(f"Error typing text '{text}': {e}")
+            shown = "••••••" if secret else text
+            logger.error(f"Error typing text '{shown}': {e}")
             return False
 
     @_records_in_session("keyboard_command")
@@ -3448,6 +3501,8 @@ __all__ = [
     # Main class
     "VisusBot",
     "BotVision",  # backward-compatibility alias
+    # Batteries-included run: bot + recording + HTML report + summary
+    "rpa",
     # Task execution functions
     "execute_tasks",
     "click_images",  # Full compatibility with legacy code
@@ -3536,6 +3591,7 @@ __all__ = [
     "NativeError",
     # Exceptions
     "BotVisionError",
+    "ActionFailedError",
     "ImageNotFoundError",
     "TextNotFoundError",
     "TaskExecutionError",

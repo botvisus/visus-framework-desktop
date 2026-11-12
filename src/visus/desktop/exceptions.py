@@ -70,6 +70,26 @@ class NotSupportedOnThisOS(BotVisionError):
     pass
 
 
+class ActionFailedError(BotVisionError):
+    """Raised when a recorded action fails and the bot was told to stop there.
+
+    Inside :func:`visus.desktop.rpa` (``stop_on_failure=True``, the default) a
+    ``click_text`` / ``click_image`` / ``type_text`` / ... that does not succeed
+    stops the run with this error instead of returning ``False`` -- the same
+    way a failed action stops a ``visus.web`` run. The failed step (its reason
+    and a screenshot of the screen at that moment) is already in the report.
+
+    Attributes:
+        action: the recorded action type (``"text"``, ``"image"``, ``"type_text"``...).
+        target: what the action was aimed at (the text, the image file, the key...).
+    """
+
+    def __init__(self, message: str, *, action: str = "", target: str = ""):
+        super().__init__(message)
+        self.action = action
+        self.target = target
+
+
 class CircuitBreakerTrippedError(BotVisionError):
     """Raised when ``execute_tasks`` aborts due to consecutive failures.
 

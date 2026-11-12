@@ -27,7 +27,9 @@ from pathlib import Path
 from typing import Any, Iterable
 
 _EVENTS_FILE = "events.jsonl"
+_MANIFEST_FILE = "manifest.json"
 _SCREENSHOTS_DIR = "screenshots/"
+_DEFAULT_TITLE = "Desktop automation"
 
 _CSS = """
 :root {
@@ -279,14 +281,35 @@ footer.report { margin-top: 32px; border-top: 1px solid var(--line); padding-top
 
 
 def write_report(
-    zip_path: str | os.PathLike[str], html_path: str | os.PathLike[str]
-) -> None:
-    """Render a session zip into a single-file HTML report."""
+    zip_path: str | os.PathLike[str],
+    html_path: str | os.PathLike[str],
+    title: str | None = None,
+) -> str:
+    """Render a session zip into a single-file HTML report.
+
+    ``title`` is the report's headline; by default the run name recorded in
+    the zip (``rpa("name")`` / ``Session.start_recording(..., name=)``), else
+    "Desktop automation". Returns the absolute path of the written file.
+    """
     events, screenshots = _read_session(Path(zip_path))
-    html = _render_html(events, screenshots)
+    headline = title or _read_manifest(Path(zip_path)).get("name") or _DEFAULT_TITLE
+    html = _render_html(events, screenshots, title=str(headline))
     out = Path(html_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8")
+    return str(out.resolve())
+
+
+def _read_manifest(zip_path: Path) -> dict[str, Any]:
+    """The zip's ``manifest.json`` (``{}`` when absent or unreadable)."""
+    try:
+        with zipfile.ZipFile(zip_path) as zf:
+            if _MANIFEST_FILE not in zf.namelist():
+                return {}
+            data = json.loads(zf.read(_MANIFEST_FILE).decode("utf-8"))
+    except (OSError, ValueError, zipfile.BadZipFile):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _read_session(zip_path: Path) -> tuple[list[dict[str, Any]], dict[str, bytes]]:
@@ -427,7 +450,11 @@ def _kpi(label: str, value: Any, tone: str = "") -> str:
     )
 
 
-def _render_html(events: list[dict[str, Any]], screenshots: dict[str, bytes]) -> str:
+def _render_html(
+    events: list[dict[str, Any]],
+    screenshots: dict[str, bytes],
+    title: str = _DEFAULT_TITLE,
+) -> str:
     kpis = _kpis(events)
     runs = _group_runs(events)
     ordered = [e for run in runs for e in run["events"]]
@@ -505,7 +532,7 @@ def _render_html(events: list[dict[str, Any]], screenshots: dict[str, bytes]) ->
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Visus Desktop — Run report</title>
+  <title>{escape(title)} — Visus Desktop run report</title>
   <style>{_CSS}</style>
 </head>
 <body>
@@ -514,7 +541,7 @@ def _render_html(events: list[dict[str, Any]], screenshots: dict[str, bytes]) ->
       <div class="head">
         <div>
           <p class="eyebrow">Visus Desktop — Run report</p>
-          <h1>Desktop automation</h1>
+          <h1>{escape(title)}</h1>
           <p class="run-id">{escape(run_ids)}</p>
         </div>
         <span class="pill {tone}">{status}</span>
@@ -551,11 +578,43 @@ def _render_error(
             event["failure_screenshot"], screenshots, kind="failure"
         )
     when = _short_time(str(event.get("timestamp") or ""))
-    name = str(event.get("task_name") or event.get("type") or "")
+    name = _task_title(event)
     return (
         f'<div class="error-card"><p class="message">{escape(message)}</p>{shot}'
         f'<p class="when">{escape(when)} · task #{number} · {escape(name)}</p></div>'
     )
+
+
+# What each recorded action type reads as in a step title ("Click text · Login").
+_TYPE_TITLES = {
+    "text": "Click text",
+    "image": "Click image",
+    "click": "Click at",
+    "relative_image": "Click image near",
+    "type_text": "Type",
+    "keyboard_command": "Press",
+    "extract_text": "Read text",
+    "open_app": "Open",
+    "scroll": "Scroll",
+    "drag": "Drag",
+    "triple_click": "Triple-click",
+    "hybrid": "Find & click",
+    "step": "Step",
+    "error": "Run stopped",
+}
+
+# Longest step output shown in the report (an extraction can be a whole screen).
+_OUTPUT_LIMIT = 600
+
+
+def _task_title(event: dict[str, Any]) -> str:
+    """``"Click text · Login"`` for a known action type, else the task name."""
+    ttype = str(event.get("type") or "")
+    verb = _TYPE_TITLES.get(ttype)
+    label = str(event.get("target") or event.get("task_name") or "")
+    if verb:
+        return f"{verb} · {label}" if label else verb
+    return str(event.get("task_name") or event.get("target") or ttype or "task")
 
 
 def _render_task(
@@ -568,7 +627,7 @@ def _render_task(
         else '<span class="badge-failure">FAILED</span>'
     )
     ttype = str(event.get("type") or "task")
-    name = str(event.get("task_name") or event.get("target") or ttype)
+    name = _task_title(event)
     target = event.get("target")
     action_line = f"<b>{escape(ttype)}</b>" + (
         f" → {escape(str(target))}" if target else ""
@@ -578,6 +637,11 @@ def _render_task(
     error_block = f'<p class="step-error">{escape(str(error))}</p>' if error else ""
 
     rows: list[tuple[str, str]] = [("attempts", str(int(event.get("attempts") or 0)))]
+    if event.get("output"):
+        output = str(event.get("output"))
+        if len(output) > _OUTPUT_LIMIT:
+            output = output[:_OUTPUT_LIMIT] + "…"
+        rows.append(("output", output))
     if event.get("location") not in (None, "skip"):
         rows.append(("location", str(event.get("location"))))
     if event.get("region"):

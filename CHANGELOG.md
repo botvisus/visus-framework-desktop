@@ -6,6 +6,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-12
+
+The run report in one line, the same `rpa()` as visus.web.
+
+### Added
+- `rpa(name, *, config, app, window, timeout, outdir, report, summary, open_report,
+  screenshots, stop_on_failure, reraise)` — a context manager that yields a ready
+  `VisusBot`, records every action as a report step and, on exit (even when a step
+  fails), writes `./visus-runs/<name>-<ts>/run.zip` + `report.html`, prints a summary
+  and exits with code 1 on failure. `app=`/`window=` open the app and wait for its
+  window as the first step.
+- `ActionFailedError` — a failed action inside `rpa()` stops the run with it
+  (`stop_on_failure=True`, the default) instead of returning `False`.
+- `bot.step("label")` — records any block (a `native_click`, a `smart_click`, a check)
+  as one step.
+- `type_text(..., secret=True)` — typed as usual, shown as `••••••` in the report and logs.
+- Recorded as steps too: `open_app`, `extract_text_from_region` (the text read shows in
+  the report, also for `execute_tasks` `extract_text` tasks), `scroll`, `drag`,
+  `triple_click`.
+- Report: the run name as the headline (`manifest.json` in the zip), step titles that
+  read "Click text · Login", "Type · Ada", and an `output` row.
+- `Session.start_recording(zip, name=None)` yields a `Recording` (`.events`,
+  `.summary()`); `zip_path=None` captures without writing.
+
+### Changed
+- `Session.start_recording` no longer needs `log_format="json"`: with the default text
+  logs the events reach the recording directly (and no JSON is printed on the console).
+- Inside a task session, `execute_tasks` keeps the session's run id, so direct calls
+  and task lists show as ONE run in the report.
+- Under `RUNPILOT_RUN_TOKEN` without `runpilot` installed (nothing streamed), the local
+  zip is kept instead of being skipped.
+
+### Fixed
+- Under RunPilot, a step with a long field (a `type_text` of 2600 characters, an error
+  message over 5000) was rejected whole by the orchestrator's step schema and vanished
+  from the run timeline; streamed steps are now clipped to fit (name 500, target 2000,
+  error 5000). The text an extraction read goes along as the `output` attribute.
+- A failed direct call's screenshot no longer draws the PREVIOUS step's box.
+- `backtrack=True` after a recorded direct call no longer crashes (report-only entries
+  went into the backtrack history).
+
 ## [0.3.1] - 2026-10-31
 
 ### Changed

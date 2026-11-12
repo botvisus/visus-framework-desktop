@@ -99,6 +99,51 @@ def set_active_log_records(
     _active_log_records = records
 
 
+# Event sinks of the open recordings (``Session.start_recording``). A task event
+# reaches a recording through the ``task_events`` logger when the host opted into
+# JSON logs, and through these sinks otherwise -- so a recording no longer needs
+# ``log_format='json'`` (which also printed every event as JSON on the console).
+# Each sink takes the event's JSON line.
+_event_sinks: List[Any] = []
+
+
+def add_event_sink(sink: Any) -> None:
+    """Register ``sink(json_line)`` to receive every task event while recording."""
+    _event_sinks.append(sink)
+
+
+def remove_event_sink(sink: Any) -> None:
+    """Unregister a sink added with :func:`add_event_sink` (no-op if absent)."""
+    try:
+        _event_sinks.remove(sink)
+    except ValueError:
+        pass
+
+
+def recording_active() -> bool:
+    """True while a ``Session.start_recording`` block is open."""
+    return bool(_event_sinks)
+
+
+# Field caps of the orchestrator's ``POST /sdk/run/step`` (its ``SdkStepSchema``,
+# a ``.strict()`` zod schema). A longer field makes the server reject the WHOLE
+# step with a 400 -- which ``report_ui_step`` swallows, so the step would silently
+# vanish from the run timeline (e.g. a ``type_text`` of a long text, or an error
+# with a long message). Streamed steps are clipped to fit instead.
+_STEP_NAME_MAX = 500
+_STEP_ACTION_MAX = 500
+_STEP_TARGET_MAX = 2000
+_STEP_ERROR_MAX = 5000
+_STEP_OUTPUT_MAX = 4000  # an attribute: well inside the 512 KB attributes cap
+
+
+def _clip(value: Optional[str], limit: int) -> Optional[str]:
+    """``value`` cut to ``limit`` characters (an ellipsis marks the cut)."""
+    if value is None or len(value) <= limit:
+        return value
+    return value[: limit - 1] + "…"
+
+
 class TaskResult:
     """Class to store the execution result of a task."""
 
@@ -126,6 +171,9 @@ class TaskResult:
         # Per-step screenshot path (config['screenshot_steps']=True). Captured
         # AFTER the action so it shows the result of the step. None otherwise.
         self.step_screenshot: Optional[str] = None
+        # What the step produced, for the report (the text an extraction read,
+        # the window an ``open_app`` waited for). None when there is nothing.
+        self.output: Optional[str] = None
 
 
 class TaskExecutor:
@@ -165,6 +213,10 @@ class TaskExecutor:
         # ``current_run_id`` is rotated at the start of every ``execute_tasks``
         # call so failure screenshots from concurrent runs don't collide.
         self.current_run_id: Optional[str] = None
+        # Set by ``VisusBot.start_task_session`` (and so by ``rpa()``): while
+        # pinned, ``execute_tasks`` keeps this id instead of rotating it, so the
+        # direct calls and the task lists of one run group as ONE run in the report.
+        self.pinned_run_id: Optional[str] = None
         # The last (x, y, w, h) box passed to ``_perform_action``. Lets
         # ``VisusBot._emit_direct_call_event`` annotate the step screenshot
         # for a direct ``click_text`` / ``click_image`` call even though
@@ -213,7 +265,21 @@ class TaskExecutor:
         if ttype == "image":
             return os.path.basename(str(task.get("image", "")))
         if ttype == "extract_text":
-            return f"region {task.get('region')}"
+            region = task.get("region")
+            return f"region {list(region)}" if region else "full screen"
+        if ttype == "open_app":
+            return str(task.get("target", ""))
+        if ttype == "scroll":
+            return f"{task.get('amount')} click(s)"
+        if ttype == "drag":
+            return (
+                f"({task.get('start_x')}, {task.get('start_y')}) -> "
+                f"({task.get('end_x')}, {task.get('end_y')})"
+            )
+        if ttype == "triple_click":
+            if task.get("x") is None:
+                return "cursor"
+            return f"({task.get('x')}, {task.get('y')})"
         return str(task.get("text") or task.get("name") or "")
 
     def _describe_miss(self, task: Dict[str, Any], attempts: int) -> str:
@@ -336,17 +402,28 @@ class TaskExecutor:
             "failure_screenshot": result.failure_screenshot,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+        output = getattr(result, "output", None)
+        if output:
+            event["output"] = output
 
         # Stream this action to the RunPilot orchestrator as a timeline step
         # (screenshot + per-action logs). Best-effort and independent of
         # ``log_format`` -- must run even in the default text-log mode.
         self._stream_step_to_reporter(result, event)
 
-        # The structured JSON event line is only written when the host opted into
-        # JSON logs; the live streaming above already happened regardless.
-        if self.config.get("log_format", "text") != "json":
+        line = json.dumps(event, default=str)
+        # The structured JSON event line goes to the ``task_events`` logger when
+        # the host opted into JSON logs (an open recording captures it there).
+        # Otherwise an open recording still gets it, straight through its sink --
+        # without printing the JSON on the console.
+        if self.config.get("log_format", "text") == "json":
+            task_event_logger.info(line)
             return
-        task_event_logger.info(json.dumps(event))
+        for sink in list(_event_sinks):
+            try:
+                sink(line)
+            except Exception as exc:  # pragma: no cover - observing must not break run
+                logger.debug("task event sink failed: %s", exc)
 
     def _stream_step_to_reporter(
         self, result: "TaskResult", event: Dict[str, Any]
@@ -374,14 +451,20 @@ class TaskExecutor:
                 attrs["location"] = event["location"]
             if event.get("attempts"):
                 attrs["attempts"] = event["attempts"]
+            if event.get("output"):
+                attrs["output"] = _clip(event["output"], _STEP_OUTPUT_MAX)
+            error = event.get("error")
             reporter.report_ui_step(
-                action=str(event.get("type") or "action"),
-                target=event.get("target") or None,
+                action=_clip(str(event.get("type") or "action"), _STEP_ACTION_MAX),
+                target=_clip(event.get("target") or None, _STEP_TARGET_MAX),
                 status="ok" if result.success else "failed",
                 screenshot_png=png,
                 duration_ms=event.get("duration_ms"),
-                error=event.get("error"),
-                name=result.task_name or str(event.get("type") or "action"),
+                error=_clip(error, _STEP_ERROR_MAX) if error else error,
+                name=_clip(
+                    result.task_name or str(event.get("type") or "action"),
+                    _STEP_NAME_MAX,
+                ),
                 attributes=attrs or None,
             )
         except Exception as exc:  # pragma: no cover - observing must not break run
@@ -580,8 +663,9 @@ class TaskExecutor:
             return []
 
         # Rotate the run identifier so failure artifacts from this invocation
-        # are namespaced separately from any previous run.
-        self.current_run_id = uuid.uuid4().hex[:8]
+        # are namespaced separately from any previous run -- unless a task
+        # session pinned one (then this list is part of that run).
+        self.current_run_id = self.pinned_run_id or uuid.uuid4().hex[:8]
 
         logger.info(f"Starting execution of {len(tasks)} tasks")
 
@@ -742,6 +826,11 @@ class TaskExecutor:
                     task_result.task_index,
                     location=task_result.location,
                 )
+            if task_result.success and self._task_type(task) == "extract_text":
+                # The text read is the point of the step: show it in the report.
+                from .recording import short_output
+
+                task_result.output = short_output(self.last_extracted_text)
             self._emit_task_event(task_result, task)
 
         successful_tasks = sum(1 for r in results if r.success)

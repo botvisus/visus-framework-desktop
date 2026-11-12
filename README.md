@@ -32,6 +32,7 @@ for the few Windows‑only features).
 - [Installation](#installation)
 - [Quickstart](#quickstart)
 - [Usage guide](#usage-guide)
+  - [Run report (`rpa`)](#run-report-rpa)
   - [Find & click text (OCR)](#find--click-text-ocr)
   - [Find & click images](#find--click-images)
   - [Find all / find multiple](#find-all--find-multiple)
@@ -83,9 +84,11 @@ for the few Windows‑only features).
   (`native_dump_tree`) and act by control (`native_click`, `native_set_text`,
   `native_get_text`, `native_get_state`, `native_wait`). Immune to
   theme/DPI/resolution/language; degrades to OCR on non‑accessible UIs.
-- **🎬 Sessions & HTML reports** — record a run (`Session.start_recording`),
-  replay its events, and render a single‑file HTML report with timings and
-  failure screenshots.
+- **🎬 Run report in one line** — `with rpa("name", open_report=True) as bot:`
+  records every action (duration, OK/FAILED + reason, a screenshot with the
+  target boxed, its logs) and writes `run.zip` + a single‑file `report.html`,
+  even when a step fails — the same `rpa()` as `visus.web`. For manual control:
+  `Session.start_recording` + `Session.write_report`. See [Run report](#run-report-rpa).
 - **🤖 MCP server** — expose all 57 tools to AI agents (Claude Code/Desktop,
   Cursor) via the `visus-mcp` command. See [Drive it from any MCP agent](#drive-it-from-any-mcp-agent).
 - **⌨️ Visus CLI Pro** — the `visus` command mirrors the whole surface in the
@@ -220,13 +223,22 @@ troubleshooting.
 ## Quickstart
 
 ```python
+from visus.desktop import rpa
+
+with rpa("login", open_report=True) as bot:
+    bot.click_text("Login")              # find on-screen text via OCR and click it
+    bot.click_image("save_button.png")   # find a UI element by template image and click it
+    bot.type_text("hello world")         # type into the focused field
+```
+
+On exit you get `./visus-runs/login-<timestamp>/run.zip` + `report.html` (opened in
+the browser), and a summary on the console. Without the report, use the bot directly:
+
+```python
 from visus.desktop import VisusBot
 
 bot = VisusBot()
-
-bot.click_text("Login")              # find on-screen text via OCR and click it
-bot.click_image("save_button.png")   # find a UI element by template image and click it
-bot.type_text("hello world")         # type into the focused field
+bot.click_text("Login")
 ```
 
 Restricting the search to a screen `region` (faster and more reliable):
@@ -376,6 +388,56 @@ Conventions:
 - **`mouse_button`** = `"left"` | `"right"` | `"double"` | `"move_to"`.
 - **`filter_type` / `char_type`** = `"letters"` | `"numbers"` | `"both"`.
 - **`confidence`** (image matching) is `0.0–1.0`; **`confidence_threshold`** (OCR) is `0–100`.
+
+### Run report (`rpa`)
+
+`rpa()` is the same contract as `visus.web`'s: you write only the automation, it
+handles the bot, the recording, the HTML report and the summary.
+
+```python
+from visus.desktop import rpa
+
+with rpa("pedido", app="notepad", window="Bloco de notas", open_report=True) as bot:
+    bot.type_text("Pedido 123")
+    bot.type_text(senha, secret=True)          # typed, shown as •••••• in the report
+    total = bot.extract_text_from_region(region=(1196, 507, 109, 20))
+    bot.keyboard_command("Ctrl+S")
+```
+
+- **Every action is a step** — `click_text`, `click_image`, `click_at`,
+  `click_coordinates`, `click_relative_image`, `type_text`, `keyboard_command` (and
+  `enter()`, `tab()`…), `open_app`, `extract_text_from_region` (the text read shows
+  in the report), `scroll`, `drag`, `triple_click` and every task of `execute_tasks`:
+  its duration, OK/FAILED with the reason, a screenshot right after it (target boxed)
+  and the logs it produced. One run id for all of them.
+- **Anything else** — wrap it in `with bot.step("label"):` (a `native_click`, a
+  `smart_click`, your own check) and it becomes one step too.
+- **A failed action stops the run** (`stop_on_failure=True`): the step is in the
+  report with a failure screenshot, the summary says why, and the script exits with
+  code 1 (`reraise=True` raises `ActionFailedError` instead). An `assert` or an
+  unexpected error in your script is added as the last FAILED step. For an "is it on
+  screen?" check use `find_text` / `find_image` — they never stop the run — or pass
+  `stop_on_failure=False` to get the old `True`/`False` returns.
+- **Options** — `config=` (the usual `VisusBot` settings), `app=` / `window=` /
+  `timeout=` (open the app and wait for its window as the first step), `outdir=`
+  (default `./visus-runs/<name>-<timestamp>/`), `report=`, `summary=`,
+  `open_report=`, `screenshots=` (a screenshot per step; failures always get one).
+- **Under RunPilot** (`RUNPILOT_RUN_TOKEN`) every step streams live to the
+  orchestrator instead, and no local files are written.
+
+Manual control (several bots, your own paths) — no `log_format="json"` needed anymore:
+
+```python
+from visus.desktop import Session, VisusBot
+
+bot = VisusBot()
+with Session.start_recording("run.zip", name="pedido") as rec:
+    bot.start_task_session()          # direct calls are recorded from here
+    bot.click_text("Login")
+    bot.end_task_session()
+print(rec.summary())
+Session.write_report("run.zip", "report.html")
+```
 
 ### Find & click text (OCR)
 
