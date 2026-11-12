@@ -62,12 +62,12 @@ class TestBotVisionConfigValidation:
     def test_invalid_overlay_width_resets_to_default(self, cfg):
         cfg.config["overlay_width"] = 0
         cfg._validate_overlay_config()
-        assert cfg.config["overlay_width"] == 4
+        assert cfg.config["overlay_width"] == 2
 
     def test_invalid_overlay_width_type_resets(self, cfg):
         cfg.config["overlay_width"] = "thick"
         cfg._validate_overlay_config()
-        assert cfg.config["overlay_width"] == 4
+        assert cfg.config["overlay_width"] == 2
 
 
 class TestDetectTesseract:

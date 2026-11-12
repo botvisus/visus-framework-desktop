@@ -25,6 +25,35 @@ logger = logging.getLogger(__name__)
 
 _IS_WIN = sys.platform == "win32"
 
+# The ACTION highlight -- the box drawn on the target of the click/type about to
+# happen -- is one at a time: a new one closes the previous at once. Each box used
+# to live its full ``overlay_duration`` (1 s) regardless, so a fast run (a click
+# every ~0.14 s) stacked ~7 of them: they lingered after the bot moved on and
+# showed up on the next steps' report screenshots. Numbered overlays
+# (``show_text_occurrences``) don't take this slot -- they coexist on purpose.
+_action_lock = threading.Lock()
+_action_stop: threading.Event | None = None
+
+
+def _claim_action_slot() -> threading.Event:
+    """Make a new action highlight the current one; tell the previous to close."""
+    global _action_stop
+    stop = threading.Event()
+    with _action_lock:
+        previous, _action_stop = _action_stop, stop
+    if previous is not None:
+        previous.set()
+    return stop
+
+
+def clear_click_through_overlays() -> None:
+    """Close the current action highlight now (e.g. when a run ends)."""
+    global _action_stop
+    with _action_lock:
+        previous, _action_stop = _action_stop, None
+    if previous is not None:
+        previous.set()
+
 if _IS_WIN:
     user32 = ctypes.WinDLL("user32", use_last_error=True)
     gdi32 = ctypes.WinDLL("gdi32", use_last_error=True)
@@ -176,6 +205,56 @@ if _IS_WIN:
     kernel32.GetModuleHandleW.restype = HINSTANCE
     kernel32.GetModuleHandleW.argtypes = [wintypes.LPCWSTR]
 
+    # Per-pixel alpha (UpdateLayeredWindow): the translucent fill, soft glow and
+    # anti-aliased rounded corners of the studio-look highlight.
+    AC_SRC_OVER = 0x00
+    AC_SRC_ALPHA = 0x01
+    ULW_ALPHA = 0x02
+    BI_RGB = 0
+    DIB_RGB_COLORS = 0
+
+    class BLENDFUNCTION(ctypes.Structure):
+        _fields_ = [
+            ("BlendOp", ctypes.c_ubyte),
+            ("BlendFlags", ctypes.c_ubyte),
+            ("SourceConstantAlpha", ctypes.c_ubyte),
+            ("AlphaFormat", ctypes.c_ubyte),
+        ]
+
+    class BITMAPINFOHEADER(ctypes.Structure):
+        _fields_ = [
+            ("biSize", wintypes.DWORD),
+            ("biWidth", wintypes.LONG),
+            ("biHeight", wintypes.LONG),
+            ("biPlanes", wintypes.WORD),
+            ("biBitCount", wintypes.WORD),
+            ("biCompression", wintypes.DWORD),
+            ("biSizeImage", wintypes.DWORD),
+            ("biXPelsPerMeter", wintypes.LONG),
+            ("biYPelsPerMeter", wintypes.LONG),
+            ("biClrUsed", wintypes.DWORD),
+            ("biClrImportant", wintypes.DWORD),
+        ]
+
+    class BITMAPINFO(ctypes.Structure):
+        _fields_ = [("bmiHeader", BITMAPINFOHEADER), ("bmiColors", wintypes.DWORD * 3)]
+
+    gdi32.CreateCompatibleDC.restype = wintypes.HDC
+    gdi32.CreateCompatibleDC.argtypes = [wintypes.HDC]
+    gdi32.DeleteDC.restype = wintypes.BOOL
+    gdi32.DeleteDC.argtypes = [wintypes.HDC]
+    gdi32.CreateDIBSection.restype = wintypes.HANDLE
+    gdi32.CreateDIBSection.argtypes = [
+        wintypes.HDC, ctypes.POINTER(BITMAPINFO), wintypes.UINT,
+        ctypes.POINTER(ctypes.c_void_p), wintypes.HANDLE, wintypes.DWORD,
+    ]
+    user32.UpdateLayeredWindow.restype = wintypes.BOOL
+    user32.UpdateLayeredWindow.argtypes = [
+        wintypes.HWND, wintypes.HDC, ctypes.POINTER(wintypes.POINT),
+        ctypes.POINTER(wintypes.SIZE), wintypes.HDC, ctypes.POINTER(wintypes.POINT),
+        wintypes.COLORREF, ctypes.POINTER(BLENDFUNCTION), wintypes.DWORD,
+    ]
+
     @WNDPROC
     def _wnd_proc(hwnd, msg, wparam, lparam):
         return user32.DefWindowProcW(hwnd, msg, wparam, lparam)
@@ -188,20 +267,9 @@ if _IS_WIN:
     _wndclass_holder = None
 
 
-_COLORS_RGB = {
-    "red": (255, 0, 0),
-    "blue": (0, 128, 255),
-    "green": (0, 255, 0),
-    "yellow": (255, 255, 0),
-    "purple": (128, 0, 128),
-    "orange": (255, 128, 0),
-    "cyan": (0, 255, 255),
-    "magenta": (255, 0, 255),
-    "white": (255, 255, 255),
-    # Pure black would be eaten by the color-key. Bias by 1 so a "black"
-    # request still draws something visible.
-    "black": (1, 1, 1),
-}
+# The named colors live with the highlight look ("green" is the studio green; pure
+# black is nudged so the color-keyed fallback never makes it invisible).
+from .highlight_style import COLORS_RGB as _COLORS_RGB  # noqa: E402
 
 
 def _rgb_to_colorref(rgb):
@@ -300,9 +368,114 @@ def _paint(
         user32.ReleaseDC(hwnd, hdc)
 
 
-def _overlay_worker(region, color, line_width, duration_ms, label):
+def _create_overlay_window(win_x, win_y, win_w, win_h):
+    """A click-through, top-most, never-activated layered popup (or None)."""
+    ex_style = (
+        WS_EX_LAYERED
+        | WS_EX_TRANSPARENT
+        | WS_EX_TOPMOST
+        | WS_EX_TOOLWINDOW
+        | WS_EX_NOACTIVATE
+    )
+    hwnd = user32.CreateWindowExW(
+        ex_style,
+        _CLASS_NAME,
+        None,
+        WS_POPUP,
+        win_x, win_y, win_w, win_h,
+        None, None, kernel32.GetModuleHandleW(None), None,
+    )
+    if not hwnd:
+        logger.debug(f"CreateWindowExW failed (err={ctypes.get_last_error()})")
+        return None
+    return hwnd
+
+
+def _premultiplied_bgra(image) -> bytes:
+    """RGBA PIL image -> the premultiplied BGRA bytes UpdateLayeredWindow wants."""
+    import numpy as np
+
+    arr = np.asarray(image, dtype=np.uint16)
+    alpha = arr[..., 3:4]
+    rgb = (arr[..., :3] * alpha + 127) // 255
+    bgra = np.concatenate([rgb[..., 2:3], rgb[..., 1:2], rgb[..., 0:1], alpha], axis=2)
+    return bgra.astype(np.uint8).tobytes()
+
+
+def _update_layered(hwnd, win_x, win_y, win_w, win_h, pixels: bytes) -> bool:
+    """Put ``pixels`` (premultiplied BGRA, top-down) on the layered window."""
+    hdc_screen = user32.GetDC(None)
+    if not hdc_screen:
+        return False
+    hdc_mem = gdi32.CreateCompatibleDC(hdc_screen)
+    hbmp = None
+    old = None
+    try:
+        if not hdc_mem:
+            return False
+        bmi = BITMAPINFO()
+        bmi.bmiHeader.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+        bmi.bmiHeader.biWidth = win_w
+        bmi.bmiHeader.biHeight = -win_h  # top-down rows
+        bmi.bmiHeader.biPlanes = 1
+        bmi.bmiHeader.biBitCount = 32
+        bmi.bmiHeader.biCompression = BI_RGB
+        bits = ctypes.c_void_p()
+        hbmp = gdi32.CreateDIBSection(
+            hdc_screen, ctypes.byref(bmi), DIB_RGB_COLORS, ctypes.byref(bits), None, 0
+        )
+        if not hbmp or not bits.value:
+            return False
+        ctypes.memmove(bits, pixels, len(pixels))
+        old = gdi32.SelectObject(hdc_mem, hbmp)
+        blend = BLENDFUNCTION(AC_SRC_OVER, 0, 255, AC_SRC_ALPHA)
+        return bool(
+            user32.UpdateLayeredWindow(
+                hwnd, hdc_screen,
+                ctypes.byref(wintypes.POINT(win_x, win_y)),
+                ctypes.byref(wintypes.SIZE(win_w, win_h)),
+                hdc_mem, ctypes.byref(wintypes.POINT(0, 0)),
+                0, ctypes.byref(blend), ULW_ALPHA,
+            )
+        )
+    finally:
+        if hdc_mem:
+            if old:
+                gdi32.SelectObject(hdc_mem, old)
+            gdi32.DeleteDC(hdc_mem)
+        if hbmp:
+            gdi32.DeleteObject(hbmp)
+        user32.ReleaseDC(None, hdc_screen)
+
+
+def _show_studio_look(region, color, line_width, label):
+    """The studio-look highlight (translucent fill, soft glow, rounded) -- or None,
+    and the caller falls back to the plain outline."""
+    try:
+        from .highlight_style import render
+
+        x, y, w, h = (int(v) for v in region)
+        image, ox, oy = render(w, h, color, line_width, label)
+        pixels = _premultiplied_bgra(image)
+    except Exception as exc:  # PIL/numpy trouble: the outline still shows
+        logger.debug(f"studio-look overlay unavailable: {exc}")
+        return None
+    win_x, win_y = x - ox, y - oy
+    win_w, win_h = image.size
+    hwnd = _create_overlay_window(win_x, win_y, win_w, win_h)
+    if not hwnd:
+        return None
+    if not _update_layered(hwnd, win_x, win_y, win_w, win_h, pixels):
+        logger.debug(f"UpdateLayeredWindow failed (err={ctypes.get_last_error()})")
+        user32.DestroyWindow(hwnd)
+        return None
+    user32.ShowWindow(hwnd, SW_SHOWNOACTIVATE)
+    return hwnd
+
+
+def _show_outline(region, color, line_width, label):
+    """The plain GDI outline on a color-keyed window (the fallback look)."""
     x, y, w, h = region
-    line_width = max(1, int(line_width))
     pad = max(line_width, 2)
     # If a label is present, reserve a band above the rectangle for the
     # text. Otherwise pad symmetrically.
@@ -314,47 +487,36 @@ def _overlay_worker(region, color, line_width, duration_ms, label):
     win_y = y - pad_top
     win_w = w + pad_left + pad_right
     win_h = h + pad_top + pad_bottom
+    rgb = _COLORS_RGB.get(color.lower(), _COLORS_RGB["green"])
+    hwnd = _create_overlay_window(win_x, win_y, win_w, win_h)
+    if not hwnd:
+        return None
+    user32.SetLayeredWindowAttributes(hwnd, COLOR_KEY, 0, LWA_COLORKEY)
+    user32.ShowWindow(hwnd, SW_SHOWNOACTIVATE)
+    _paint(hwnd, win_w, win_h, pad_left, pad_top, w, h, rgb, line_width, label)
+    user32.UpdateWindow(hwnd)
+    return hwnd
 
+
+def _overlay_worker(region, color, line_width, duration_ms, label, stop=None):
+    line_width = max(1, int(line_width))
     try:
         _ensure_class_registered()
     except OSError as e:
         logger.debug(f"Overlay class registration failed: {e}")
         return
 
-    rgb = _COLORS_RGB.get(color.lower(), _COLORS_RGB["red"])
-
-    ex_style = (
-        WS_EX_LAYERED
-        | WS_EX_TRANSPARENT
-        | WS_EX_TOPMOST
-        | WS_EX_TOOLWINDOW
-        | WS_EX_NOACTIVATE
-    )
-
-    hwnd = user32.CreateWindowExW(
-        ex_style,
-        _CLASS_NAME,
-        None,
-        WS_POPUP,
-        win_x, win_y, win_w, win_h,
-        None, None, kernel32.GetModuleHandleW(None), None,
+    hwnd = _show_studio_look(region, color, line_width, label) or _show_outline(
+        region, color, line_width, label
     )
     if not hwnd:
-        logger.debug(f"CreateWindowExW failed (err={ctypes.get_last_error()})")
         return
 
     try:
-        user32.SetLayeredWindowAttributes(hwnd, COLOR_KEY, 0, LWA_COLORKEY)
-        user32.ShowWindow(hwnd, SW_SHOWNOACTIVATE)
-        _paint(
-            hwnd, win_w, win_h, pad_left, pad_top,
-            w, h, rgb, line_width, label,
-        )
-        user32.UpdateWindow(hwnd)
-
         end_ts = time.monotonic() + duration_ms / 1000.0
         msg = MSG()
-        while time.monotonic() < end_ts:
+        # ``stop``: a newer action highlight replaced this one -- close right away
+        while time.monotonic() < end_ts and not (stop is not None and stop.is_set()):
             while user32.PeekMessageW(ctypes.byref(msg), 0, 0, 0, PM_REMOVE):
                 if msg.message == WM_QUIT:
                     return
@@ -367,10 +529,11 @@ def _overlay_worker(region, color, line_width, duration_ms, label):
 
 def show_click_through_overlay(
     region: tuple[int, int, int, int],
-    color: str = "red",
-    width: int = 4,
+    color: str = "green",
+    width: int = 2,
     duration_ms: int = 1000,
     label: str | None = None,
+    replace: bool = False,
 ) -> bool:
     """Display a click-through topmost overlay rectangle.
 
@@ -383,11 +546,16 @@ def show_click_through_overlay(
     is drawn just above the rectangle's top-left corner so the caller can
     number multiple occurrences on screen.
 
+    ``replace=True`` makes it THE action highlight: the previous one (if still
+    up) closes at once, so a fast run never stacks boxes. Leave it off for
+    overlays meant to coexist (numbered occurrences).
+
     Returns ``True`` if the overlay was scheduled, ``False`` if this
     platform is unsupported (non-Windows) so the caller can fall back.
     """
     if not _IS_WIN:
         return False
+    stop = _claim_action_slot() if replace else None
     threading.Thread(
         target=_overlay_worker,
         args=(
@@ -396,6 +564,7 @@ def show_click_through_overlay(
             max(1, int(width)),
             max(50, int(duration_ms)),
             label,
+            stop,
         ),
         daemon=True,
         name="VisusOverlay",

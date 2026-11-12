@@ -6,6 +6,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-12
+
+The highlight with the visus-studio look, and no more piling up in a fast run.
+
+### Changed
+- The highlight looks like the visus-studio one — brand green `#2ea043`, a 2 px
+  rounded border, a translucent fill of the same color and a soft glow, a few pixels
+  clear of the target — on screen AND on the report screenshots (same drawing, no
+  more crosshair). On Windows it is a per-pixel-alpha click-through window
+  (`UpdateLayeredWindow`); if that ever fails, the plain outline still shows.
+  Defaults: `overlay_color="green"` (now the studio green, not pure `#00ff00`) and
+  `overlay_width=2`; any other color keeps the same look in that color.
+
+### Fixed
+- The click highlight no longer piles up in a fast run. Each box used to stay its whole
+  `overlay_duration` (1 s) no matter what, so a click every ~0.14 s stacked ~7 red boxes
+  that lingered after the bot moved on and showed up on the next steps' report
+  screenshots. The action highlight is now one at a time — a new one closes the
+  previous at once — and every recorded step clears the previous step's box when it
+  starts (a `native_wait`'s screenshot no longer shows the last click's box); the run's
+  last box goes when `rpa()` ends. Numbered occurrence overlays
+  (`show_text_occurrences`) still show together.
+
 ## [0.4.1] - 2026-11-12
 
 Native actions in the run report, highlighted like every other click.

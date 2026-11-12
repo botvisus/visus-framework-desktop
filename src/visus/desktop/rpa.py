@@ -33,7 +33,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator
 
-from .core.recording import mark_recorded, was_recorded
+from .core.recording import _clear_action_highlight, mark_recorded, was_recorded
 from .exceptions import ActionFailedError, BotVisionError
 
 if TYPE_CHECKING:
@@ -157,6 +157,8 @@ def rpa(
                 raise
             finally:
                 bot.end_task_session()
+                # the last step's box goes now, not after the report is written
+                _clear_action_highlight()
     except (BotVisionError, AssertionError) as exc:
         # a failed action (BotVisionError) OR an assert -> present it cleanly
         # (friendly summary + exit 1) instead of dumping an internal traceback.

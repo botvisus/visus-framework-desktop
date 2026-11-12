@@ -172,8 +172,8 @@ class CapabilitiesMixin:
             _show_overlay(
                 region,
                 duration=self.config.get("overlay_duration", 1000),
-                color=self.config.get("overlay_color", "red"),
-                width=self.config.get("overlay_width", 4),
+                color=self.config.get("overlay_color", "green"),
+                width=self.config.get("overlay_width", 2),
             )
         except Exception:
             # Overlay is purely visual; never let it break the action.

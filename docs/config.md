@@ -47,9 +47,9 @@ From the CLI: `visus configure '{...}'`. From MCP: the `configure` tool.
 | Key | Default | Meaning |
 |---|---|---|
 | `show_overlay` | `True` | Master toggle. When on, every click first paints a **click-through** overlay around the target (Win32 `WS_EX_LAYERED \| WS_EX_TRANSPARENT` — the click passes through to the host below: native, Java, Electron, browsers). Can also be set per-task via `{"show_overlay": false}`. |
-| `overlay_color` | `"red"` | `red`, `blue`, `green`, `yellow`, `purple`, `orange`, `cyan`, `magenta`, `white`, `black`. |
+| `overlay_color` | `"green"` | `green` (the visus-studio `#2ea043`), `red`, `blue`, `yellow`, `purple`, `orange`, `cyan`, `magenta`, `white`, `black`. The highlight is the studio one in that color: rounded border, translucent fill, soft glow. |
 | `overlay_duration` | `1000` | How long the overlay stays on screen (ms). |
-| `overlay_width` | `4` | Outline thickness (px). |
+| `overlay_width` | `2` | Border thickness (px). |
 
 > The legacy `overlay_enabled` key is deprecated; it is folded into
 > `show_overlay` (logical AND) for back-compat.
@@ -70,7 +70,7 @@ From the CLI: `visus configure '{...}'`. From MCP: the `configure` tool.
 | `artifacts_dir` | `"./visus-artifacts"` | Folder for failure screenshots / diagnostic dumps. |
 | `screenshot_on_failure` | `True` | Save a screenshot when a task fails. |
 | `screenshot_steps` | *(unset)* | When truthy, also save a screenshot after each **successful** step (so the HTML report shows every step, not just failures). |
-| `screenshot_annotate` | `True` | Draw the matched `(x,y,w,h)` box + crosshair on saved step/failure screenshots, in the `overlay_color` / `overlay_width` style — independent of the on-screen overlay's timing. |
+| `screenshot_annotate` | `True` | Draw the matched `(x,y,w,h)` box on saved step/failure screenshots — the same highlight as on screen, in the `overlay_color` / `overlay_width` style — independent of the on-screen overlay's timing. |
 
 ## Reading / mutating after construction
 

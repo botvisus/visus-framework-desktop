@@ -22,9 +22,9 @@ def test_default_values_via_get():
     assert cfg.get("confidence_threshold") == 75.0
     assert cfg.get("retry_attempts") == 3
     assert cfg.get("default_delay") == 1.0
-    assert cfg.get("overlay_color") == "red"
+    assert cfg.get("overlay_color") == "green"
     assert cfg.get("overlay_duration") == 1000
-    assert cfg.get("overlay_width") == 4
+    assert cfg.get("overlay_width") == 2
     assert cfg.get("default_mouse_button") == "left"
     assert cfg.get("use_virtual_mouse") is False
     assert cfg.get("wait_timeout") == 30
@@ -70,9 +70,9 @@ def test_to_dict_returns_copy():
     assert cfg.get("confidence_threshold") == 75.0
 
 
-def test_invalid_overlay_color_coerced_to_red():
+def test_invalid_overlay_color_coerced_to_green():
     cfg = BotVisionConfig({"overlay_color": "invalid"})
-    assert cfg.get("overlay_color") == "red"
+    assert cfg.get("overlay_color") == "green"
 
 
 def test_valid_overlay_color_kept():

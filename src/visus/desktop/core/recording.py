@@ -178,6 +178,9 @@ def _run_recorded(bot: Any, type_field: str, check, params: dict[str, Any], call
         # A stale box from the previous step must not be drawn on this
         # step's screenshot (a failed find has no box of its own).
         executor.last_action_location = None
+    # ...nor left ON SCREEN: the previous step's highlight goes as soon as the bot
+    # moves on, so a fast run never stacks boxes in the next steps' screenshots.
+    _clear_action_highlight()
 
     started = time.monotonic()
     bot._step_depth = 1
@@ -208,6 +211,16 @@ def _run_recorded(bot: Any, type_field: str, check, params: dict[str, Any], call
         mark_recorded(failure)
         raise failure
     return result
+
+
+def _clear_action_highlight() -> None:
+    """Close the on-screen highlight of the previous action (best-effort)."""
+    try:
+        from .overlay_win32 import clear_click_through_overlays
+
+        clear_click_through_overlays()
+    except Exception:  # pragma: no cover - the highlight is only visual
+        pass
 
 
 def _default_check(result: Any, params: dict[str, Any]):

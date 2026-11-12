@@ -47,7 +47,7 @@ class TestBotVisionConfig:
         # __getattr__ proxies known keys straight to the underlying dict.
         assert cfg.confidence_threshold == 75.0
         assert cfg.default_mouse_button == "left"
-        assert cfg.overlay_color == "red"
+        assert cfg.overlay_color == "green"
         assert cfg.wait_timeout == 30
 
     def test_get_unknown_key_returns_default(self):
@@ -99,9 +99,9 @@ class TestBotVisionConfig:
         # Untouched keys keep their defaults.
         assert cfg.get("default_delay") == 1.0
 
-    def test_invalid_overlay_color_coerced_to_red(self):
+    def test_invalid_overlay_color_coerced_to_green(self):
         cfg = BotVisionConfig({"overlay_color": "chartreuse"})
-        assert cfg.get("overlay_color") == "red"
+        assert cfg.get("overlay_color") == "green"
 
     def test_valid_overlay_color_is_kept(self):
         cfg = BotVisionConfig({"overlay_color": "magenta"})

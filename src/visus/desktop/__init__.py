@@ -353,7 +353,7 @@ from .utils.retry import retry
 from .utils.text_filters import clean_text, limpar_texto, matches_filter
 
 # Library version
-__version__ = "0.4.1"
+__version__ = "0.4.2"
 __author__ = "Matheus Pereira"
 __email__ = "matheuszwilkdev@gmail.com"
 __license__ = "MIT"
@@ -501,9 +501,9 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
                     actions (s).
                   - ``show_overlay`` (bool, ``True``): master toggle for
                     the click-through visual overlay.
-                  - ``overlay_color`` (str, ``"red"``) /
+                  - ``overlay_color`` (str, ``"green"``) /
                     ``overlay_duration`` (int ms, ``1000``) /
-                    ``overlay_width`` (int px, ``4``): overlay look.
+                    ``overlay_width`` (int px, ``2``): overlay look.
                   - ``default_mouse_button`` (str, ``"left"``): one of
                     ``"left"``, ``"right"``, ``"double"``, ``"move_to"``.
                   - ``use_virtual_mouse`` (bool, ``False``): click without
@@ -814,9 +814,9 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         """
         return {
             "enabled": self.show_overlay,
-            "color": self.config.config.get("overlay_color", "red"),
+            "color": self.config.config.get("overlay_color", "green"),
             "duration": self.config.config.get("overlay_duration", 1000),
-            "width": self.config.config.get("overlay_width", 4),
+            "width": self.config.config.get("overlay_width", 2),
         }
 
     @staticmethod

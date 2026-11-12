@@ -182,12 +182,13 @@ class BotVisionConfig:
                   overlay around the target. On Windows it uses ``WS_EX_LAYERED``
                   + ``WS_EX_TRANSPARENT`` so the click passes through to the
                   host below (works over native, Java, Electron, browsers).
-                * ``overlay_color`` (str, default ``"red"``): One of ``red``,
+                * ``overlay_color`` (str, default ``"green"`` -- the visus-studio
+                  green ``#2ea043``): One of ``red``,
                   ``blue``, ``green``, ``yellow``, ``purple``, ``orange``,
                   ``cyan``, ``magenta``, ``white``, ``black``.
                 * ``overlay_duration`` (int, default ``1000``): How long the
                   overlay stays on screen, in milliseconds.
-                * ``overlay_width`` (int, default ``4``): Outline thickness
+                * ``overlay_width`` (int, default ``2``): Outline thickness
                   in pixels.
 
                 **Waits / timeouts**
@@ -277,13 +278,13 @@ class BotVisionConfig:
             "black",
         ]
 
-        overlay_color = self.config.get("overlay_color", "red")
+        overlay_color = self.config.get("overlay_color", "green")
         if overlay_color not in valid_colors:
             logger.warning(
-                f"Invalid overlay color '{overlay_color}'. Using 'red'. "
+                f"Invalid overlay color '{overlay_color}'. Using 'green'. "
                 f"Valid colors: {', '.join(valid_colors)}"
             )
-            self.config["overlay_color"] = "red"
+            self.config["overlay_color"] = "green"
 
         # Validate duration
         overlay_duration = self.config.get("overlay_duration", 1000)
@@ -294,10 +295,10 @@ class BotVisionConfig:
             self.config["overlay_duration"] = 1000
 
         # Validate width
-        overlay_width = self.config.get("overlay_width", 4)
+        overlay_width = self.config.get("overlay_width", 2)
         if not isinstance(overlay_width, (int, float)) or overlay_width <= 0:
-            logger.warning(f"Invalid overlay width '{overlay_width}'. Using 4.")
-            self.config["overlay_width"] = 4
+            logger.warning(f"Invalid overlay width '{overlay_width}'. Using 2.")
+            self.config["overlay_width"] = 2
 
     def _validate_mouse_button_config(self) -> None:
         """Validate the mouse_button settings."""
@@ -320,8 +321,8 @@ class BotVisionConfig:
             "retry_attempts": 3,
             "default_delay": 1.0,
             "overlay_duration": 1000,
-            "overlay_color": "red",  # red, blue, green, yellow, purple, orange, cyan, magenta, white
-            "overlay_width": 4,
+            "overlay_color": "green",  # the studio look; red, blue, yellow, purple, orange, cyan, magenta, white
+            "overlay_width": 2,
             "show_overlay": True,  # Master toggle: show the overlay before clicks
             "default_mouse_button": "left",  # Default mouse button: 'left', 'right', 'double', 'move_to'
             "log_level": "INFO",

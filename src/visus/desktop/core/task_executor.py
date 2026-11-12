@@ -347,25 +347,22 @@ class TaskExecutor:
         """Draw the click target on ``image`` in-place.
 
         Uses PIL so we don't have to depend on the on-screen overlay being
-        present when the screenshot was captured. Matches the overlay's
-        colour / width so step PNGs look consistent with what was shown
-        on screen during the run.
+        present when the screenshot was captured. The SAME drawing as the
+        on-screen highlight (``highlight_style``: the visus-studio look in the
+        overlay colour / width), so step PNGs look like what the run showed.
         """
         try:
-            from PIL import ImageDraw
+            from .highlight_style import annotate
 
             x, y, w, h = (int(v) for v in location[:4])
         except (TypeError, ValueError, ImportError):
             return
-        color = str(self.config.get("overlay_color", "red"))
-        width = max(1, int(self.config.get("overlay_width", 4)))
-        draw = ImageDraw.Draw(image)
-        draw.rectangle((x, y, x + w, y + h), outline=color, width=width)
-        cx = x + w // 2
-        cy = y + h // 2
-        cross = max(2, min(10, w // 4 or 2, h // 4 or 2))
-        draw.line((cx - cross, cy, cx + cross, cy), fill=color, width=width)
-        draw.line((cx, cy - cross, cx, cy + cross), fill=color, width=width)
+        color = str(self.config.get("overlay_color", "green"))
+        width = max(1, int(self.config.get("overlay_width", 2)))
+        try:
+            annotate(image, (x, y, w, h), color, width)
+        except Exception as exc:  # pragma: no cover - a bad box never breaks a run
+            logger.debug("screenshot annotation failed: %s", exc)
 
     def _emit_task_event(self, result: "TaskResult", task: Dict[str, Any]) -> None:
         """Emit telemetry for ``result``: stream it to the RunPilot orchestrator
@@ -1432,17 +1429,20 @@ class TaskExecutor:
         ``native_*`` action (``recording.native_target``).
         """
         overlay_duration = self.config.get("overlay_duration", 1000)
-        overlay_color = self.config.get("overlay_color", "red")
-        overlay_width = self.config.get("overlay_width", 4)
+        overlay_color = self.config.get("overlay_color", "green")
+        overlay_width = self.config.get("overlay_width", 2)
 
         # Win32 layered click-through window: lets the click below
         # land normally on any host tech (native, Java, Electron,
         # browsers). Fire-and-forget — no pre-click sleep, no join.
+        # replace=True: the previous action's box closes at once, so a fast
+        # run shows only the current target (and the report shots stay clean).
         scheduled = show_click_through_overlay(
             location,
             color=overlay_color,
             width=overlay_width,
             duration_ms=overlay_duration,
+            replace=True,
         )
         if not scheduled:
             # Non-Windows fallback: the legacy Tk overlay. It intercepts
