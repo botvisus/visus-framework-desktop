@@ -6,6 +6,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-12
+
+Native actions in the run report, highlighted like every other click.
+
+### Added
+- Inside `rpa()` (any open task session) `native_click`, `native_set_text`,
+  `native_get_text` and `native_wait` are steps of the report — called as they are,
+  no wrapper: the control is highlighted on screen in the bot's overlay style
+  (`show_overlay`, `overlay_color`, `overlay_width`, `overlay_duration`), boxed on the
+  step screenshot, the text `native_get_text` read shows as the step output, and a
+  `False` / `None` result stops the run with `ActionFailedError` ("num8Button in
+  'Calculadora' was not found within 5.0s (or it did not take the click)").
+  Outside a session they behave exactly as before (CLI, MCP, plain scripts).
+- `native_set_text(..., secret=True)` — typed the same, masked in the report.
+
+### MCP
+- `start_recording(path, name=None, screenshots=True)` now records EVERY action tool
+  called after it — `click_text`, `click_image`, `click_at`, `type_text`,
+  `keyboard_command`, `open_app`, `extract_text_from_region`, `scroll`, `drag`,
+  `triple_click`, the `native_*` actions — not only `execute_tasks`; the tools keep
+  their normal return values (a failed step is recorded, it does not raise).
+- `stop_recording(report_path=None)` returns `{saved, zip, report, steps, failures,
+  timeline}` (was a bool) and can render the HTML report in the same call;
+  `render_report(..., title=None)`.
+- `type_text(secret=)` / `native_set_text(secret=)`; `configure` during a recording
+  keeps recording into the same run; the instructions teach the `rpa()` script shape.
+
+### CLI
+- `new` scaffolds a `tasks.py` built on `rpa()` (report under `visus-runs/`, exit 1 on
+  a failed step) and a README with `visus-desktop run`; `report --title`; `run` help
+  explains the report and exit code.
+
+### Docs / skills
+- `docs/mcp.md`, `docs/cli.md`, the README tables, `docs/api_reference.md` and the
+  skills checked against the code: 59 MCP tools (was "57"; `open_app`,
+  `native_snapshot` were missing), 52 CLI commands (was "50"; `open`,
+  `native snapshot` were missing), and the `window` / `virtual` / `word_box` /
+  `backend` / `ocr_backend` parameters added in 0.3.0. `record-and-replay` rewritten
+  for the live MCP recording and `rpa()`; the docs no longer say recording needs
+  `log_format="json"`. The bundled `resources/cli.md` was out of sync with
+  `docs/cli.md` — synced.
+
 ## [0.4.0] - 2026-11-12
 
 The run report in one line, the same `rpa()` as visus.web.

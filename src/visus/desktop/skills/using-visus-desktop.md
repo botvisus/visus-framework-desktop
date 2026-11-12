@@ -6,7 +6,7 @@ when_to_use: Activate at the start of any visus-desktop automation task to groun
 
 # Using Visus Desktop
 
-You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **57 tools** that cover desktop GUI automation, OCR, image matching, native (Win32/UIA) targeting, **no-pixel native RPA**, a **smart cascade** (`smart_click`/`smart_find` — try native → image → OCR → coordinates, configurable order), low-level mouse gestures, process / window management, clipboard, file waits, session record/replay, and HTML reporting. The full per-parameter reference is `docs/mcp.md`.
+You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **59 tools** that cover desktop GUI automation, OCR, image matching, native (Win32/UIA) targeting, **no-pixel native RPA**, a **smart cascade** (`smart_click`/`smart_find` — try native → image → OCR → coordinates, configurable order), low-level mouse gestures, process / window management, clipboard, file waits, session record/replay, and HTML reporting. The full per-parameter reference is `docs/mcp.md` (the MCP server also serves it as a resource — its instructions give the address).
 
 ## What this MCP gives you
 
@@ -14,30 +14,30 @@ You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **57 t
 |---|---|
 | **Find / click (text)** | `find_text`, `find_all_text` *(every occurrence, reading order — to disambiguate repeats, then `click_text(occurrence=N)`)*, `click_text` |
 | **Find / click (image)** | `find_image`, `click_image`, `find_all` *(every match of one template)*, `find_multiple` *(first match of several templates)*, `find_relative_image`, `click_relative_image` *(target near a unique anchor)*, `click_at` *(absolute coords, last resort)*, `hybrid_find` |
-| **Keyboard** | `type_text`, `keyboard_command` |
+| **Keyboard** | `type_text`, `keyboard_command` — pass `window=` so the window is checked in front first (nothing is sent otherwise); `type_text(secret=true)` for passwords |
 | **Mouse (low-level)** | `scroll`, `drag`, `triple_click`, `move_random`, `mouse_down`, `mouse_up` |
 | **Screen / monitors** | `take_screenshot` (base64), `save_screenshot` (to disk — for find_image templates), `capture_element` (locate-by-text/native/region → save template + annotated → optional click), `get_monitors`, `get_display_size`, `wait_for_stable_screen` |
 | **Files / clipboard** | `wait_for_file`, `wait_for_file_stable`, `get_clipboard`, `copy_to_clipboard`, `extract_text_from_region` *(use `return_full_data=true` for boxes + scores)* |
-| **Process / window** | `launch`, `find_process`, `is_process_running`, `kill_process`, `ensure_window` *(★ call first)*, `list_windows`, `get_window`, `focus_window`, `maximize_window`, `minimize_window`, `close_window` |
+| **Process / window** | `open_app` *(an app/document/URL like Windows Run — `wait_window=` waits until it is ready; prefer it to `launch`)*, `launch`, `find_process`, `is_process_running`, `kill_process`, `ensure_window` *(★ call first)*, `list_windows`, `get_window`, `focus_window`, `maximize_window`, `minimize_window`, `close_window` |
 | **Smart cascade** | `smart_click` / `smart_find` — one call tries **native → image → OCR → coordinates** in order (pass `order=[...]` to force/reorder). The simplest robust way to click something when you're not sure which technique fits. |
-| **Native RPA (no pixel)** | `native_dump_tree` (read the UI structure), `native_click`, `native_set_text`, `native_get_text`, `native_get_state`, `native_wait` — operate accessible apps by control, immune to theme/DPI/resolution/language. Falls flat on non-accessible UIs (Java Swing) → use OCR there. |
+| **Native RPA (no pixel)** | `native_snapshot` (the window's actionable controls, numbered — deep enough for the Office ribbon), `native_dump_tree` (read the UI structure), `native_click`, `native_set_text`, `native_get_text`, `native_get_state`, `native_wait` — operate accessible apps by control, immune to theme/DPI/resolution/language. Falls flat on non-accessible UIs (Java Swing) → use OCR there. |
 | **Task lists** | `execute_tasks` |
-| **Sessions / reports** | `start_recording`, `stop_recording`, `replay_session`, `render_report` |
+| **Sessions / reports** | `start_recording` (every action tool called after it is a report step), `stop_recording(report_path=…)` (zip + HTML + a summary), `replay_session`, `render_report` |
 | **Diagnostics / config** | `doctor`, `configure` |
 
 The find/click primitives also take the robustness knobs `wait_until_found`, `wait_until_disappears`, `wait_timeout`, `backtrack`, `max_attempts`, plus `sendtext` (type right after a click) and `filter_type` / `specific` where relevant — see `docs/mcp.md` for the exact per-tool parameter list.
 
-## Every tool (57) at a glance
+## Every tool (59) at a glance
 
 `?` marks an optional parameter. Full per-parameter detail is in `docs/mcp.md`.
 
 | Tool | Parameters | What it does |
 |---|---|---|
 | `configure` | config | Change global behavior by rebuilding the bot with new config. |
-| `find_text` | text, region?, filter_type?, confidence_threshold?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find visible on-screen `text` via OCR; return its box (do not click). |
-| `click_text` | text, region?, filter_type?, delay?, mouse_button?, occurrence?, sendtext?, confidence_threshold?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find on-screen `text` via OCR and click its center. |
-| `find_all_text` | text, region?, filter_type?, confidence_threshold? | List EVERY on-screen occurrence of `text` via OCR (do not click). |
-| `show_text_occurrences` | text, region?, filter_type?, confidence_threshold?, color?, duration_ms?, width?, save_image?, image_path? | Find every occurrence of `text` and SHOW them numbered 1, 2, 3 …. |
+| `find_text` | text, region?, filter_type?, confidence_threshold?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout?, word_box? | Find visible on-screen `text` via OCR; return its box (do not click). |
+| `click_text` | text, region?, filter_type?, delay?, mouse_button?, occurrence?, sendtext?, confidence_threshold?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout?, word_box? | Find on-screen `text` via OCR and click its center. |
+| `find_all_text` | text, region?, filter_type?, confidence_threshold?, overlay?, color?, duration_ms?, width?, word_box? | List EVERY on-screen occurrence of `text` via OCR + draw a numbered overlay. |
+| `show_text_occurrences` | text, region?, filter_type?, confidence_threshold?, color?, duration_ms?, width?, save_image?, image_path?, ocr_backend?, word_box? | Find every occurrence of `text` and SHOW them numbered 1, 2, 3 …. |
 | `find_image` | image_path, region?, confidence?, specific?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen; return its box (do not click). |
 | `click_image` | image_path, region?, confidence?, delay?, mouse_button?, specific?, occurrence?, sendtext?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen and click its center. |
 | `click_at` | x, y, width?, height?, mouse_button?, delay? | Click at absolute screen coordinates -- no find step. LAST RESORT. |
@@ -46,8 +46,8 @@ The find/click primitives also take the robustness knobs `wait_until_found`, `wa
 | `click_relative_image` | anchor_image, target_image, max_distance?, confidence?, target_region?, delay?, mouse_button?, sendtext?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a target template near a unique anchor and click it. |
 | `find_all` | image_path, region?, confidence? | Find EVERY occurrence of one template PNG on screen (no click). |
 | `find_multiple` | images, region?, confidence? | Locate the first match of SEVERAL template PNGs in one call (no click). |
-| `type_text` | text, interval?, delay?, backtrack? | Type `text` into the CURRENTLY FOCUSED field (click/focus it first). |
-| `keyboard_command` | command, delay?, backtrack? | Press a named key or shortcut. Tokens are CASE-SENSITIVE. |
+| `type_text` | text, interval?, delay?, backtrack?, window?, secret? | Type `text` into the CURRENTLY FOCUSED field (click/focus it first). |
+| `keyboard_command` | command, delay?, backtrack?, window? | Press a named key or shortcut. Tokens are CASE-SENSITIVE. |
 | `scroll` | amount, x?, y? | Scroll the mouse wheel. Positive = up, negative = down. |
 | `drag` | start_x, start_y, end_x, end_y, duration?, button? | Drag from `(start_x, start_y)` to `(end_x, end_y)` holding `button`. |
 | `triple_click` | x?, y?, interval? | Triple-click at `(x, y)` (or the current cursor position). |
@@ -60,12 +60,13 @@ The find/click primitives also take the robustness knobs `wait_until_found`, `wa
 | `capture_element` | label, auto?, text?, native?, region?, window?, search_region?, click?, mouse_button?, padding?, confidence_threshold?, native_timeout?, elements_dir? | Locate a UI element, save a reusable template + annotated shot, click. |
 | `smart_find` | query?, image?, coordinates?, window?, pid?, control_type?, auto_id?, search_region?, confidence?, confidence_threshold?, order?, timeout? | Locate a target by cascading native -> image -> ocr -> coordinates. |
 | `smart_click` | query?, image?, coordinates?, window?, pid?, control_type?, auto_id?, search_region?, button?, confidence?, confidence_threshold?, order?, timeout?, retries?, delay? | Click a target by cascading native -> image -> ocr -> coordinates. |
-| `native_dump_tree` | window?, pid?, max_depth?, timeout? | Return the accessibility control tree of a window (no pixel). |
-| `native_click` | window?, pid?, title?, control_type?, auto_id?, found_index?, button?, double?, method?, timeout?, retries?, delay? | Click a control by selector -- no coordinates, no image (UIA). |
-| `native_set_text` | text, window?, pid?, title?, control_type?, auto_id?, found_index?, timeout?, retries?, delay? | Set the text of an editable control by selector (UIA value pattern). |
-| `native_get_text` | window?, pid?, title?, control_type?, auto_id?, found_index?, timeout? | Read a control's text/value by selector. Returns the string or None. |
-| `native_get_state` | window?, pid?, title?, control_type?, auto_id?, found_index?, timeout? | Snapshot a control's state by selector. |
-| `native_wait` | window?, pid?, title?, control_type?, auto_id?, found_index?, state?, timeout?, poll_interval? | Wait until a control reaches `state` by selector. |
+| `native_dump_tree` | window?, pid?, max_depth?, timeout?, backend? | Return the accessibility control tree of a window (no pixel). |
+| `native_snapshot` | window?, pid?, max_depth?, max_items?, timeout?, backend? | The window's ACTIONABLE controls, numbered, deep enough for the Office ribbon. |
+| `native_click` | window?, pid?, title?, control_type?, auto_id?, found_index?, button?, double?, method?, timeout?, retries?, delay?, backend? | Click a control by selector -- no coordinates, no image (UIA). |
+| `native_set_text` | text, window?, pid?, title?, control_type?, auto_id?, found_index?, timeout?, retries?, delay?, backend?, secret? | Set the text of an editable control by selector (UIA value pattern). |
+| `native_get_text` | window?, pid?, title?, control_type?, auto_id?, found_index?, timeout?, backend? | Read a control's text/value by selector. Returns the string or None. |
+| `native_get_state` | window?, pid?, title?, control_type?, auto_id?, found_index?, timeout?, backend? | Snapshot a control's state by selector. |
+| `native_wait` | window?, pid?, title?, control_type?, auto_id?, found_index?, state?, timeout?, poll_interval?, backend? | Wait until a control reaches `state` by selector. |
 | `get_monitors` | — | List connected monitors so you can target one in a multi-screen setup. |
 | `get_display_size` | — | Return the primary display size as `{width, height}` (pixels). |
 | `wait_for_stable_screen` | region?, stable_for?, timeout?, poll_interval? | Block until the screen stops changing -- use INSTEAD of sleeping. |
@@ -74,6 +75,7 @@ The find/click primitives also take the robustness knobs `wait_until_found`, `wa
 | `get_clipboard` | — | Read the system clipboard text. |
 | `copy_to_clipboard` | text | Put `text` on the system clipboard (e.g. to paste with Ctrl+V). |
 | `extract_text_from_region` | region, filter_type?, return_full_data?, confidence_threshold? | OCR-extract all text from `region`. |
+| `open_app` | target, wait_window?, timeout? | Open an app/document/URL as Windows Run does; wait for its window to be ready. |
 | `launch` | command, args? | Start an application/process. Returns its pid. |
 | `find_process` | name | List running processes whose name contains `name` (no windows needed). |
 | `is_process_running` | name | Return True if any running process's name contains `name`. |
@@ -85,10 +87,10 @@ The find/click primitives also take the robustness knobs `wait_until_found`, `wa
 | `ensure_window` | title?, process?, show?, foreground? | **Call this FIRST** before automating any app -- fast, reliable targeting. |
 | `list_windows` | title?, process? | List visible windows (read-only) matching `title` and/or `process`. |
 | `execute_tasks` | tasks, resume? | Run a sequence of task dicts (find / click / type / keys) with retry. |
-| `start_recording` | path | Start recording task events into a session zip at `path`. |
-| `stop_recording` | — | Finalize the active recording and write the session zip to disk. |
+| `start_recording` | path, name?, screenshots? | Record the run: every action tool called after it is a step of the report. |
+| `stop_recording` | report_path? | Write the session zip (and the HTML report); return a summary. |
 | `replay_session` | zip_path | Read back the recorded task events from a session zip. |
-| `render_report` | zip_path, html_path | Render a session zip into a styled single-file HTML report. |
+| `render_report` | zip_path, html_path, title? | Render a session zip into a styled single-file HTML report. |
 | `doctor` | — | Verify the environment is healthy (Tesseract, display, deps, pywinauto). |
 
 ## The mental model
@@ -100,7 +102,8 @@ The find/click primitives also take the robustness knobs `wait_until_found`, `wa
    **OCR/native are your *eyes* to capture the template — the script you hand off runs on images.** When you BUILD a reusable automation/script for the user, use `capture_element(auto=/text=)` (or `find_text`/`native_*`) to *locate* each element and save its template once; the delivered script then clicks with `click_image` / `click_relative_image`, because template matching is far faster than re-running OCR on every run and is deterministic. Re-locate with OCR/native only when the label/layout is dynamic or to anchor a relative click. CLI to "get eyes" on a coordinate fast: `visus text find "Sim" --ocr rapidocr --json`.
 3. **Verify before clicking** (when not using `capture_element`): call a find tool, inspect the returned `{x, y, width, height}` dict, then click. Never blind-click coordinates unless the user gave them to you. When a label repeats on screen, call `find_all_text` first — it lists every match in reading order with a 1-based `occurrence` — then click the right one with `click_text(occurrence=N)`.
 3. **Wait deliberately**: between any visible change and the next find, call `wait_for_stable_screen` (UI redraw) or `wait_for_file_stable` (downloads). Hard-coded `sleep` is a smell.
-4. **Record troublesome flows**: `start_recording('out.zip')` → `execute_tasks([...])` → `stop_recording()` → `render_report('out.zip', 'report.html')`. The HTML report has timing + screenshots and is the right artifact to send a human when a flow fails.
+4. **Record what you do**: `start_recording('out.zip', name='pedido')` → your tool calls (any mix of clicks, typing, `native_*`, `open_app`, `execute_tasks`) → `stop_recording(report_path='report.html')`. Every action becomes a step with its duration, OK/FAILED + reason, a screenshot (target boxed) and its logs; the tools still return their normal values. It is the right artifact to send a human when a flow fails. Type passwords with `secret=true` while recording.
+5. **Hand off a script with the report built in**: the script you deliver runs as `with rpa("name", open_report=True) as bot:` (`from visus.desktop import rpa`; `app=`/`window=` open the app first). Inside it every `bot.*` action and every `native_click` / `native_set_text` / `native_get_text` / `native_wait` is a report step — native controls highlighted on screen in the overlay style — and a failed action stops the run with the reason (exit code 1). Use `find_text` / `find_image` / `native_get_state` for "is it on screen?" checks: they never stop the run.
 
 ## Recommended sequence for any new task
 

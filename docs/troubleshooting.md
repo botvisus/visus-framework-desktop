@@ -62,9 +62,16 @@ Tesseract, the display, the optional deps, and pywinauto in one go.
   construction and whenever changed. Silence noisy third-party DEBUG with
   `logging.getLogger("PIL").setLevel("WARNING")` /
   `logging.getLogger("RapidOCR").setLevel("WARNING")`.
-- **Session zip empty / no screenshots in the report** — set
-  `log_format="json"` (so events are captured) and `screenshot_steps=True` (so
-  successful steps are captured, not just failures).
+- **Report empty / only some steps in it** — direct calls (`bot.click_text`…)
+  are recorded only inside a task session: use `rpa()` (opens one for you), or
+  call `bot.start_task_session()` after `Session.start_recording`. Through the
+  MCP, call the action tools between `start_recording` and `stop_recording`.
+  `log_format` does not matter (since 0.4.0).
+- **No screenshots of successful steps** — `rpa()` takes one per step by default
+  (`screenshots=False` turns it off); with a manual `Session`, set
+  `screenshot_steps=True`. Failures always get one.
+- **A `native_click` is not in the report / not highlighted** — it must run
+  inside `rpa()` (or an open task session) — since 0.4.1.
 
 See also: [installation.md](installation.md), [config.md](config.md),
 [cli.md](cli.md), [mcp.md](mcp.md).

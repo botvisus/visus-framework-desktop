@@ -41,7 +41,7 @@ a step from the shell whenever that is simpler.
 - A parameter shown as `name=value` has that default; omit it to accept the
   default.
 
-## All 57 tools at a glance
+## All 59 tools at a glance
 
 Full per-parameter detail is in the sections below. A `?` marks an optional parameter.
 
@@ -51,7 +51,7 @@ Full per-parameter detail is in the sections below. A `?` marks an optional para
 | `find_text` | text, region?, filter_type?, confidence_threshold?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout?, word_box? | Find visible on-screen `text` via OCR; return its box (do not click). |
 | `click_text` | text, region?, filter_type?, delay?, mouse_button?, occurrence?, sendtext?, confidence_threshold?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout?, word_box? | Find on-screen `text` via OCR and click its center. |
 | `find_all_text` | text, region?, filter_type?, confidence_threshold?, overlay?, color?, duration_ms?, width?, word_box? | List EVERY on-screen occurrence of `text` via OCR + draw a numbered overlay. |
-| `show_text_occurrences` | text, region?, filter_type?, confidence_threshold?, color?, duration_ms?, width?, save_image?, image_path?, word_box? | Find every occurrence of `text` and SHOW them numbered 1, 2, 3 …. |
+| `show_text_occurrences` | text, region?, filter_type?, confidence_threshold?, color?, duration_ms?, width?, save_image?, image_path?, ocr_backend?, word_box? | Find every occurrence of `text` and SHOW them numbered 1, 2, 3 …. |
 | `find_image` | image_path, region?, confidence?, specific?, occurrence?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen; return its box (do not click). |
 | `click_image` | image_path, region?, confidence?, delay?, mouse_button?, specific?, occurrence?, sendtext?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a template PNG on screen and click its center. |
 | `click_at` | x, y, width?, height?, mouse_button?, delay? | Click at absolute screen coordinates -- no find step. LAST RESORT. |
@@ -60,8 +60,8 @@ Full per-parameter detail is in the sections below. A `?` marks an optional para
 | `click_relative_image` | anchor_image, target_image, max_distance?, confidence?, target_region?, delay?, mouse_button?, sendtext?, max_attempts?, backtrack?, wait_until_found?, wait_until_disappears?, wait_timeout? | Find a target template near a unique anchor and click it. |
 | `find_all` | image_path, region?, confidence? | Find EVERY occurrence of one template PNG on screen (no click). |
 | `find_multiple` | images, region?, confidence? | Locate the first match of SEVERAL template PNGs in one call (no click). |
-| `type_text` | text, interval?, delay?, backtrack? | Type `text` into the CURRENTLY FOCUSED field (click/focus it first). |
-| `keyboard_command` | command, delay?, backtrack? | Press a named key or shortcut. Tokens are CASE-SENSITIVE. |
+| `type_text` | text, interval?, delay?, backtrack?, window?, secret? | Type `text` into the CURRENTLY FOCUSED field (click/focus it first). |
+| `keyboard_command` | command, delay?, backtrack?, window? | Press a named key or shortcut. Tokens are CASE-SENSITIVE. |
 | `scroll` | amount, x?, y? | Scroll the mouse wheel. Positive = up, negative = down. |
 | `drag` | start_x, start_y, end_x, end_y, duration?, button? | Drag from `(start_x, start_y)` to `(end_x, end_y)` holding `button`. |
 | `triple_click` | x?, y?, interval? | Triple-click at `(x, y)` (or the current cursor position). |
@@ -75,8 +75,9 @@ Full per-parameter detail is in the sections below. A `?` marks an optional para
 | `smart_find` | query?, image?, coordinates?, window?, pid?, control_type?, auto_id?, search_region?, confidence?, confidence_threshold?, order?, timeout? | Locate a target by cascading native -> image -> ocr -> coordinates. |
 | `smart_click` | query?, image?, coordinates?, window?, pid?, control_type?, auto_id?, search_region?, button?, confidence?, confidence_threshold?, order?, timeout?, retries?, delay? | Click a target by cascading native -> image -> ocr -> coordinates. |
 | `native_dump_tree` | window?, pid?, max_depth?, timeout?, backend? | Return the accessibility control tree of a window (no pixel). |
+| `native_snapshot` | window?, pid?, max_depth?, max_items?, timeout?, backend? | The window's ACTIONABLE controls, numbered, deep enough for the Office ribbon. |
 | `native_click` | window?, pid?, title?, control_type?, auto_id?, found_index?, button?, double?, method?, timeout?, retries?, delay?, backend? | Click a control by selector -- no coordinates, no image (UIA). |
-| `native_set_text` | text, window?, pid?, title?, control_type?, auto_id?, found_index?, timeout?, retries?, delay?, backend? | Set the text of an editable control by selector (UIA value pattern). |
+| `native_set_text` | text, window?, pid?, title?, control_type?, auto_id?, found_index?, timeout?, retries?, delay?, backend?, secret? | Set the text of an editable control by selector (UIA value pattern). |
 | `native_get_text` | window?, pid?, title?, control_type?, auto_id?, found_index?, timeout?, backend? | Read a control's text/value by selector. Returns the string or None. |
 | `native_get_state` | window?, pid?, title?, control_type?, auto_id?, found_index?, timeout?, backend? | Snapshot a control's state by selector. |
 | `native_wait` | window?, pid?, title?, control_type?, auto_id?, found_index?, state?, timeout?, poll_interval?, backend? | Wait until a control reaches `state` by selector. |
@@ -88,6 +89,7 @@ Full per-parameter detail is in the sections below. A `?` marks an optional para
 | `get_clipboard` | — | Read the system clipboard text. |
 | `copy_to_clipboard` | text | Put `text` on the system clipboard (e.g. to paste with Ctrl+V). |
 | `extract_text_from_region` | region, filter_type?, return_full_data?, confidence_threshold? | OCR-extract all text from `region`. |
+| `open_app` | target, wait_window?, timeout? | Open an app/document/URL as Windows Run does; wait for its window to be ready. |
 | `launch` | command, args? | Start an application/process. Returns its pid. |
 | `find_process` | name | List running processes whose name contains `name` (no windows needed). |
 | `is_process_running` | name | Return True if any running process's name contains `name`. |
@@ -99,10 +101,10 @@ Full per-parameter detail is in the sections below. A `?` marks an optional para
 | `ensure_window` | title?, process?, show?, foreground? | **Call this FIRST** before automating any app -- fast, reliable targeting. |
 | `list_windows` | title?, process? | List visible windows (read-only) matching `title` and/or `process`. |
 | `execute_tasks` | tasks, resume? | Run a sequence of task dicts (find / click / type / keys) with retry. |
-| `start_recording` | path | Start recording task events into a session zip at `path`. |
-| `stop_recording` | — | Finalize the active recording and write the session zip to disk. |
+| `start_recording` | path, name?, screenshots? | Record the run: every action tool called after it is a step of the report. |
+| `stop_recording` | report_path? | Write the session zip (and the HTML report); return a summary. |
 | `replay_session` | zip_path | Read back the recorded task events from a session zip. |
-| `render_report` | zip_path, html_path | Render a session zip into a styled single-file HTML report. |
+| `render_report` | zip_path, html_path, title? | Render a session zip into a styled single-file HTML report. |
 | `doctor` | — | Verify the environment is healthy (Tesseract, display, deps, pywinauto). |
 
 ## The 6-step playbook (follow in order)
@@ -188,7 +190,7 @@ native per-word boxes (`return_word_box`), falling back to a character-offset
 estimate if unavailable; already word-level on Tesseract. (`show_text_occurrences`
 remains the richer visual sibling — it also saves a numbered PNG you can open.)
 
-### `show_text_occurrences(text, region=None, filter_type="both", confidence_threshold=None, color="red", duration_ms=3000, width=3, save_image=True, image_path=None, word_box=False) -> dict`
+### `show_text_occurrences(text, region=None, filter_type="both", confidence_threshold=None, color="red", duration_ms=3000, width=3, save_image=True, image_path=None, ocr_backend=None, word_box=False) -> dict`
 The **visual** sibling of `find_all_text`: SEE which copy is which before
 picking an `occurrence`. Draws a numbered click-through overlay (1, 2, 3 …) on
 the real screen **and** (with `save_image=True`) writes a **PNG file** of the
@@ -289,12 +291,21 @@ Under `win32`, `control_type` matches the **class name** (e.g. `Edit`) and
 UI. `[]` for non-accessible apps (Java Swing w/o Access Bridge, some Electron) —
 or a classic Win32 app under `uia`; retry with `backend="win32"`.
 
+### `native_snapshot(window=None, pid=None, max_depth=25, max_items=400, timeout=10.0, backend="uia") -> dict`
+The window's **actionable** controls, numbered, deep enough to reach the Office
+ribbon's buttons (which `native_dump_tree`'s 3 levels miss). Each item is
+`{index, control_type, title, auto_id, found_index, rect}`: pass `title` +
+`control_type` (+ `auto_id`) + `found_index` to `native_click` /
+`native_set_text` / `native_get_text` to act on exactly that control. Returns
+`{window, items, more}` (`more` = items past `max_items`).
+
 ### `native_click(window=None, pid=None, title=None, control_type=None, auto_id=None, found_index=None, button="left", double=False, method="auto", timeout=5.0, retries=0, delay=0.3, backend="uia") -> bool`
 `method`: `invoke` (UIA, no mouse) | `click` (real mouse) | `auto` (invoke then
 click). `button`: left|right|middle.
 
-### `native_set_text(text, window=None, pid=None, title=None, control_type=None, auto_id=None, found_index=None, timeout=5.0, retries=0, delay=0.3, backend="uia") -> bool`
-Set an editable control's text (UIA value pattern).
+### `native_set_text(text, window=None, pid=None, title=None, control_type=None, auto_id=None, found_index=None, timeout=5.0, retries=0, delay=0.3, backend="uia", secret=False) -> bool`
+Set an editable control's text: focuses it and types like a person (UIA value
+pattern as the fallback). `secret: true` masks the value in a recording's report.
 
 ### `native_get_text(window=None, pid=None, title=None, control_type=None, auto_id=None, found_index=None, timeout=5.0, backend="uia") -> str | null`
 Read a control's text/value.
@@ -309,11 +320,14 @@ Read a control's text/value.
 
 # Keyboard
 
-### `type_text(text, interval=0.05, delay=0, backtrack=False) -> bool`
+### `type_text(text, interval=0.02, delay=0, backtrack=False, window=None, secret=False) -> bool`
 Type into the **currently focused** field (focus it first). Inline tokens
 expand: `{ctrl}a`, `{tab}`, `{enter}`, `{escape}`. `interval` = per-char delay.
+`window` (title substring) is brought to the front and CHECKED first — with
+another window in front nothing is typed (returns `false`). `secret: true` for a
+password/token: typed the same, shown as `••••••` in a recording's report.
 
-### `keyboard_command(command, delay=0, backtrack=False) -> bool`
+### `keyboard_command(command, delay=0, backtrack=False, window=None) -> bool`
 Press a key/chord — tokens **case-sensitive**: `Enter`, `Escape`, `Tab`,
 `Delete`, `F1`–`F12`, `Up`/`Down`/`Left`/`Right`, `Ctrl+S`, `Ctrl+C`, `Ctrl+V`,
 `Ctrl+A`, `Ctrl+Z`, `Alt+F4`, `Alt+Tab`, `Shift+Tab`, `Ctrl+T`, `Ctrl+W`.
@@ -383,6 +397,14 @@ absolute_box}, …]`; otherwise a flat string list.
 
 # Process / window control
 
+### `open_app(target, wait_window=None, timeout=30.0) -> dict`
+Open an app or a file as Windows Run does — `excel`, `notepad`, `calc`, a
+`.xlsx` in its default program, a URL in the browser. Prefer it to `launch`.
+`wait_window` (title substring) waits until that window is READY — in front,
+title steady. Returns `{target, window, opened}`: `window` is the ready window's
+title or `null` when it did not show up in `timeout` s; `opened: false` + `error`
+when the target could not be opened.
+
 ### `launch(command, args=None) -> dict`
 Start a process. Returns `{pid, command}`.
 
@@ -446,12 +468,23 @@ then retry); `wait_until_found: true` (poll until the image/text appears, then
 act); `wait_until_disappears: true` (click, then wait until target is gone —
 confirm a dialog closed); `wait_timeout` (seconds for those waits, default 30).
 
-### `start_recording(path) -> str`
-Begin capturing task events + per-step/failure screenshots + `visus.*` logs into
-a session zip. Returns the path.
+### `start_recording(path, name=None, screenshots=True) -> str`
+Record the run into a session zip. **Every action tool called after it is a step
+of the report** — `click_text`, `click_image`, `click_at`, `click_relative_image`,
+`type_text`, `keyboard_command`, `open_app`, `extract_text_from_region`,
+`scroll`, `drag`, `triple_click`, `native_click`, `native_set_text`,
+`native_get_text`, `native_wait` and each task of `execute_tasks` — with its
+duration, OK/FAILED + reason, a screenshot (target boxed; native controls also
+highlighted on screen in the overlay style) and the logs it produced. Tools keep
+their normal returns: a failed step is recorded, it does not raise. `name` is the
+report's headline; `screenshots: false` keeps only the failure screenshots.
+Returns the absolute zip path.
 
-### `stop_recording() -> bool`
-Finalize and write the zip.
+### `stop_recording(report_path=None) -> dict`
+Write the zip — and, with `report_path`, the HTML report in the same call.
+Returns `{saved, zip, report, steps, failures, timeline}` (`timeline` =
+`[[step_type, ok], …]`); `{saved: false}` when no recording was open. `zip` is
+`null` under the RunPilot runner (the steps went live to the orchestrator).
 
 ### `replay_session(zip_path) -> list[dict]`
 Read recorded events back (does NOT re-run). Each: `{run_id, task_id,
@@ -459,10 +492,11 @@ task_name, success, duration_ms, error, failure_screenshot, timestamp, logs}`.
 `logs` = the `visus.*` log lines captured during that task (verbosity follows
 the recorded `log_level`).
 
-### `render_report(zip_path, html_path) -> str`
-Render a session zip into a styled single-file HTML report (timeline,
-durations/attempts, embedded screenshots, collapsible per-task logs). Returns
-the absolute HTML path.
+### `render_report(zip_path, html_path, title=None) -> str`
+Render a session zip into a styled single-file HTML report (KPIs, an errors
+section, the step timeline with durations, screenshots and collapsible per-step
+logs). `title` is the headline (default: the run's `name`). Returns the absolute
+HTML path.
 
 ---
 

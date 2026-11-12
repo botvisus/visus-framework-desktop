@@ -50,6 +50,14 @@ RECORDED_KWARGS = (
     "start_y",
     "end_x",
     "end_y",
+    # native_* selectors
+    "pid",
+    "title",
+    "auto_id",
+    "control_type",
+    "found_index",
+    "state",
+    "timeout",
 )
 
 # Shown instead of what ``type_text(..., secret=True)`` typed.
@@ -74,52 +82,132 @@ def records_step(type_field: str, check: Check | None = None):
         def wrapper(self, *args, **kwargs):
             # Only the outermost action records: a recorded method that calls
             # another one (``enter()`` -> ``keyboard_command``) is ONE step.
-            if not getattr(self, "task_session_active", False) or getattr(
-                self, "_step_depth", 0
-            ):
+            if not _recording(self):
                 return method(self, *args, **kwargs)
-
-            params = _bound_params(method, self, args, kwargs)
-            task = build_event_task(type_field, params)
-            executor = getattr(self, "executor", None)
-            if executor is not None:
-                # A stale box from the previous step must not be drawn on this
-                # step's screenshot (a failed find has no box of its own).
-                executor.last_action_location = None
-
-            started = time.monotonic()
-            self._step_depth = 1
-            try:
-                result = method(self, *args, **kwargs)
-            except Exception as exc:
-                self._step_depth = 0
-                self._emit_direct_call_event(
-                    task, success=False, started_at=started, error=exception_text(exc)
-                )
-                mark_recorded(exc)
-                raise
-            finally:
-                self._step_depth = 0
-
-            ok, error, output = (check or _default_check)(result, params)
-            if not ok and not error:
-                error = describe_failure(task)
-            self._emit_direct_call_event(
-                task, success=ok, started_at=started, error=error, output=output
+            params = _bound_params(method, (self, *args), kwargs)
+            params.pop("self", None)
+            return _run_recorded(
+                self, type_field, check, params, lambda: method(self, *args, **kwargs)
             )
-            if not ok and getattr(self, "stop_on_failure", False):
-                failure = ActionFailedError(
-                    error or f"{type_field} failed",
-                    action=type_field,
-                    target=str(task.get("text") or task.get("image") or ""),
-                )
-                mark_recorded(failure)
-                raise failure
-            return result
 
         return wrapper
 
     return decorator
+
+
+# ---------------------------------------------------------------------------
+# Native actions (``native_click``, ``native_set_text``...) are free functions,
+# not bot methods: they record through the bot of the open task session --
+# ``rpa()`` opens one -- and show the same highlight its clicks do.
+# ---------------------------------------------------------------------------
+_active_bot: Any = None
+
+
+def set_active_bot(bot: Any) -> None:
+    """Make ``bot`` the one native actions record through (``None`` clears)."""
+    global _active_bot
+    _active_bot = bot
+
+
+def clear_active_bot(bot: Any) -> None:
+    """Clear the active bot, if it is still ``bot`` (another may have taken over)."""
+    global _active_bot
+    if _active_bot is bot:
+        _active_bot = None
+
+
+def active_bot() -> Any:
+    """The bot of the open task session, or ``None``."""
+    return _active_bot
+
+
+def records_native(type_field: str, check: Check | None = None):
+    """Decorator for the ``native_*`` functions: inside a task session (``rpa()``)
+    each call is a step of the report -- duration, OK/FAILED + reason, a screenshot
+    with the control boxed -- and, with ``stop_on_failure``, a ``False`` / ``None``
+    result stops the run. With no session open the function runs as before."""
+
+    def decorator(function):
+        @functools.wraps(function)
+        def wrapper(*args, **kwargs):
+            bot = _active_bot
+            if bot is None or not _recording(bot):
+                return function(*args, **kwargs)
+            params = _bound_params(function, args, kwargs, defaults=True)
+            return _run_recorded(
+                bot, type_field, check or _native_check, params,
+                lambda: function(*args, **kwargs),
+            )
+
+        return wrapper
+
+    return decorator
+
+
+def native_target(box: tuple, *, highlight: bool = True) -> None:
+    """Called by a ``native_*`` function with the ``(x, y, w, h)`` of the control it
+    is about to act on: the active bot boxes it on the step screenshot and, when its
+    config has ``show_overlay`` on, highlights it on screen with the bot's
+    ``overlay_color`` / ``overlay_width`` / ``overlay_duration``."""
+    bot = _active_bot
+    if bot is None or not getattr(bot, "task_session_active", False):
+        return
+    executor = getattr(bot, "executor", None)
+    if executor is None:
+        return
+    executor.last_action_location = box
+    if highlight and bot.config.get("show_overlay", True):
+        try:
+            executor._highlight(box)
+        except Exception:  # pragma: no cover - the highlight is only visual
+            pass
+
+
+def _recording(bot: Any) -> bool:
+    """A step is recorded only inside a task session and not nested in another."""
+    return bool(getattr(bot, "task_session_active", False)) and not getattr(
+        bot, "_step_depth", 0
+    )
+
+
+def _run_recorded(bot: Any, type_field: str, check, params: dict[str, Any], call):
+    """Run ``call()`` as ONE recorded step of ``bot``'s session."""
+    task = build_event_task(type_field, params)
+    executor = getattr(bot, "executor", None)
+    if executor is not None:
+        # A stale box from the previous step must not be drawn on this
+        # step's screenshot (a failed find has no box of its own).
+        executor.last_action_location = None
+
+    started = time.monotonic()
+    bot._step_depth = 1
+    try:
+        result = call()
+    except Exception as exc:
+        bot._step_depth = 0
+        bot._emit_direct_call_event(
+            task, success=False, started_at=started, error=exception_text(exc)
+        )
+        mark_recorded(exc)
+        raise
+    finally:
+        bot._step_depth = 0
+
+    ok, error, output = (check or _default_check)(result, params)
+    if not ok and not error:
+        error = describe_failure(task)
+    bot._emit_direct_call_event(
+        task, success=ok, started_at=started, error=error, output=output
+    )
+    if not ok and getattr(bot, "stop_on_failure", False):
+        failure = ActionFailedError(
+            error or f"{type_field} failed",
+            action=type_field,
+            target=str(task.get("text") or task.get("image") or task.get("auto_id") or ""),
+        )
+        mark_recorded(failure)
+        raise failure
+    return result
 
 
 def _default_check(result: Any, params: dict[str, Any]):
@@ -128,15 +216,33 @@ def _default_check(result: Any, params: dict[str, Any]):
     return True, None, None
 
 
-def _bound_params(method, self, args, kwargs) -> dict[str, Any]:
-    """The call's arguments by parameter name (defaults NOT filled in)."""
+def _native_check(result: Any, params: dict[str, Any]):
+    """``native_*`` report failure with ``False`` (click/set/wait) or ``None`` (get)."""
+    if result is False or result is None:
+        from . import native_rpa  # lazy: native_rpa imports this module
+
+        if not native_rpa._ensure_pywinauto():
+            return (
+                False,
+                "pywinauto is not installed -- native actions need it: "
+                "pip install \"visus-desktop[native]\"",
+                None,
+            )
+        return False, None, None
+    if isinstance(result, str):
+        return True, None, short_output(result)
+    return True, None, None
+
+
+def _bound_params(function, args, kwargs, *, defaults: bool = False) -> dict[str, Any]:
+    """The call's arguments by parameter name (with ``defaults``, unset ones too)."""
     try:
-        bound = inspect.signature(method).bind(self, *args, **kwargs)
+        bound = inspect.signature(function).bind(*args, **kwargs)
     except TypeError:
         return dict(kwargs)
-    params = dict(bound.arguments)
-    params.pop("self", None)
-    return params
+    if defaults:
+        bound.apply_defaults()
+    return dict(bound.arguments)
 
 
 def build_event_task(type_field: str, params: dict[str, Any]) -> dict[str, Any]:
@@ -196,7 +302,28 @@ def describe_failure(task: dict[str, Any]) -> str:
         return f"Keyboard command '{task.get('command')}' failed -- see the step logs"
     if ttype == "click":
         return f"Click at ({task.get('x')}, {task.get('y')}) failed -- see the step logs"
+    if str(ttype).startswith("native_"):
+        control = native_control_label(task)
+        timeout = task.get("timeout")
+        within = f" within {timeout}s" if timeout is not None else ""
+        if ttype == "native_wait":
+            return f"{control} did not become '{task.get('state', 'exists')}'{within}"
+        if ttype == "native_click":
+            return f"{control} was not found{within} (or it did not take the click)"
+        if ttype == "native_set_text":
+            return f"{control} was not found{within} (or it did not take the text)"
+        return f"{control} was not found{within}"
     return f"{ttype} failed -- see the step logs"
+
+
+def native_control_label(task: dict[str, Any]) -> str:
+    """``"num8Button in 'Calculadora'"`` -- the control a ``native_*`` step aimed at."""
+    what = task.get("auto_id") or task.get("title") or task.get("control_type") or "control"
+    if task.get("window"):
+        return f"{what} in '{task['window']}'"
+    if task.get("pid"):
+        return f"{what} in pid {task['pid']}"
+    return str(what)
 
 
 def exception_text(exc: BaseException) -> str:

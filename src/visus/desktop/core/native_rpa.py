@@ -21,6 +21,13 @@ Every public function:
 Apps that are NOT accessible (Java Swing without the Access Bridge, some
 Electron builds) expose little or nothing here -- use OCR / image
 (``capture_element``) for those.
+
+Inside :func:`visus.desktop.rpa` (any open task session) ``native_click``,
+``native_set_text``, ``native_get_text`` and ``native_wait`` are also steps of
+the run report -- with the control highlighted on screen in the bot's overlay
+style, boxed on the step screenshot, and a ``False`` / ``None`` result stopping
+the run like any failed action. Outside one they behave exactly as described
+above.
 """
 
 from __future__ import annotations
@@ -28,6 +35,8 @@ from __future__ import annotations
 import logging
 import threading
 import time
+
+from .recording import native_target, records_native
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +155,16 @@ def _rect_to_box(ctrl):
         }
     except Exception:
         return None
+
+
+def _on_target(ctrl, *, highlight: bool = True) -> None:
+    """Hand the control about to be acted on to an open recording (``rpa()``):
+    it is highlighted on screen and boxed on the step screenshot. No-op outside."""
+    box = _rect_to_box(ctrl)
+    if box:
+        native_target(
+            (box["x"], box["y"], box["width"], box["height"]), highlight=highlight
+        )
 
 
 def _with_retries(action, retries: int, delay: float):
@@ -334,6 +353,7 @@ def native_snapshot_nodes(
 # ---------------------------------------------------------------------------
 
 
+@records_native("native_click")
 def native_click(
     window=None,
     pid=None,
@@ -373,6 +393,7 @@ def native_click(
             )
             if not ctrl.exists(timeout=timeout):
                 return False
+            _on_target(ctrl)
             if double:
                 ctrl.double_click_input()
                 return True
@@ -391,6 +412,7 @@ def native_click(
     return bool(_with_retries(_attempt, retries, delay))
 
 
+@records_native("native_set_text")
 def native_set_text(
     window=None,
     pid=None,
@@ -405,6 +427,7 @@ def native_set_text(
     retries: int = 0,
     delay: float = 0.3,
     backend: str = "uia",
+    secret: bool = False,
 ) -> bool:
     """Set the text of an editable control located by selector -- like a person.
 
@@ -414,6 +437,9 @@ def native_set_text(
     pattern and still saved under the old one. When the window cannot come to the
     front (nothing is typed then), the value pattern is the fallback. Returns True
     when the control ends up holding ``text``.
+
+    ``secret=True`` (a password): typed the same, shown as ``••••••`` in the run
+    report.
     """
     if not _ensure_pywinauto():
         return False
@@ -428,6 +454,7 @@ def native_set_text(
             )
             if not ctrl.exists(timeout=timeout):
                 return False
+            _on_target(ctrl)
             wrapper = ctrl.wrapper_object()
             if _type_into(wrapper, text):
                 return True
@@ -503,6 +530,7 @@ def _type_into(wrapper, text: str) -> bool:
     return value is None or value == text
 
 
+@records_native("native_get_text")
 def native_get_text(
     window=None,
     pid=None,
@@ -528,6 +556,7 @@ def native_get_text(
         )
         if not ctrl.exists(timeout=timeout):
             return None
+        _on_target(ctrl)
         # o VALOR de um campo (o que está escrito nele) vem antes do nome: o nome de um
         # Edit é o rótulo ("File name:"), não o texto
         wrapper = ctrl.wrapper_object()
@@ -603,6 +632,7 @@ def native_get_state(
     return None if result is _TIMEOUT_SENTINEL else result
 
 
+@records_native("native_wait")
 def native_wait(
     window=None,
     pid=None,
@@ -641,6 +671,8 @@ def native_wait(
         )
         try:
             ctrl.wait(wanted, timeout=timeout, retry_interval=poll_interval)
+            # boxed on the step screenshot; no on-screen highlight for a wait
+            _on_target(ctrl, highlight=False)
             return True
         except Exception as exc:
             # NUNCA silencioso: um wait que falha por infra (COM, conexão,

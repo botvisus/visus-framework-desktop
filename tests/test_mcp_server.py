@@ -303,8 +303,63 @@ class TestSessionTools:
     def test_start_and_stop_recording_create_zip(self, server, tmp_path):
         zip_path = tmp_path / "rec.zip"
         _call(server, "start_recording", path=str(zip_path))
-        _call(server, "stop_recording")
+        out = _call(server, "stop_recording")
         assert zip_path.exists()
+        assert out["saved"] is True and out["zip"] == str(zip_path)
+
+    def test_stop_without_recording_says_so(self, server):
+        assert _call(server, "stop_recording") == {"saved": False}
+
+    def test_every_action_tool_is_a_report_step(self, server, tmp_path):
+        """While recording, the agent's direct tool calls -- not only
+        execute_tasks -- land in the report, with the run name as headline."""
+        zip_path = tmp_path / "rec.zip"
+        html_path = tmp_path / "rec.html"
+        shot = Image.new("RGB", (32, 32), "white")
+        with patch(
+            "visus.desktop.core.task_executor.capture_screen", return_value=shot
+        ), patch(
+            "visus.desktop.core.task_executor.TaskExecutor._perform_action"
+        ), patch("visus.desktop.core.human_typing.type_like_a_person"), patch(
+            "visus.desktop.core.mouse_extra.scroll"
+        ) as scrolled:
+            # step PNGs in tmp, never the working directory
+            _call(server, "configure", config={"artifacts_dir": str(tmp_path / "art")})
+            _call(server, "start_recording", path=str(zip_path), name="pedido")
+            assert _call(server, "click_at", x=10, y=20) is True
+            assert _call(server, "type_text", text="hunter2", secret=True) is True
+            assert server.scroll(amount=-3) is True  # not in _tools_for_tests()
+            with patch.object(server.get_bot(), "find_text", return_value=None):
+                # a failed step is recorded; the tool still just returns False
+                assert _call(server, "click_text", text="Entrar", max_attempts=1) is False
+            out = _call(server, "stop_recording", report_path=str(html_path))
+        scrolled.assert_called_once()
+        assert out["steps"] == 4 and out["failures"] == 1
+        assert [t for t, _ in out["timeline"]] == ["click", "type_text", "scroll", "text"]
+        assert out["report"] == str(html_path.resolve())
+        html = html_path.read_text(encoding="utf-8")
+        assert "<h1>pedido</h1>" in html
+        assert "hunter2" not in html and "••••••" in html
+        # the bot stops recording afterwards
+        assert server.get_bot().task_session_active is False
+
+    def test_configure_mid_recording_keeps_recording(self, server, tmp_path):
+        zip_path = tmp_path / "rec.zip"
+        with patch(
+            "visus.desktop.core.task_executor.capture_screen",
+            return_value=Image.new("RGB", (8, 8)),
+        ), patch("visus.desktop.core.task_executor.TaskExecutor._perform_action"):
+            art = str(tmp_path / "art")
+            _call(server, "configure", config={"artifacts_dir": art})
+            _call(server, "start_recording", path=str(zip_path))
+            _call(server, "click_at", x=1, y=1)
+            _call(server, "configure", config={"show_overlay": False, "artifacts_dir": art})
+            _call(server, "click_at", x=2, y=2)
+            out = _call(server, "stop_recording")
+        assert out["steps"] == 2
+        from visus.desktop.core.session import Session
+
+        assert len({e["run_id"] for e in Session.replay(zip_path)}) == 1
 
     def test_render_report_writes_html(self, server, tmp_path):
         # Build a one-event session via direct API then render.

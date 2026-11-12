@@ -66,7 +66,7 @@ From the CLI: `visus configure '{...}'`. From MCP: the `configure` tool.
 | Key | Default | Meaning |
 |---|---|---|
 | `log_level` | `"INFO"` | `DEBUG` / `INFO` / `WARNING` / `ERROR`. Applied immediately on construction and whenever changed at runtime (`cfg.log_level = "DEBUG"` or `cfg.set("log_level", ...)`). |
-| `log_format` | `"text"` | `"text"` (human `[INFO]` lines) or `"json"` (one JSON event per task on logger `visus.desktop.task_events` — **required** for `Session` recordings to capture events). |
+| `log_format` | `"text"` | `"text"` (human `[INFO]` lines) or `"json"` (also emit one JSON event per task on logger `visus.desktop.task_events`, for your own log sinks). `Session` / `rpa()` recordings capture the events either way (0.4.0+). |
 | `artifacts_dir` | `"./visus-artifacts"` | Folder for failure screenshots / diagnostic dumps. |
 | `screenshot_on_failure` | `True` | Save a screenshot when a task fails. |
 | `screenshot_steps` | *(unset)* | When truthy, also save a screenshot after each **successful** step (so the HTML report shows every step, not just failures). |

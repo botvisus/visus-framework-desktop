@@ -280,6 +280,13 @@ class TaskExecutor:
             if task.get("x") is None:
                 return "cursor"
             return f"({task.get('x')}, {task.get('y')})"
+        if ttype.startswith("native_"):
+            from .recording import native_control_label
+
+            label = native_control_label(task)
+            if ttype == "native_set_text" and task.get("text") is not None:
+                label += f" <- '{task['text']}'"
+            return label
         return str(task.get("text") or task.get("name") or "")
 
     def _describe_miss(self, task: Dict[str, Any], attempts: int) -> str:
@@ -1418,6 +1425,40 @@ class TaskExecutor:
             logger.debug(f"Error testing scaled image: {e}")
             return None
 
+    def _highlight(self, location: Tuple) -> None:
+        """Draw the target box on screen in the configured overlay style.
+
+        Used before every click of the bot and, inside ``rpa()``, before each
+        ``native_*`` action (``recording.native_target``).
+        """
+        overlay_duration = self.config.get("overlay_duration", 1000)
+        overlay_color = self.config.get("overlay_color", "red")
+        overlay_width = self.config.get("overlay_width", 4)
+
+        # Win32 layered click-through window: lets the click below
+        # land normally on any host tech (native, Java, Electron,
+        # browsers). Fire-and-forget — no pre-click sleep, no join.
+        scheduled = show_click_through_overlay(
+            location,
+            color=overlay_color,
+            width=overlay_width,
+            duration_ms=overlay_duration,
+        )
+        if not scheduled:
+            # Non-Windows fallback: the legacy Tk overlay. It intercepts
+            # clicks, so accept that on platforms where we can't do
+            # click-through cleanly.
+            threading.Thread(
+                target=show_overlay,
+                args=(location,),
+                kwargs={
+                    "duration": overlay_duration,
+                    "color": overlay_color,
+                    "width": overlay_width,
+                },
+                daemon=True,
+            ).start()
+
     def _perform_action(self, task: Dict[str, Any], location: Tuple) -> None:
         """
         Performs the action (click, typing) at the found location.
@@ -1443,33 +1484,7 @@ class TaskExecutor:
             show_overlay_flag = self.config.get("show_overlay", True)
 
         if show_overlay_flag:
-            overlay_duration = self.config.get("overlay_duration", 1000)
-            overlay_color = self.config.get("overlay_color", "red")
-            overlay_width = self.config.get("overlay_width", 4)
-
-            # Win32 layered click-through window: lets the click below
-            # land normally on any host tech (native, Java, Electron,
-            # browsers). Fire-and-forget — no pre-click sleep, no join.
-            scheduled = show_click_through_overlay(
-                location,
-                color=overlay_color,
-                width=overlay_width,
-                duration_ms=overlay_duration,
-            )
-            if not scheduled:
-                # Non-Windows fallback: the legacy Tk overlay. It intercepts
-                # clicks, so accept that on platforms where we can't do
-                # click-through cleanly.
-                threading.Thread(
-                    target=show_overlay,
-                    args=(location,),
-                    kwargs={
-                        "duration": overlay_duration,
-                        "color": overlay_color,
-                        "width": overlay_width,
-                    },
-                    daemon=True,
-                ).start()
+            self._highlight(location)
 
         # Perform the click
         self._perform_click(task, location)

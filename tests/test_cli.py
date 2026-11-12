@@ -54,6 +54,18 @@ class TestNewSubcommand:
         assert rc == 0
         assert (target / "tasks.py").exists()
 
+    def test_new_scaffolds_an_rpa_script_named_after_the_project(self, tmp_path):
+        target = tmp_path / "pedido"
+        assert main(["new", str(target)]) == 0
+        script = (target / "tasks.py").read_text(encoding="utf-8")
+        assert "from visus.desktop import rpa" in script
+        assert "with rpa('pedido', open_report=True) as bot:" in script
+        compile(script, "tasks.py", "exec")  # valid Python as generated
+        assert "visus-runs/" in (target / ".gitignore").read_text(encoding="utf-8")
+        assert "visus-desktop run tasks.py" in (target / "README.md").read_text(
+            encoding="utf-8"
+        )
+
 
 class TestReportSubcommand:
     def test_report_writes_html(self, tmp_path):
@@ -64,6 +76,17 @@ class TestReportSubcommand:
         assert rc == 0
         assert html_path.exists()
         assert "Visus" in html_path.read_text(encoding="utf-8")
+
+    def test_report_title_sets_the_headline(self, tmp_path):
+        zip_path = tmp_path / "run.zip"
+        html_path = tmp_path / "report.html"
+        _make_session_zip(zip_path)
+        result = CliRunner().invoke(
+            cli, ["report", str(zip_path), "--html", str(html_path), "--title", "Night run"]
+        )
+        assert result.exit_code == 0, result.output
+        assert str(html_path.resolve()) in result.output
+        assert "<h1>Night run</h1>" in html_path.read_text(encoding="utf-8")
 
 
 class TestDoctorSubcommand:

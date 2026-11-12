@@ -4,7 +4,8 @@ Exposes the visus-desktop automation primitives as MCP tools via
 ``FastMCP`` (the ``mcp[cli]`` package). Once running, any MCP-aware
 client (Claude Desktop, Claude Code, Cursor, custom agents) can call
 ``find_text``, ``click_image``, ``take_screenshot``, ``execute_tasks``,
-``start_recording`` / ``stop_recording`` / ``render_report``, and the
+``start_recording`` / ``stop_recording`` / ``render_report`` (every action
+tool called while recording is a step of the HTML report), and the
 process / window / clipboard helpers.
 
 Start the server with::
@@ -193,12 +194,21 @@ WORKFLOW — follow in order:
    `native_get_state` changed, screen settled. (A `wait_for_file` that only
    checks existence is a false positive when the file already existed.)
 
-7. PACKAGE. `execute_tasks([...])` for atomic retry/backtrack; wrap in
-   `start_recording`/`stop_recording` → `render_report` for an auditable HTML
-   artifact.
+7. PACKAGE. `execute_tasks([...])` for atomic retry/backtrack. For an
+   auditable HTML artifact of what YOU do here: `start_recording(path, name=...)`
+   first — every action tool you call after it (clicks, typing, keys,
+   `native_*`, `open_app`...) becomes a report step with a screenshot — then
+   `stop_recording(report_path="run.html")`.
 
    ►► THE GENERATED SCRIPT MUST BE 100% visus-desktop. Import ONLY from
-   `visus.desktop` (e.g. `from visus.desktop import VisusBot, ensure_window`).
+   `visus.desktop`. Shape it as a run with the report built in:
+       from visus.desktop import rpa
+       with rpa("name", open_report=True) as bot:   # app="calc", window="..."
+           bot.click_text(...)          # every bot action = a report step
+           native_click(window=..., auto_id=...)    # native_* too, highlighted
+   A failed action stops the run there (exit code 1) with the reason and a
+   screenshot in ./visus-runs/<name>-<ts>/report.html; for an "is it on
+   screen?" check use `find_text` / `find_image` / `native_get_state`.
    NEVER `import pyautogui` (or pynput/keyboard/win32 etc.) and NEVER call
    `pyautogui.hotkey(...)` in the script — every action has a visus equivalent:
      • keys/chords → `bot.keyboard_command("Ctrl+Shift+S")` (ANY modifier combo
@@ -300,6 +310,8 @@ def docs_cli_reference() -> str:
 
 _bot = None
 _recording_ctx = None
+# The open recording: {"recording", "path", "run_id", "prev_steps"} (None when idle).
+_recording_state: dict | None = None
 
 
 def get_bot(config: dict | None = None):
@@ -314,9 +326,35 @@ def get_bot(config: dict | None = None):
 
 def reset_bot_for_tests() -> None:
     """Drop the singleton so unit tests start from a clean slate."""
-    global _bot, _recording_ctx
+    global _bot, _recording_ctx, _recording_state
+    if _bot is not None and getattr(_bot, "task_session_active", False):
+        _bot.end_task_session()
+    if _recording_ctx is not None:
+        try:  # release its log handler + event sink (a leak would bleed into the next test)
+            _recording_ctx.__exit__(None, None, None)
+        except Exception:  # pragma: no cover - best effort
+            pass
     _bot = None
     _recording_ctx = None
+    _recording_state = None
+
+
+def _recording_bot():
+    """The bot while a recording is open -- its actions become report steps --
+    or None (then a gesture tool runs the module function, no bot needed)."""
+    return get_bot() if _recording_ctx is not None else None
+
+
+def _attach_recording(bot, run_id: str | None = None) -> None:
+    """Record ``bot``'s direct actions (clicks, typing, native_*...) into the open
+    recording: per-step screenshots on, a task session open, the run id kept."""
+    state = _recording_state or {}
+    state.setdefault("prev_steps", bot.config.get("screenshot_steps"))
+    bot.config.config["screenshot_steps"] = state.get("screenshots", True)
+    bot.start_task_session()
+    if run_id:
+        bot.executor.current_run_id = run_id
+        bot.executor.pinned_run_id = run_id
 
 
 def _box_to_dict(box) -> dict | None:
@@ -365,7 +403,15 @@ def configure(config: dict) -> dict:
     ``ocr_backend``, ``matcher``, ``screen_cache_ms``, ...).
     RETURNS: the active config dict after the rebuild.
     """
+    old = _bot
+    run_id = None
+    if _recording_ctx is not None and old is not None and old.task_session_active:
+        run_id = old.executor.pinned_run_id
+        old.end_task_session()
     bot = get_bot(config)
+    if _recording_ctx is not None:
+        # the rebuilt bot keeps recording into the same run
+        _attach_recording(bot, run_id)
     return dict(bot.config.config)
 
 
@@ -924,6 +970,7 @@ def type_text(
     delay: float = 0,
     backtrack: bool = False,
     window: str | None = None,
+    secret: bool = False,
 ) -> bool:
     """Type ``text`` into the CURRENTLY FOCUSED field (click/focus it first).
 
@@ -936,12 +983,15 @@ def type_text(
     ``window`` (title substring): that window is brought to the front and CHECKED
     first -- with another window in front nothing is typed (returns False). Pass it
     whenever you know the app: without it the text lands in whatever has focus.
+    ``secret`` True for a password/token: typed the same, shown as ``••••••`` in
+    a recording's report and in the logs.
     RETURNS: True once typed. Does NOT move focus inside the window — make sure the
     right field is focused (e.g. ``native_click`` / ``click_text`` it first).
     """
     return bool(
         get_bot().type_text(
-            text, interval=interval, delay=delay, backtrack=backtrack, window=window
+            text, interval=interval, delay=delay, backtrack=backtrack, window=window,
+            secret=secret,
         )
     )
 
@@ -984,6 +1034,10 @@ def scroll(amount: int, x: int | None = None, y: int | None = None) -> bool:
     ``(x, y)`` first (e.g. hover the pane you want to scroll).
     RETURNS: True.
     """
+    bot = _recording_bot()
+    if bot is not None:  # recording: a step of the report
+        bot.scroll(amount, x=x, y=y)
+        return True
     from .core.mouse_extra import scroll as _scroll
 
     _scroll(amount, x=x, y=y)
@@ -1004,6 +1058,10 @@ def drag(
     USE WHEN: sliders, reordering, selection rectangles, drag-and-drop.
     RETURNS: True.
     """
+    bot = _recording_bot()
+    if bot is not None:  # recording: a step of the report
+        bot.drag(start_x, start_y, end_x, end_y, duration=duration, button=button)
+        return True
     from .core.mouse_extra import drag as _drag
 
     _drag(start_x, start_y, end_x, end_y, duration=duration, button=button)
@@ -1019,6 +1077,10 @@ def triple_click(
     USE WHEN: selecting a whole line/paragraph before overtyping it.
     RETURNS: True.
     """
+    bot = _recording_bot()
+    if bot is not None:  # recording: a step of the report
+        bot.triple_click(x=x, y=y, interval=interval)
+        return True
     from .core.mouse_extra import triple_click as _triple
 
     _triple(x=x, y=y, interval=interval)
@@ -1410,8 +1472,12 @@ def open_app(target: str, wait_window: str | None = None, timeout: float = 30.0)
     """
     from .core.process import open_app as _open
 
+    bot = _recording_bot()  # recording: a step of the report
     try:
-        result = _open(target, wait_window=wait_window, timeout=timeout)
+        if bot is not None:
+            result = bot.open_app(target, wait_window=wait_window, timeout=timeout)
+        else:
+            result = _open(target, wait_window=wait_window, timeout=timeout)
     except OSError as exc:
         return {"target": target, "window": None, "opened": False, "error": str(exc)}
     return {**result, "opened": True}
@@ -1466,18 +1532,21 @@ def native_set_text(
     retries: int = 0,
     delay: float = 0.3,
     backend: str = "uia",
+    secret: bool = False,
 ) -> bool:
     """Set the text of an editable control by selector (UIA value pattern).
 
     ``backend`` is ``"uia"`` (default) or ``"win32"`` for classic Win32 apps
     like Notepad (where ``control_type`` matches the class name, e.g. ``Edit``).
+    ``secret`` True for a password/token: set the same, shown as ``••••••`` in a
+    recording's report.
     """
     from .core.native_rpa import native_set_text as _fn
 
     return _fn(
         window=window, pid=pid, title=title, control_type=control_type,
         auto_id=auto_id, found_index=found_index, text=text, timeout=timeout,
-        retries=retries, delay=delay, backend=backend,
+        retries=retries, delay=delay, backend=backend, secret=secret,
     )
 
 
@@ -2003,9 +2072,9 @@ def execute_tasks(tasks: list[dict], resume: bool = False) -> list[dict]:
     RECOMMENDED end-to-end flow (capture -> click-by-image -> record -> report):
       1. ``ensure_window(process="notepad.exe")``      # open/focus; read rect
       2. ``capture_element(label="save", auto="Save", window=...)``  # -> save.png
-      3. ``start_recording("run.zip")``
+      3. ``start_recording("run.zip", name="save")``
       4. ``execute_tasks([{"image": "save.png", "region": <rect>}, ...])``
-      5. ``stop_recording()`` then ``render_report("run.zip", "run.html")``
+      5. ``stop_recording(report_path="run.html")``  # zip + HTML report
     """
     results = get_bot().execute_tasks(tasks, resume=resume)
     return [_result_to_dict(r) for r in results]
@@ -2017,41 +2086,83 @@ def execute_tasks(tasks: list[dict], resume: bool = False) -> list[dict]:
 
 
 @mcp.tool()
-def start_recording(path: str) -> str:
-    """Start recording task events into a session zip at ``path``.
+def start_recording(path: str, name: str | None = None, screenshots: bool = True) -> str:
+    """Start recording the run into a session zip at ``path``.
 
     USE WHEN: you want an auditable record + HTML report of a run. Call this,
-    then run your ``execute_tasks`` / click steps, then ``stop_recording``,
-    then ``render_report``. Only one recording at a time.
+    do the work, then ``stop_recording(report_path=...)``. EVERY action tool you
+    call in between is a step of the report -- ``click_text``, ``click_image``,
+    ``click_at``, ``click_relative_image``, ``type_text``, ``keyboard_command``,
+    ``open_app``, ``extract_text_from_region``, ``scroll``, ``drag``, ``triple_click``,
+    ``native_click``, ``native_set_text``, ``native_get_text``, ``native_wait``
+    and each task of ``execute_tasks`` -- with its duration, OK/FAILED + reason,
+    a screenshot (target boxed; native controls also highlighted on screen) and
+    its logs. Tools keep their normal return values: a failed step is recorded,
+    it does not raise. Only one recording at a time.
+    PARAMS: ``name`` labels the run (the report's headline); ``screenshots``
+    False keeps only the failure screenshots (smaller zip).
     RETURNS: the absolute zip path. Raises if a recording is already active
     (call ``stop_recording`` first).
     """
-    global _recording_ctx
+    global _recording_ctx, _recording_state
     if _recording_ctx is not None:
         raise RuntimeError(
             "recording already in progress; call stop_recording first"
         )
     from .core.session import Session
 
-    _recording_ctx = Session.start_recording(path)
-    _recording_ctx.__enter__()
+    ctx = Session.start_recording(path, name=name)
+    recording = ctx.__enter__()
+    _recording_ctx = ctx
+    _recording_state = {
+        "recording": recording,
+        "path": os.path.abspath(path),
+        "name": name,
+        "screenshots": bool(screenshots),
+    }
+    _attach_recording(get_bot())
     return os.path.abspath(path)
 
 
 @mcp.tool()
-def stop_recording() -> bool:
+def stop_recording(report_path: str | None = None) -> dict:
     """Finalize the active recording and write the session zip to disk.
 
-    USE WHEN: done with the steps you wanted to record. Always pair with a
-    prior ``start_recording``; then ``render_report`` to view it.
-    RETURNS: True if a recording was active and saved, False if none was open.
+    USE WHEN: done with the steps you wanted to record. Pass ``report_path``
+    (e.g. "run.html") to also render the HTML report in the same call --
+    otherwise ``render_report`` does it later.
+    RETURNS: ``{saved, zip, report, steps, failures, timeline}`` -- ``timeline``
+    is ``[[step_type, ok], ...]`` in order; ``saved`` False (and nothing else)
+    when no recording was open. ``zip`` is None under the RunPilot runner (the
+    steps went live to the orchestrator instead).
     """
-    global _recording_ctx
+    global _recording_ctx, _recording_state
     if _recording_ctx is None:
-        return False
-    _recording_ctx.__exit__(None, None, None)
-    _recording_ctx = None
-    return True
+        return {"saved": False}
+    state = _recording_state or {}
+    bot = _bot
+    if bot is not None and bot.task_session_active:
+        bot.end_task_session()
+        bot.config.config["screenshot_steps"] = state.get("prev_steps")
+    ctx, _recording_ctx, _recording_state = _recording_ctx, None, None
+    ctx.__exit__(None, None, None)
+
+    recording = state.get("recording")
+    summary = recording.summary() if recording is not None else {}
+    written = bool(recording is not None and recording.written)
+    report = None
+    if report_path and written:
+        from .core.session import Session
+
+        report = Session.write_report(state["path"], report_path, title=state.get("name"))
+    return {
+        "saved": True,
+        "zip": state.get("path") if written else None,
+        "report": report,
+        "steps": summary.get("total", 0),
+        "failures": summary.get("failures", 0),
+        "timeline": [list(step) for step in summary.get("steps", [])],
+    }
 
 
 @mcp.tool()
@@ -2073,18 +2184,19 @@ def replay_session(zip_path: str) -> list[dict]:
 
 
 @mcp.tool()
-def render_report(zip_path: str, html_path: str) -> str:
+def render_report(zip_path: str, html_path: str, title: str | None = None) -> str:
     """Render a session zip into a styled single-file HTML report.
 
-    USE WHEN: producing a human-readable artifact of a recorded run (timeline,
-    per-task durations/attempts, embedded failure screenshots) — the right
-    thing to hand a person when a flow needs review.
+    USE WHEN: producing a human-readable artifact of a recorded run (KPIs,
+    an errors section, the step timeline with durations, OK/FAILED + reason,
+    screenshots and logs, all embedded) — the right thing to hand a person when
+    a flow needs review. ``stop_recording(report_path=...)`` does this for you.
+    PARAMS: ``title`` is the headline (default: the run's ``name``).
     RETURNS: the absolute path of the written HTML file.
     """
     from .core.session import Session
 
-    Session.write_report(zip_path, html_path)
-    return os.path.abspath(html_path)
+    return Session.write_report(zip_path, html_path, title=title)
 
 
 # ---------------------------------------------------------------------------

@@ -126,6 +126,9 @@ smart cascade try them in order. Everything is also exposed as an MCP server
       native_wait(..., state="ready", timeout=10)
     Immune to theme/DPI/resolution/language; empty on non-accessible UIs
     (Java Swing without Access Bridge) — fall back to OCR/image there.
+    Inside rpa(): native_click / native_set_text / native_get_text /
+    native_wait are report steps, the control highlighted in the bot's overlay
+    style; a False/None result stops the run. native_set_text(secret=True).
 
 ▶ WINDOWS / PROCESSES  (fast win32; target the right app first)
     ensure_window(title=None, process=None, show=True, foreground=True)
@@ -168,7 +171,7 @@ smart cascade try them in order. Everything is also exposed as an MCP server
         execute_tasks...) becomes a report step with duration, OK/FAILED + reason,
         a screenshot and its logs. Writes ./visus-runs/<name>-<ts>/run.zip +
         report.html even when a step fails; prints a summary; exit code 1 on failure.
-    bot.step("label")    # with-block: record any other code (native_click...) as a step
+    bot.step("label")    # with-block: record any other code (smart_click...) as a step
     bot.type_text(pwd, secret=True)            # typed, but masked in the report
     ActionFailedError    # raised by a failed action inside rpa() (stop_on_failure)
 
@@ -215,7 +218,7 @@ smart cascade try them in order. Everything is also exposed as an MCP server
 
     Wire into Claude Code / Desktop / Cursor (settings.json):
         { "mcpServers": { "visus-desktop": { "command": "visus-mcp" } } }
-    Restart the host; 57 tools become available to the agent.
+    Restart the host; 59 tools become available to the agent.
 
     Tool groups (each tool's docstring tells the agent when/how to use it):
       • Targeting:   ensure_window ★, list_windows, get_window
@@ -298,9 +301,11 @@ from .core.process import (
     open_app,
 )
 from .core.recording import (
+    clear_active_bot,
     exception_text,
     mark_recorded,
     records_step,
+    set_active_bot,
     short_output,
 )
 from .core.relative_image import RelativeImageDetector  # NEW FEATURE
@@ -348,7 +353,7 @@ from .utils.retry import retry
 from .utils.text_filters import clean_text, limpar_texto, matches_filter
 
 # Library version
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 __author__ = "Matheus Pereira"
 __email__ = "matheuszwilkdev@gmail.com"
 __license__ = "MIT"
@@ -597,6 +602,9 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         run_id = uuid.uuid4().hex[:8]
         self.executor.current_run_id = run_id
         self.executor.pinned_run_id = run_id
+        # native_click / native_set_text / ... record (and highlight) through
+        # this bot while the session is open
+        set_active_bot(self)
         logger.debug(
             "Task session started (run_id=%s) -- direct calls will be recorded",
             self.executor.current_run_id,
@@ -615,6 +623,7 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         )
         self.executor.current_run_id = None
         self.executor.pinned_run_id = None
+        clear_active_bot(self)
         return successful_tasks, total_tasks
 
     def _emit_direct_call_event(

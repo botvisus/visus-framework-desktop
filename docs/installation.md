@@ -81,8 +81,8 @@ visus doctor --json     # machine-readable; exit code != 0 means a check failed
 | `click_image` returns `False` | Template not on screen, or DPI/scale mismatch | Re-capture the template at the live resolution; try `specific=False` (whole-screen + scale variations); or `matcher="pyscreeze"` if cv2 is too strict. |
 | Click "doesn't land" / hits the overlay | (Fixed) the overlay is now a Win32 click-through window | Ensure you're on the current version; the overlay no longer intercepts clicks. |
 | `log_level="DEBUG"` shows nothing extra | Logging configured before the value applied | It now applies on `BotVisionConfig` construction and whenever `log_level` changes. Noisy `PIL`/`RapidOCR` DEBUG lines: `logging.getLogger("PIL").setLevel("WARNING")`. |
-| Session zip is empty / no events | `log_format` not `json` | Set `log_format="json"` — `Session` captures the `visus.desktop.task_events` JSON stream. |
-| No screenshots in the report | Only failures captured by default | Set `screenshot_steps=True` for per-step screenshots on success too. |
+| Report empty / direct calls missing | Direct calls are recorded only inside a task session | Use `rpa()` (it opens one), or `bot.start_task_session()` inside `Session.start_recording`. `log_format` no longer matters (0.4.0+). |
+| No screenshots of successful steps | A manual `Session` captures only failures by default | `rpa()` takes one per step; with a manual `Session`, set `screenshot_steps=True`. |
 | `native_dump_tree` returns `[]` | Non-accessible UI (Java Swing without Access Bridge, some Electron) | Fall back to OCR / image / `capture_element`. |
 | Wrong window captured | Targeted by ambiguous title | Use `ensure_window(process="app.exe")` and pass `process`/longer `title`; check `matches` in its result. |
 | `wait_for_stable_screen` times out | Animation never settles | Narrow `region`; raise `stable_for` to ~0.8s. |
