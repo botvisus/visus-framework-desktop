@@ -6,6 +6,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-11-13
+
+### Fixed
+- Keyboard and typing into the window `use_app` returned check that the PROGRAM is in front
+  (its process), not the exact window title. A program switches windows and keeps being
+  the same program: Excel 2013's start screen ("Microsoft Excel") becomes the workbook
+  ("Book1 - Excel") after Escape, and `keyboard_command(..., window=excel)` used to stop with
+  "is not the window in front -- nothing was sent". When another program is in front, the
+  program's top visible window is brought forward first (`front_program`). A title typed by
+  hand is still checked by title. Measured: a recorded Excel task stopped at step 3 before
+  and ran 6/6 after.
+
 ## [0.4.6] - 2026-11-13
 
 ### Fixed

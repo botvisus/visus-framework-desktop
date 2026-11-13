@@ -589,6 +589,55 @@ def wait_front_window(title_substring: str, *, timeout: float = 30.0) -> str | N
         time.sleep(0.5)
 
 
+def front_program(pid: int, *, timeout: float = 3.0) -> str | None:
+    """Traz para a frente uma janela visível do PROGRAMA ``pid`` e confere que o teclado
+    vai cair nele. Para a janela que o ``use_app`` devolveu: o programa troca de janela
+    (a tela inicial do Excel vira a pasta "Book1 - Excel"; outra pasta, outro título) e
+    continua sendo o mesmo -- conferir pelo título travaria aí. Devolve o título da janela
+    em foco, ou None quando outro programa continua na frente."""
+    import time
+
+    if sys.platform != "win32":
+        return None
+    import win32gui
+    import win32process
+
+    def owner(hwnd: int) -> int:
+        try:
+            return int(win32process.GetWindowThreadProcessId(hwnd)[1])
+        except Exception:  # noqa: BLE001 -- a janela sumiu
+            return -1
+
+    def windows() -> list[int]:
+        found: list[int] = []
+
+        def visit(hwnd: int, _extra: object) -> bool:
+            if (
+                win32gui.IsWindowVisible(hwnd)
+                and win32gui.GetWindowText(hwnd)
+                and owner(hwnd) == int(pid)
+            ):
+                found.append(hwnd)
+            return True
+
+        win32gui.EnumWindows(visit, None)
+        return found
+
+    deadline = time.monotonic() + timeout
+    while True:
+        front = win32gui.GetForegroundWindow()
+        if front and owner(front) == int(pid):
+            return str(win32gui.GetWindowText(front) or "")
+        for hwnd in windows()[:1]:  # a de cima na ordem Z: a que a pessoa veria
+            try:
+                _bring_to_front(hwnd)
+            except Exception:  # noqa: BLE001 -- tenta até o prazo
+                pass
+        if time.monotonic() >= deadline:
+            return None
+        time.sleep(0.25)
+
+
 def front_window(title_substring: str, *, timeout: float = 3.0) -> str | None:
     """Traz para a frente a janela com ``title_substring`` e CONFERE que ela é a janela
     em foco -- como uma pessoa olha antes de digitar. Devolve o título dela, ou None

@@ -354,7 +354,7 @@ from .utils.retry import retry
 from .utils.text_filters import clean_text, limpar_texto, matches_filter
 
 # Library version
-__version__ = "0.4.6"
+__version__ = "0.4.7"
 __author__ = "Matheus Pereira"
 __email__ = "matheuszwilkdev@gmail.com"
 __license__ = "MIT"
@@ -410,9 +410,15 @@ def _extract_text_outcome(result, params):
 def _window_in_front(window):
     """Traz ``window`` para a frente e CONFERE antes do teclado -- como uma pessoa olha
     antes de digitar. False (e nada é digitado) quando outra janela continua na frente."""
-    from .core.window import foreground_title, front_window
+    from .core.window import foreground_title, front_program, front_window
 
-    if front_window(window) is not None:
+    pid = getattr(window, "pid", None)
+    if isinstance(pid, int) and pid > 0:
+        # a janela do use_app: vale o PROGRAMA na frente (o Excel troca a tela inicial
+        # pela pasta, outra pasta muda o título -- e continua sendo o mesmo programa)
+        if front_program(pid) is not None:
+            return True
+    elif front_window(window) is not None:
         return True
     logger.warning(
         f"'{window}' is not the window in front (now: '{foreground_title()}') -- "
