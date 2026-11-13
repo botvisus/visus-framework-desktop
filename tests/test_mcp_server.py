@@ -72,6 +72,7 @@ def test_tool_registry_covers_each_capability(server):
         "native_dump_tree",
         "native_snapshot",
         "open_app",
+        "use_app",
         "native_click",
         "native_set_text",
         "native_get_text",

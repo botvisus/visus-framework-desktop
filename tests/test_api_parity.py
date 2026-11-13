@@ -7,7 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from visus.desktop import VisusBot, open_app
+import visus.desktop
+from visus.desktop import AppWindow, UseAppError, VisusBot, open_app, use_app
 from visus.desktop import mcp_server as server
 
 
@@ -80,3 +81,25 @@ def test_mcp_teclado_repassa_a_janela() -> None:
         assert server.keyboard_command("Alt, H, O, I", window="Excel") is True
     assert fake.type_text.call_args.kwargs["window"] == "Excel"
     assert fake.keyboard_command.call_args.kwargs["window"] == "Excel"
+
+
+def test_use_app_exportado_e_versao_0_4_3() -> None:
+    from visus.desktop.core import app
+
+    assert use_app is app.use_app
+    assert visus.desktop.__version__ == "0.4.3"
+
+
+def test_mcp_use_app_devolve_a_janela() -> None:
+    win = AppWindow("Pasta1 - Excel", hwnd=5, pid=50, opened=True)
+    with patch("visus.desktop.core.app.use_app", return_value=win) as use:
+        out = server.use_app("EXCEL.EXE", window="Excel")
+    assert out == {"title": "Pasta1 - Excel", "hwnd": 5, "pid": 50, "opened": True}
+    use.assert_called_once_with("EXCEL.EXE", window="Excel", file=None, timeout=30.0)
+
+
+def test_mcp_use_app_que_falha_explica() -> None:
+    reason = "'Calculadora' is not open - open it before running"
+    with patch("visus.desktop.core.app.use_app", side_effect=UseAppError(reason)):
+        out = server.use_app(window="Calculadora")
+    assert out == {"error": reason}

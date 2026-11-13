@@ -595,6 +595,7 @@ _TYPE_TITLES = {
     "keyboard_command": "Press",
     "extract_text": "Read text",
     "open_app": "Open",
+    "use_app": "Use app",
     "scroll": "Scroll",
     "drag": "Drag",
     "triple_click": "Triple-click",

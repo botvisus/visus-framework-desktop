@@ -18,7 +18,7 @@ You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **59 t
 | **Mouse (low-level)** | `scroll`, `drag`, `triple_click`, `move_random`, `mouse_down`, `mouse_up` |
 | **Screen / monitors** | `take_screenshot` (base64), `save_screenshot` (to disk — for find_image templates), `capture_element` (locate-by-text/native/region → save template + annotated → optional click), `get_monitors`, `get_display_size`, `wait_for_stable_screen` |
 | **Files / clipboard** | `wait_for_file`, `wait_for_file_stable`, `get_clipboard`, `copy_to_clipboard`, `extract_text_from_region` *(use `return_full_data=true` for boxes + scores)* |
-| **Process / window** | `open_app` *(an app/document/URL like Windows Run — `wait_window=` waits until it is ready; prefer it to `launch`)*, `launch`, `find_process`, `is_process_running`, `kill_process`, `ensure_window` *(★ call first)*, `list_windows`, `get_window`, `focus_window`, `maximize_window`, `minimize_window`, `close_window` |
+| **Process / window** | `open_app` *(an app/document/URL like Windows Run — `wait_window=` waits until it is ready; prefer it to `launch`)*, `use_app` *(move to another program: brings it to the front, opens it only when closed -- pass its `title` as `window=` to the `native_*` tools)*, `launch`, `find_process`, `is_process_running`, `kill_process`, `ensure_window` *(★ call first)*, `list_windows`, `get_window`, `focus_window`, `maximize_window`, `minimize_window`, `close_window` |
 | **Smart cascade** | `smart_click` / `smart_find` — one call tries **native → image → OCR → coordinates** in order (pass `order=[...]` to force/reorder). The simplest robust way to click something when you're not sure which technique fits. |
 | **Native RPA (no pixel)** | `native_snapshot` (the window's actionable controls, numbered — deep enough for the Office ribbon), `native_dump_tree` (read the UI structure), `native_click`, `native_set_text`, `native_get_text`, `native_get_state`, `native_wait` — operate accessible apps by control, immune to theme/DPI/resolution/language. Falls flat on non-accessible UIs (Java Swing) → use OCR there. |
 | **Task lists** | `execute_tasks` |
@@ -76,6 +76,7 @@ The find/click primitives also take the robustness knobs `wait_until_found`, `wa
 | `copy_to_clipboard` | text | Put `text` on the system clipboard (e.g. to paste with Ctrl+V). |
 | `extract_text_from_region` | region, filter_type?, return_full_data?, confidence_threshold? | OCR-extract all text from `region`. |
 | `open_app` | target, wait_window?, timeout? | Open an app/document/URL as Windows Run does; wait for its window to be ready. |
+| `use_app` | app?, window?, file?, timeout? | Bring a program to the front; open it (or `file`) only when it is closed. For flows that move between programs. |
 | `launch` | command, args? | Start an application/process. Returns its pid. |
 | `find_process` | name | List running processes whose name contains `name` (no windows needed). |
 | `is_process_running` | name | Return True if any running process's name contains `name`. |

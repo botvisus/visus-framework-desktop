@@ -269,6 +269,9 @@ class TaskExecutor:
             return f"region {list(region)}" if region else "full screen"
         if ttype == "open_app":
             return str(task.get("target", ""))
+        if ttype == "use_app":
+            app = str(task.get("app") or "")
+            return str(task.get("window") or os.path.basename(app.replace("\\", "/")))
         if ttype == "scroll":
             return f"{task.get('amount')} click(s)"
         if ttype == "drag":

@@ -274,6 +274,7 @@ import contextlib
 import logging
 import time
 
+from .core.app import AppWindow, UseAppError, use_app
 from .core.capabilities import CapabilitiesMixin
 from .core.elements import capture_element
 from .core.image_map import ImageMap
@@ -353,7 +354,7 @@ from .utils.retry import retry
 from .utils.text_filters import clean_text, limpar_texto, matches_filter
 
 # Library version
-__version__ = "0.4.2"
+__version__ = "0.4.3"
 __author__ = "Matheus Pereira"
 __email__ = "matheuszwilkdev@gmail.com"
 __license__ = "MIT"
@@ -365,6 +366,13 @@ logger = logging.getLogger(__name__)
 # Each public action records itself as one step of the run report while a task
 # session is open (``rpa()`` opens one) -- see ``core/recording.py``.
 _records_in_session = records_step
+
+
+def _use_app_outcome(result, params):
+    """``use_app`` either returns the window or raises: say which way it went."""
+    if getattr(result, "opened", False):
+        return True, None, f"opened: {result}"
+    return True, None, f"in front: {result}"
 
 
 def _open_app_outcome(result, params):
@@ -2457,6 +2465,28 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
 
         return open_app(target, wait_window=wait_window, timeout=timeout)
 
+    @_records_in_session("use_app", check=_use_app_outcome)
+    def use_app(self, app=None, window=None, file=None, timeout=30.0):
+        """
+        Bring a program to the front -- or, when it is closed, open it (or ``file``)
+        and wait for its window. Call it where a flow moves to another program.
+
+        ``app`` is the exe path, the exe name (``"EXCEL.EXE"``) or a packaged app id
+        (``"Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"``); ``window`` is the
+        preferred title among the program's windows. Pass the returned window as
+        ``window=`` to the ``native_*`` calls: they bind to its handle, whatever its
+        title is.
+
+        Returns:
+            AppWindow: the window (a ``str`` with ``hwnd``, ``pid`` and ``opened``)
+
+        Raises:
+            UseAppError: not found and could not be opened, or did not show up
+        """
+        from .core import app as _app
+
+        return _app.use_app(app, window=window, file=file, timeout=timeout)
+
     @_records_in_session("type_text")
     def type_text(
         self, text, interval=0.02, delay=0, backtrack=False, window=None, secret=False
@@ -3577,6 +3607,9 @@ __all__ = [
     "smart_find",
     "smart_click",
     "launch",
+    "AppWindow",
+    "UseAppError",
+    "use_app",
     "open_app",
     "find_process",
     "is_process_running",

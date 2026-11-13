@@ -90,6 +90,7 @@ Full per-parameter detail is in the sections below. A `?` marks an optional para
 | `copy_to_clipboard` | text | Put `text` on the system clipboard (e.g. to paste with Ctrl+V). |
 | `extract_text_from_region` | region, filter_type?, return_full_data?, confidence_threshold? | OCR-extract all text from `region`. |
 | `open_app` | target, wait_window?, timeout? | Open an app/document/URL as Windows Run does; wait for its window to be ready. |
+| `use_app` | app?, window?, file?, timeout? | Bring a program to the front; open it (or `file`) only when it is closed. For flows that move between programs. |
 | `launch` | command, args? | Start an application/process. Returns its pid. |
 | `find_process` | name | List running processes whose name contains `name` (no windows needed). |
 | `is_process_running` | name | Return True if any running process's name contains `name`. |
@@ -405,6 +406,16 @@ title steady. Returns `{target, window, opened}`: `window` is the ready window's
 title or `null` when it did not show up in `timeout` s; `opened: false` + `error`
 when the target could not be opened.
 
+### `use_app(app=None, window=None, file=None, timeout=30.0) -> dict`
+For a flow that moves between programs (Excel → Word → back to Excel). Brings the
+program to the front; only when it is closed it opens it -- or `file` -- and waits
+until its window is in front with a steady title (it never opens a second copy).
+`app`: exe path, exe name (`"EXCEL.EXE"`) or packaged app id
+(`"Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"`). `window`: preferred title
+among the program's windows; with no `app` it only brings that window to the front.
+Returns `{title, hwnd, pid, opened}` -- pass `title` as `window=` to the `native_*`
+tools -- or `{error}`. While recording it is a step of the report.
+
 ### `launch(command, args=None) -> dict`
 Start a process. Returns `{pid, command}`.
 
@@ -471,7 +482,7 @@ confirm a dialog closed); `wait_timeout` (seconds for those waits, default 30).
 ### `start_recording(path, name=None, screenshots=True) -> str`
 Record the run into a session zip. **Every action tool called after it is a step
 of the report** — `click_text`, `click_image`, `click_at`, `click_relative_image`,
-`type_text`, `keyboard_command`, `open_app`, `extract_text_from_region`,
+`type_text`, `keyboard_command`, `open_app`, `use_app`, `extract_text_from_region`,
 `scroll`, `drag`, `triple_click`, `native_click`, `native_set_text`,
 `native_get_text`, `native_wait` and each task of `execute_tasks` — with its
 duration, OK/FAILED + reason, a screenshot (target boxed; native controls also

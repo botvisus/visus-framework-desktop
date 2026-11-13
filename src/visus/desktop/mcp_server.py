@@ -119,7 +119,9 @@ WORKFLOW — follow in order:
 
 2. SEE THE UI: `native_snapshot(window=...)` (numbered actionable controls, deep
    enough for the Office ribbon; `native_dump_tree` is the shallow raw tree). To
-   OPEN an app use `open_app("excel", wait_window="Excel")`, and pass `window=` to
+   OPEN an app use `open_app("excel", wait_window="Excel")`; to MOVE to another
+   program (opened only if it is closed) use `use_app(app="EXCEL.EXE", window="Excel")`
+   and pass its `title` as `window=` to the `native_*` tools. Pass `window=` to
    `type_text` / `keyboard_command` so the keys never land in another window.
    If it returns controls, the app is ACCESSIBLE — act by control (`native_click` / `native_set_text` /
    `native_get_text` / `native_wait`). This is the most robust path (no pixels,
@@ -1484,6 +1486,41 @@ def open_app(target: str, wait_window: str | None = None, timeout: float = 30.0)
 
 
 @mcp.tool()
+def use_app(
+    app: str | None = None,
+    window: str | None = None,
+    file: str | None = None,
+    timeout: float = 30.0,
+) -> dict:
+    """Bring a program to the front -- or, when it is closed, open it and wait.
+
+    USE WHEN: a flow moves to another program (Excel -> Word -> back to Excel),
+    or before acting on a program that may be closed. Unlike ``open_app`` it does
+    not open a second copy when the program is already running.
+    PARAMS: ``app`` = exe path, exe name (``"EXCEL.EXE"``) or packaged app id
+    (``"Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"``; opened through
+    ``shell:AppsFolder``). ``window`` = preferred title among the program's
+    windows (any window of the program serves when none has it); with no
+    ``app`` it only brings that window to the front. ``file`` = document to open
+    when the program is closed.
+    RETURNS: ``{title, hwnd, pid, opened}`` -- pass ``title`` as ``window=`` to
+    the ``native_*`` tools -- or ``{error}`` when it could not be found, opened
+    or brought to the front.
+    """
+    from .core import app as _app
+
+    bot = _recording_bot()  # recording: a step of the report
+    try:
+        if bot is not None:
+            win = bot.use_app(app, window=window, file=file, timeout=timeout)
+        else:
+            win = _app.use_app(app, window=window, file=file, timeout=timeout)
+    except (_app.UseAppError, ValueError) as exc:
+        return {"error": str(exc)}
+    return {"title": str(win), "hwnd": win.hwnd, "pid": win.pid, "opened": win.opened}
+
+
+@mcp.tool()
 def native_click(
     window: str | None = None,
     pid: int | None = None,
@@ -2093,7 +2130,8 @@ def start_recording(path: str, name: str | None = None, screenshots: bool = True
     do the work, then ``stop_recording(report_path=...)``. EVERY action tool you
     call in between is a step of the report -- ``click_text``, ``click_image``,
     ``click_at``, ``click_relative_image``, ``type_text``, ``keyboard_command``,
-    ``open_app``, ``extract_text_from_region``, ``scroll``, ``drag``, ``triple_click``,
+    ``open_app``, ``use_app``, ``extract_text_from_region``, ``scroll``, ``drag``,
+    ``triple_click``,
     ``native_click``, ``native_set_text``, ``native_get_text``, ``native_wait``
     and each task of ``execute_tasks`` -- with its duration, OK/FAILED + reason,
     a screenshot (target boxed; native controls also highlighted on screen) and
@@ -2271,6 +2309,7 @@ for _name, _obj in list(globals().items()):
             "get_window", "get_monitors", "wait_for_stable_screen",
             "native_dump_tree", "native_snapshot", "native_click", "native_set_text",
             "native_get_text", "native_get_state", "native_wait", "open_app",
+            "use_app",
             "smart_find", "smart_click",
             "wait_for_file", "wait_for_file_stable", "get_clipboard",
             "copy_to_clipboard", "extract_text_from_region", "launch",

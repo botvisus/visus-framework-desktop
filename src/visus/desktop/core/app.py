@@ -14,6 +14,7 @@ import ntpath
 import os
 import time
 
+from ..exceptions import BotVisionError
 from . import process as _process
 from . import window as _w
 
@@ -25,8 +26,10 @@ _LOOK_INTERVAL = 0.5  # entre as olhadas na janela que está abrindo
 _STEADY_LOOKS = 3  # título igual em 3 olhadas seguidas = janela pronta
 
 
-class UseAppError(RuntimeError):
-    """O programa não pôde ser achado, trazido para a frente ou aberto."""
+class UseAppError(BotVisionError):
+    """O programa não pôde ser achado, trazido para a frente ou aberto. É um
+    ``BotVisionError``: dentro do ``rpa()`` vira passo FALHOU e encerra a execução
+    com o relatório, como as outras ações que falham."""
 
 
 class AppWindow(str):

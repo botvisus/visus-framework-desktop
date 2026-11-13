@@ -22,7 +22,7 @@ from .commands import image as image_cmd
 from .commands import keyboard as keyboard_cmd
 from .commands import mouse as mouse_cmd
 from .commands import native as native_cmd
-from .commands import open_cmd
+from .commands import open_cmd, use_app_cmd
 from .commands import process as process_cmd
 from .commands import project as project_cmd
 from .commands import screen as screen_cmd
@@ -71,6 +71,7 @@ cli.add_command(screen_cmd.display_size)
 cli.add_command(window_cmd.window)
 cli.add_command(process_cmd.process)
 cli.add_command(open_cmd.open_cmd)
+cli.add_command(use_app_cmd.use_app_cmd)
 cli.add_command(clipboard_cmd.clipboard)
 cli.add_command(project_cmd.new)
 cli.add_command(project_cmd.run)

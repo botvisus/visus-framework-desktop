@@ -45,6 +45,8 @@ RECORDED_KWARGS = (
     "window",
     "target",
     "wait_window",
+    "app",
+    "file",
     "amount",
     "start_x",
     "start_y",

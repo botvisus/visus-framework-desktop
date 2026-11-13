@@ -32,7 +32,7 @@ outdir=None, report=True, summary=True, open_report=False, screenshots=True,
 stop_on_failure=True, reraise=False)` → yields a `VisusBot`. Every action is a
 step of `./visus-runs/<name>-<timestamp>/report.html` (also `run.zip`), written
 even when a step fails: the bot's `click_*` / `type_text` / `keyboard_command` /
-`open_app` / `extract_text_from_region` / `scroll` / `drag` / `triple_click` /
+`open_app` / `use_app` / `extract_text_from_region` / `scroll` / `drag` / `triple_click` /
 `execute_tasks` and the `native_click` / `native_set_text` / `native_get_text` /
 `native_wait` functions (the control highlighted in the overlay style). A failed
 action stops the run (`ActionFailedError`; exit code 1 unless `reraise=True`).
@@ -66,10 +66,35 @@ action stops the run (`ActionFailedError`; exit code 1 unless `reraise=True`).
 | `keyboard_command(command, delay=0, backtrack=False, window=None)` | bool |
 | `extract_text_from_region(region=None, filter_type="both", confidence_threshold=50.0, return_full_data=False, max_attempts=3, backtrack=False)` | list |
 | `open_app(target, wait_window=None, timeout=30.0)` | `{target, window}` |
+| `use_app(app=None, window=None, file=None, timeout=30.0)` | `AppWindow` (raises `UseAppError`) |
 
 `window=` brings that window to the front and CHECKS it first — with another
 window in front nothing is sent (returns `False`). `secret=True` types the same
 but masks the value in a run report and the logs.
+
+`use_app` is for flows that move between programs: it brings the program to the
+front and, only when it is closed, opens it (or `file`) and waits until its window
+is in front with a steady title. `app` is the exe path (the exe name is tried when
+the path does not exist on this machine), the exe name (`"EXCEL.EXE"`) or a
+packaged app id (`"Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"`, opened through
+`shell:AppsFolder`); `window` is the preferred title among the program's windows --
+any of them serves when none has it. It returns an `AppWindow` (a `str`: the live
+title, plus `hwnd`, `pid`, `opened`); pass it as `window=` to the `native_*` calls
+and they bind to that handle, whatever the title is:
+
+```python
+with rpa('vendas', open_report=True) as bot:
+    excel = bot.use_app('EXCEL.EXE', window='vendas.xlsx - Excel',
+                        file=r'C:\dados\vendas.xlsx')
+    native_get_text(window=excel, auto_id='Total')
+    word = bot.use_app('WINWORD.EXE', window='Word')
+    native_click(window=word, title='Colar', control_type='Button')
+```
+
+A program that can't be found, opened or brought to the front raises
+`UseAppError` (a `BotVisionError`: inside `rpa()` it is a FAILED step that stops
+the run). `window_app_id(hwnd)` returns the packaged app id of a window (`""` for
+a plain Win32 app).
 
 ## `VisusBot` — mouse extras (from `CapabilitiesMixin`)
 
@@ -114,7 +139,8 @@ plain functions (`False` / `None` on a miss).
 
 `ensure_window`, `list_windows`, `get_window`, `focus_window`,
 `maximize_window`, `minimize_window`, `close_window`; `open_app` (an
-app/document/URL like Windows Run, `wait_window=`), `launch`, `find_process`,
+app/document/URL like Windows Run, `wait_window=`), `use_app` (the program in
+front, opened only when closed), `window_app_id`, `launch`, `find_process`,
 `is_process_running`, `kill_process`; `take_screenshot`, `save_screenshot`,
 `capture_screen`, `get_display_size`, `get_monitors`, `wait_for_stable_screen`;
 `wait_for_file`, `wait_for_file_stable`; `get_clipboard`, `copy_to_clipboard`,
@@ -177,6 +203,7 @@ primitives — all robustness knobs included).
 | `capture_element` | ✓ | ✓ `capture` | ✓ |
 | native RPA (6) + numbered snapshot | ✓ | ✓ `native` (+ `snapshot`) | ✓ (+ `native_snapshot`) |
 | `open_app` | ✓ | ✓ `open` | ✓ |
+| `use_app` | ✓ | ✓ `use-app` | ✓ |
 | `ensure_window` / `list_windows` / `get_window` | ✓ | ✓ `window` | ✓ |
 | `focus`/`maximize`/`minimize`/`close_window` | ✓ | ✓ `window` | ✓ |
 | `launch` / `find_process` / `kill_process` | ✓ | ✓ `process` | ✓ |

@@ -87,6 +87,7 @@ visus <group> <cmd> --help   # a command's full flag list
 | `visus process is-running` | `NAME --json` | Boolean: is any matching process running? |
 | `visus process kill` | `PID --yes --json` | Terminate by PID (destructive — needs `--yes`). |
 | `visus open` | `TARGET --wait-window=<text> --timeout=<float> --json` | Open an app/document/URL as Windows Run does; `--wait-window` waits until it is ready in front. |
+| `visus use-app` | `[APP] --window=<text> --file=<path> --timeout=<float> --json` | Bring a program to the front; open it (or `--file`) only when it is closed. |
 | `visus clipboard get` | `--json` | Read the clipboard text. |
 | `visus clipboard set` | `TEXT --json` | Put TEXT on the clipboard. |
 | `visus configure` | `CONFIG? --set=<text>… --dry-run --reset --json` | Show / set+persist / reset the CLI config. |
@@ -432,6 +433,23 @@ up in time.
 ```bash
 visus open excel --wait-window Excel
 visus open "C:\relatorios\vendas.xlsx" --wait-window vendas --json
+```
+
+---
+
+## `visus use-app [APP]` — the program in front, opened only when closed
+
+For scripts that move between programs. Brings the program to the front; when it
+is closed, opens it -- or `--file` -- and waits until its window is in front with a
+steady title. Unlike `open`, it never opens a second copy. `APP` is the exe path,
+the exe name (`EXCEL.EXE`) or a packaged app id
+(`Microsoft.WindowsCalculator_8wekyb3d8bbwe!App`); without it, `--window` only
+brings that window to the front. `--json` prints `{title, hwnd, pid, opened}`.
+Exit `1` when the program can't be found, opened or brought to the front.
+
+```bash
+visus use-app EXCEL.EXE --window Excel --file "C:\dados\vendas.xlsx"
+visus use-app --window Calculadora --json
 ```
 
 ---

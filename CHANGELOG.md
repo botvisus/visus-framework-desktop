@@ -6,6 +6,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-11-13
+
+One automation across several programs.
+
+### Added
+- `use_app(app=None, *, window=None, file=None, timeout=30.0)` — brings a program to
+  the front and, only when it is closed, opens it (or `file`) and waits until its
+  window is in front with a steady title. `app` is the exe path (the exe name is tried
+  when the path does not exist on this machine), the exe name or a packaged app id
+  (opened through `shell:AppsFolder` — the Calculator and the other Store apps, which
+  run inside `ApplicationFrameHost.exe`, now open too). Matching by process is exact
+  (`calc.exe` does not match `calcengine.exe`); among several windows the one with the
+  `window` title wins, and any window of the program serves when none has it. As
+  `bot.use_app` it is a step of the report (`opened: …` / `in front: …`); a failure is
+  `UseAppError` (a `BotVisionError`). Also an MCP tool (`use_app`) and a CLI command
+  (`visus use-app`).
+- `AppWindow` — what `use_app` returns: the live title (a `str`) with `hwnd`, `pid`
+  and `opened`. Passed as `window=` to the `native_*` calls they bind to that handle,
+  so a workbook opened blank (`Pasta1 - Excel`) serves the steps captured on
+  `vendas.xlsx - Excel`; a dead handle falls back to the title.
+- `window_app_id(hwnd)` — the packaged app id (AUMID) of a window's app (`""` for a
+  plain Win32 app).
+
 ## [0.4.2] - 2026-11-12
 
 The highlight with the visus-studio look, and no more piling up in a fast run.

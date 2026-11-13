@@ -268,6 +268,33 @@ class TestRpaFailures:
         assert "'Bloco' did not show up" in event["error"]
 
 
+    def test_use_app_is_a_step_of_the_report(self, tmp_path):
+        from visus.desktop.core.app import AppWindow
+
+        out = tmp_path / "run"
+        win = AppWindow("Pasta1 - Excel", hwnd=5, pid=50, opened=True)
+        with patch("visus.desktop.core.app.use_app", return_value=win):
+            with vd.rpa(outdir=out, config=QUIET, summary=False) as bot:
+                assert bot.use_app("EXCEL.EXE", window="Excel").hwnd == 5
+        (event,) = _events(out)
+        assert event["type"] == "use_app" and event["success"]
+        assert event["output"] == "opened: Pasta1 - Excel"
+
+    def test_use_app_failure_stops_the_run_with_its_reason(self, tmp_path):
+        from visus.desktop.core.app import UseAppError
+
+        out = tmp_path / "run"
+        reason = "Could not open 'x.exe': no association"
+        with patch("visus.desktop.core.app.use_app", side_effect=UseAppError(reason)):
+            with pytest.raises(SystemExit):
+                with vd.rpa(outdir=out, config=QUIET, summary=False) as bot:
+                    bot.use_app("x.exe")
+                    pytest.fail("the run must stop when the program cannot be opened")
+        (event,) = _events(out)
+        assert event["type"] == "use_app" and not event["success"]
+        assert reason in event["error"]
+
+
 class _FakeReporter:
     """Stands in for ``runpilot.Orchestrator``: keeps every streamed step."""
 
