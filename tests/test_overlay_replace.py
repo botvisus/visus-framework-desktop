@@ -109,3 +109,15 @@ def test_every_recorded_step_clears_the_previous_highlight() -> None:
 
     assert recording._run_recorded(bot, "native_wait", None, {}, action) is True
     assert seen["cleared_before_acting"] is True
+
+
+def test_highlight_window_is_excluded_from_screen_captures(monkeypatch) -> None:
+    """O destaque é para a pessoa: fora dos prints (busca de imagem/OCR e o print do passo)."""
+    calls = []
+    monkeypatch.setattr(
+        ow, "user32", type("U", (), {"SetWindowDisplayAffinity": staticmethod(
+            lambda hwnd, flag: calls.append((hwnd, flag)) or 1
+        )})(),
+    )
+    assert ow._exclude_from_capture(1234) is True
+    assert calls == [(1234, 0x11)]

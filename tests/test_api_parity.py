@@ -83,11 +83,11 @@ def test_mcp_teclado_repassa_a_janela() -> None:
     assert fake.keyboard_command.call_args.kwargs["window"] == "Excel"
 
 
-def test_use_app_exportado_e_versao_0_4_5() -> None:
+def test_use_app_exportado_e_versao_0_4_6() -> None:
     from visus.desktop.core import app
 
     assert use_app is app.use_app
-    assert visus.desktop.__version__ == "0.4.5"
+    assert visus.desktop.__version__ == "0.4.6"
 
 
 def test_mcp_use_app_devolve_a_janela() -> None:
