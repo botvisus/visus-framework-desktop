@@ -55,10 +55,15 @@ class TestExecuteCommand:
         assert [c.args for c in hotkey.call_args_list] == [("alt",), ("h",)]
 
     def test_sequence_presses_one_after_another(self, commander):
-        with patch("pyautogui.hotkey") as hotkey,                 patch("visus.desktop.core.keyboard_commands.time.sleep"):
+        with patch("pyautogui.hotkey") as hotkey, patch(
+            "visus.desktop.core.keyboard_commands.time.sleep"
+        ):
             assert commander.execute_command("Alt, H, O, I") is True
         assert [c.args for c in hotkey.call_args_list] == [
-            ("alt",), ("h",), ("o",), ("i",)
+            ("alt",),
+            ("h",),
+            ("o",),
+            ("i",),
         ]
 
     @pytest.mark.parametrize(
@@ -85,7 +90,9 @@ class TestExecuteCommand:
         hotkey.assert_called_once_with(*keys)
 
     def test_sequence_stops_at_an_unknown_step(self, commander):
-        with patch("pyautogui.hotkey") as hotkey,                 patch("visus.desktop.core.keyboard_commands.time.sleep"):
+        with patch("pyautogui.hotkey") as hotkey, patch(
+            "visus.desktop.core.keyboard_commands.time.sleep"
+        ):
             assert commander.execute_command("Alt, Banana, I") is False
         assert [c.args for c in hotkey.call_args_list] == [("alt",)]
 
@@ -106,16 +113,15 @@ class TestGetAvailableCommands:
 
 
 class TestTypeText:
-    def test_calls_pyautogui_typewrite(self, commander):
-        with patch(
-            "visus.desktop.core.keyboard_commands.pyautogui.typewrite"
-        ) as tw:
+    def test_types_literally_on_any_keyboard(self, commander):
+        # not pyautogui.typewrite: it pressed Ctrl+Alt+Q for "/" on an ABNT2 keyboard
+        with patch("visus.desktop.core.human_typing.type_literally") as tw:
             commander.type_text("hello", interval=0.1)
-        tw.assert_called_once_with("hello", interval=0.1)
+        tw.assert_called_once_with("hello", 0.1)
 
-    def test_typewrite_failure_raises_task_execution_error(self, commander):
+    def test_typing_failure_raises_task_execution_error(self, commander):
         with patch(
-            "visus.desktop.core.keyboard_commands.pyautogui.typewrite",
+            "visus.desktop.core.human_typing.type_literally",
             side_effect=RuntimeError("device gone"),
         ):
             with pytest.raises(TaskExecutionError, match="Error typing text"):
@@ -128,9 +134,7 @@ class TestProcessSendtextCommand:
     def _run(self, commander, text):
         with patch("pyautogui.hotkey") as hotkey, patch(
             "pyautogui.press"
-        ) as press, patch("pyperclip.copy") as copy, patch(
-            "time.sleep"
-        ):
+        ) as press, patch("pyperclip.copy") as copy, patch("time.sleep"):
             commander.process_sendtext_command(text)
         return hotkey, press, copy
 

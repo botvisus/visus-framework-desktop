@@ -354,7 +354,7 @@ from .utils.retry import retry
 from .utils.text_filters import clean_text, limpar_texto, matches_filter
 
 # Library version
-__version__ = "0.4.7"
+__version__ = "0.4.8"
 __author__ = "Matheus Pereira"
 __email__ = "matheuszwilkdev@gmail.com"
 __license__ = "MIT"
@@ -2712,8 +2712,10 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
                 pyperclip.copy(text_to_write)
                 pyautogui.hotkey("ctrl", "v")
             except Exception:
-                # Fallback to direct typing
-                pyautogui.write(text_to_write)
+                # Fallback to direct typing, right on any keyboard layout
+                from .core.human_typing import type_literally
+
+                type_literally(text_to_write)
             time.sleep(0.1)
 
     def execute_with_backtrack_between_tasks(self, tasks_list):

@@ -17,17 +17,53 @@ from ..exceptions import TaskExecutionError
 _PYAUTOGUI_KEYS = frozenset(k.lower() for k in pyautogui.KEYBOARD_KEYS)
 # what people (and AI agents) call a key -> pyautogui's name
 _KEY_ALIASES = {
-    "control": "ctrl", "cmd": "win", "super": "win", "windows": "win", "meta": "win",
-    "option": "alt", "return": "enter", "escape": "esc", "del": "delete",
-    "bksp": "backspace", "spacebar": "space", "pgup": "pageup", "pgdn": "pagedown",
-    "arrowup": "up", "arrowdown": "down", "arrowleft": "left", "arrowright": "right",
-    "prtsc": "printscreen", "prtscr": "printscreen", "prntscrn": "printscreen",
-    "menu": "apps", "contextmenu": "apps", "break": "pause", "ins": "insert",
-    "plus": "+", "minus": "-", "hyphen": "-", "comma": ",", "period": ".", "dot": ".",
-    "slash": "/", "backslash": "\\", "semicolon": ";", "colon": ":", "quote": "'",
-    "apostrophe": "'", "backquote": "`", "backtick": "`", "grave": "`", "equals": "=",
-    "equal": "=", "tilde": "~", "openbracket": "[", "closebracket": "]",
-    "volup": "volumeup", "voldown": "volumedown", "mute": "volumemute",
+    "control": "ctrl",
+    "cmd": "win",
+    "super": "win",
+    "windows": "win",
+    "meta": "win",
+    "option": "alt",
+    "return": "enter",
+    "escape": "esc",
+    "del": "delete",
+    "bksp": "backspace",
+    "spacebar": "space",
+    "pgup": "pageup",
+    "pgdn": "pagedown",
+    "arrowup": "up",
+    "arrowdown": "down",
+    "arrowleft": "left",
+    "arrowright": "right",
+    "prtsc": "printscreen",
+    "prtscr": "printscreen",
+    "prntscrn": "printscreen",
+    "menu": "apps",
+    "contextmenu": "apps",
+    "break": "pause",
+    "ins": "insert",
+    "plus": "+",
+    "minus": "-",
+    "hyphen": "-",
+    "comma": ",",
+    "period": ".",
+    "dot": ".",
+    "slash": "/",
+    "backslash": "\\",
+    "semicolon": ";",
+    "colon": ":",
+    "quote": "'",
+    "apostrophe": "'",
+    "backquote": "`",
+    "backtick": "`",
+    "grave": "`",
+    "equals": "=",
+    "equal": "=",
+    "tilde": "~",
+    "openbracket": "[",
+    "closebracket": "]",
+    "volup": "volumeup",
+    "voldown": "volumedown",
+    "mute": "volumemute",
 }
 
 logger = logging.getLogger(__name__)
@@ -312,8 +348,12 @@ class KeyboardCommander:
             TaskExecutionError: If there is an error while typing
         """
         try:
+            from .human_typing import type_literally
+
             logger.info(f"Typing text: '{text}'")
-            pyautogui.typewrite(text, interval=interval)
+            type_literally(
+                text, interval
+            )  # certo em qualquer teclado (o typewrite errava o "/" no ABNT2)
             logger.info("Text typed successfully")
         except Exception as e:
             error_msg = f"Error typing text '{text}': {e}"
@@ -376,7 +416,9 @@ class KeyboardCommander:
             time.sleep(0.05)
         except Exception as exc:  # clipboard unavailable -> reliable-ish typing
             logger.debug("Clipboard paste failed (%s); typing instead", exc)
-            pyautogui.typewrite(text, interval=max(interval, 0.02))
+            from .human_typing import type_literally
+
+            type_literally(text, max(interval, 0.02))
 
     def process_sendtext_command(self, full_text_command: str) -> None:
         """

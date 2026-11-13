@@ -34,15 +34,17 @@ class TestTypeWithTokens:
         # Each literal paste is a Ctrl+V.
         assert pg.hotkey.call_args_list.count(call("ctrl", "v")) == 2
 
-    def test_falls_back_to_typewrite_when_clipboard_unavailable(self):
+    def test_falls_back_to_typing_when_clipboard_unavailable(self):
         kc = KeyboardCommander()
         with patch(
             "visus.desktop.utils.clipboard.copy",
             side_effect=RuntimeError("clipboard locked"),
-        ), patch("visus.desktop.core.keyboard_commands.pyautogui") as pg:
+        ), patch("visus.desktop.core.keyboard_commands.pyautogui"), patch(
+            "visus.desktop.core.human_typing.type_literally"
+        ) as typed:
             kc.type_with_tokens("hello")
-        pg.typewrite.assert_called_once()
-        assert pg.typewrite.call_args[0][0] == "hello"
+        typed.assert_called_once()
+        assert typed.call_args[0][0] == "hello"
 
     def test_trailing_and_tab_tokens(self):
         kc = KeyboardCommander()

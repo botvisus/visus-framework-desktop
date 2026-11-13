@@ -31,9 +31,9 @@ class TestProcessSendtextInternals:
         return vd.VisusBot({"show_overlay": False})
 
     def test_ctrl_a_processed(self, bot):
-        with patch("pyautogui.hotkey") as hk, patch(
-            "pyperclip.copy"
-        ), patch("time.sleep"):
+        with patch("pyautogui.hotkey") as hk, patch("pyperclip.copy"), patch(
+            "time.sleep"
+        ):
             bot._process_sendtext("{ctrl}arest")
         hk.assert_any_call("ctrl", "a")
 
@@ -58,10 +58,12 @@ class TestProcessSendtextInternals:
             bot._process_sendtext("{enter}")
         press.assert_any_call("enter")
 
-    def test_pyperclip_failure_falls_back_to_pyautogui_write(self, bot):
+    def test_pyperclip_failure_falls_back_to_typing(self, bot):
         with patch("pyautogui.hotkey"), patch(
             "pyperclip.copy", side_effect=RuntimeError("no clipboard")
-        ), patch("pyautogui.write") as write, patch("time.sleep"):
+        ), patch("visus.desktop.core.human_typing.type_literally") as write, patch(
+            "time.sleep"
+        ):
             bot._process_sendtext("plain text")
         write.assert_called_once_with("plain text")
 
@@ -96,9 +98,7 @@ class TestExecuteWithBacktrackBetweenTasks:
         assert out == [False]
 
     def test_exception_inside_task_recorded_as_failure(self, bot):
-        with patch.object(
-            bot, "click_text", side_effect=RuntimeError("boom")
-        ):
+        with patch.object(bot, "click_text", side_effect=RuntimeError("boom")):
             out = bot.execute_with_backtrack_between_tasks(
                 [{"type": "text", "params": {"text": "x"}}]
             )
@@ -149,18 +149,14 @@ class TestVisusBotInternals:
         return vd.VisusBot({"show_overlay": False})
 
     def test_click_text_internal_returns_false_on_no_location(self, bot):
-        with patch.object(
-            bot.executor, "_find_text_location", return_value=None
-        ):
+        with patch.object(bot.executor, "_find_text_location", return_value=None):
             out = bot._click_text_internal(
                 "Login", (0, 0, 10, 10), "letters", 0, "left", 1, 1, None
             )
         assert out is False
 
     def test_click_image_internal_returns_false_on_no_location(self, bot):
-        with patch.object(
-            bot.executor, "_locate_image_with_retry", return_value=None
-        ):
+        with patch.object(bot.executor, "_locate_image_with_retry", return_value=None):
             out = bot._click_image_internal(
                 "a.png", (0, 0, 10, 10), 0.9, 0, "left", 1, True, None
             )

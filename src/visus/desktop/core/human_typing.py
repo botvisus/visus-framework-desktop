@@ -1,11 +1,15 @@
 """Digitar como uma pessoa no teclado: uma tecla por caractere, na fila de entrada do
 sistema -- nada de área de transferência nem de mensagens para uma janela.
 
-* letras e símbolos ASCII: a tecla de verdade (``pyautogui``), o que jogos, área de
-  trabalho remota e Citrix esperam;
-* acentos e o resto do Unicode: no Windows, ``SendInput`` com ``KEYEVENTF_UNICODE``
-  (a mesma fila do teclado físico, independente do layout -- o ``typewrite`` do
-  pyautogui erra "á" num teclado ABNT2); no Linux, ``xdotool type``;
+* no Windows, a tecla de verdade (o que jogos, área de trabalho remota e Citrix
+  esperam) só quando ela é PROVADA no teclado da janela da frente: a tecla, sozinha ou
+  com Shift, faz exatamente aquele caractere ali (``ToUnicodeEx`` no layout dela, com o
+  CapsLock de agora). O resto -- AltGr, tecla morta (til, circunflexo, acento agudo),
+  CapsLock que inverte, caractere que o teclado não tem -- vai por ``SendInput`` com
+  ``KEYEVENTF_UNICODE`` (a mesma fila do teclado físico, independente de idioma e
+  layout). O pyautogui mandava Ctrl+Alt+Q para o "/" de um ABNT2 e a Calculadora recebia
+  "4422" em vez de "44/22"; e montava o mapa no layout do script, não no da janela;
+* no Linux, ``xdotool type`` (Unicode);
 * ``\\n`` e ``\\t`` são Enter e Tab, e os marcadores ``{enter}``, ``{tab}``, ``{esc}``,
   ``{backspace}``, ``{del}`` e ``{ctrl}a`` valem em QUALQUER posição do texto.
 
@@ -21,8 +25,10 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Callable
+from typing import Any
 
-__all__ = ["type_like_a_person"]
+__all__ = ["type_like_a_person", "type_literally"]
 
 _TOKENS = {
     "{enter}": "enter",
@@ -91,20 +97,119 @@ def _send_unicode(char: str) -> None:
         raise OSError(f"SendInput typed {sent} of {len(events)} events for {char!r}")
 
 
+_VK_SHIFT = 0x10
+_VK_CAPITAL = 0x14
+_TOUNICODE_KEEP_STATE = 0x4  # o ToUnicodeEx só consulta: não mexe no estado do teclado
+_user32_typed: Any = None
+
+
+def _user32() -> Any:
+    """O user32 com os tipos certos (uma instância própria: o ``ctypes.windll`` é de todos,
+    e trocar os tipos dele mudaria o pyautogui e quem mais o usa)."""
+    global _user32_typed
+    if _user32_typed is None:
+        u = ctypes.WinDLL("user32")  # type: ignore[attr-defined]
+        u.GetForegroundWindow.restype = ctypes.c_void_p
+        u.GetWindowThreadProcessId.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        u.GetWindowThreadProcessId.restype = ctypes.c_ulong
+        u.GetKeyboardLayout.argtypes = [ctypes.c_ulong]
+        u.GetKeyboardLayout.restype = ctypes.c_void_p
+        u.VkKeyScanExW.argtypes = [ctypes.c_wchar, ctypes.c_void_p]
+        u.VkKeyScanExW.restype = ctypes.c_short
+        u.MapVirtualKeyExW.argtypes = [ctypes.c_uint, ctypes.c_uint, ctypes.c_void_p]
+        u.MapVirtualKeyExW.restype = ctypes.c_uint
+        u.ToUnicodeEx.argtypes = [
+            ctypes.c_uint,
+            ctypes.c_uint,
+            ctypes.POINTER(ctypes.c_ubyte),
+            ctypes.c_wchar_p,
+            ctypes.c_int,
+            ctypes.c_uint,
+            ctypes.c_void_p,
+        ]
+        u.ToUnicodeEx.restype = ctypes.c_int
+        u.GetKeyState.argtypes = [ctypes.c_int]
+        u.GetKeyState.restype = ctypes.c_short
+        _user32_typed = u
+    return _user32_typed
+
+
+def _front_layout() -> int | None:
+    """O teclado (HKL) da janela da frente -- quem recebe as teclas. Cada janela pode ter
+    o seu (o Windows deixa um idioma por app); sem janela, o do script."""
+    u = _user32()
+    thread = u.GetWindowThreadProcessId(u.GetForegroundWindow(), None)
+    layout: int | None = u.GetKeyboardLayout(thread) or u.GetKeyboardLayout(0)
+    return layout
+
+
+def _real_key(
+    char: str, layout: int | None, caps_lock: bool
+) -> tuple[int, int, bool] | None:
+    """``(vk, scan, shift)`` da tecla que faz EXATAMENTE ``char`` nesse teclado, sozinha ou
+    com Shift; ``None`` quando não há uma assim (vai pelo Unicode). Conferido com o
+    ``ToUnicodeEx``: tecla morta, AltGr, Ctrl e o CapsLock que inverte ficam de fora."""
+    if len(char) != 1 or ord(char) > 0xFFFF or not char.isprintable():
+        return None
+    u = _user32()
+    found = int(u.VkKeyScanExW(char, layout))
+    if found == -1:
+        return None  # esse teclado não tem o caractere
+    vk, mods = found & 0xFF, (found >> 8) & 0xFF
+    if mods & ~0x01:
+        return None  # pede Ctrl, Alt ou AltGr: um app pode ler como atalho
+    scan = int(u.MapVirtualKeyExW(vk, 0, layout))  # MAPVK_VK_TO_VSC
+    state = (ctypes.c_ubyte * 256)()
+    if mods & 0x01:
+        state[_VK_SHIFT] = 0x80
+    if caps_lock:
+        state[_VK_CAPITAL] = 0x01
+    out = ctypes.create_unicode_buffer(8)
+    made = u.ToUnicodeEx(vk, scan, state, out, 8, _TOUNICODE_KEEP_STATE, layout)
+    if made != 1 or out.value[:1] != char:
+        return None  # tecla morta (-1), outro caractere, CapsLock trocando a caixa
+    return vk, scan, bool(mods & 0x01)
+
+
+def _send_key(vk: int, scan: int, shift: bool) -> None:
+    """A tecla de verdade (com o scan code, que jogos e Citrix leem), Shift em volta se
+    precisar -- num SendInput só, sem tecla da pessoa no meio."""
+    keys = [(vk, scan)]
+    if shift:
+        shift_scan = int(_user32().MapVirtualKeyExW(_VK_SHIFT, 0, None))
+        keys = [(_VK_SHIFT, shift_scan), *keys]
+    events = []
+    for code, sc in keys:
+        event = _INPUT(type=_INPUT_KEYBOARD)
+        event.u.ki = _KEYBDINPUT(code, sc, 0, 0, 0)
+        events.append(event)
+    for code, sc in reversed(keys):
+        event = _INPUT(type=_INPUT_KEYBOARD)
+        event.u.ki = _KEYBDINPUT(code, sc, _KEYEVENTF_KEYUP, 0, 0)
+        events.append(event)
+    array = (_INPUT * len(events))(*events)
+    sent = ctypes.windll.user32.SendInput(len(events), array, ctypes.sizeof(_INPUT))  # type: ignore[attr-defined]
+    if sent != len(events):
+        raise OSError(f"SendInput pressed {sent} of {len(events)} key events")
+
+
 def _type_chars_windows(chunk: str, interval: float) -> None:
     import pyautogui
 
+    layout = _front_layout()
+    caps_lock = bool(_user32().GetKeyState(_VK_CAPITAL) & 1)
     for char in chunk:
+        pyautogui.failSafeCheck()  # o mouse no canto da tela para tudo, como antes
         if char == "\n":
             pyautogui.press("enter", _pause=False)
         elif char == "\t":
             pyautogui.press("tab", _pause=False)
-        elif char.isascii() and char.isprintable():
-            pyautogui.write(
-                char, _pause=False
-            )  # a tecla de verdade (VK), com Shift se for o caso
         else:
-            _send_unicode(char)
+            key = _real_key(char, layout, caps_lock)
+            if key is not None:
+                _send_key(*key)
+            else:
+                _send_unicode(char)
         if interval:
             time.sleep(interval)
 
@@ -121,16 +226,26 @@ def _type_chars_fallback(chunk: str, interval: float) -> None:
     pyautogui.write(chunk, interval=interval)
 
 
+def _chars() -> Callable[[str, float], None]:
+    if sys.platform == "win32":
+        return _type_chars_windows
+    if shutil.which("xdotool"):
+        return _type_chars_linux
+    return _type_chars_fallback
+
+
+def type_literally(text: str, interval: float = 0.02) -> None:
+    """Digita ``text`` como está: só a quebra de linha e o Tab viram Enter/Tab, e
+    ``{enter}`` e afins saem como texto -- o que o ``typewrite`` do pyautogui fazia, certo
+    em qualquer teclado."""
+    _chars()(text.replace("\r\n", "\n"), interval)
+
+
 def type_like_a_person(text: str, interval: float = 0.02) -> None:
     """Digita ``text`` tecla por tecla, como uma pessoa (ver o módulo)."""
     import pyautogui
 
-    if sys.platform == "win32":
-        chars = _type_chars_windows
-    elif shutil.which("xdotool"):
-        chars = _type_chars_linux
-    else:
-        chars = _type_chars_fallback
+    chars = _chars()
     for piece in _SPLIT.split(text.replace("\r\n", "\n")):
         if not piece:
             continue

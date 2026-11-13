@@ -6,6 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-11-13
+
+### Fixed
+- Typing is right on ANY keyboard layout and language. `type_text` (and the native fill,
+  the CLI and the no-clipboard fallbacks) presses the real key only when it is PROVEN on
+  the layout of the window in front: that key, alone or with Shift, makes exactly that
+  character there (`ToUnicodeEx`, with the current CapsLock). Everything else -- AltGr
+  characters, dead keys, CapsLock flipping the case, characters the layout does not
+  have -- goes as Unicode input (`KEYEVENTF_UNICODE`), independent of the layout.
+  pyautogui pressed Ctrl+Alt+Q for "/" on a Brazilian ABNT2 keyboard, so the Calculator got
+  "4422" for "44/22", and it built its key map on the script's layout, not the window's.
+  Measured on a real window: before, "01/12/2026" arrived as "01Q12Q2026" on a US window,
+  "?" as "W" and "~" as "^" on ABNT2, and "Ação" as "açãO" with CapsLock on; now the text
+  arrives exactly, on ABNT2 and US, with and without CapsLock. Checked on the Russian,
+  German, French and Japanese layouts too. Moving the mouse to a screen corner still
+  stops the typing (pyautogui's fail-safe). Shortcuts, mouse and the rest of pyautogui are
+  unchanged.
+
 ## [0.4.7] - 2026-11-13
 
 ### Fixed
