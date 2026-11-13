@@ -395,7 +395,7 @@ def _create_overlay_window(win_x, win_y, win_w, win_h):
 # The highlight is for the PERSON watching: it must not show up in screen captures,
 # or the next step's image/OCR search (and the step screenshot) would see the green box
 # over the target. WDA_EXCLUDEFROMCAPTURE (Windows 10 2004+) keeps it visible on screen
-# and out of every capture. Measured: 1120 green px in a capture without it, 0 with it.
+# and out of every capture. Measured: 1140 green px in a capture without it, 0 with it.
 _WDA_EXCLUDEFROMCAPTURE = 0x00000011
 
 

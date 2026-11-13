@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The on-screen highlight no longer shows up in screen captures (`SetWindowDisplayAffinity`
   with `WDA_EXCLUDEFROMCAPTURE`): it is for the person watching, and in a capture it sat
   over the target -- the next step's image/OCR search and the step screenshot saw the
-  green box. Measured: 1120 green px in a capture of a highlighted box before, 0 now.
+  green box. Measured on the library highlight: 1140 green px in a capture before, 0 now.
 
 ## [0.4.5] - 2026-11-13
 
