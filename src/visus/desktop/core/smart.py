@@ -223,6 +223,8 @@ def smart_click(
     retries: int = 0,
     delay: float = 0.3,
     bot: Any = None,
+    occurrence: int = 1,
+    double: bool = False,
 ) -> dict:
     """Click a target by cascading native -> image -> ocr -> coordinates.
 
@@ -265,7 +267,8 @@ def smart_click(
                 image,
                 region=area,
                 confidence=confidence,
-                mouse_button=button,
+                mouse_button="double left" if double else button,
+                occurrence=occurrence,
             ):
                 return {"clicked": True, "method": "image", "tried": tried}
         elif method == "ocr":
@@ -276,7 +279,13 @@ def smart_click(
             if area is False:
                 continue
             tried.append("ocr")
-            if bot.click_text(query, region=area, mouse_button=button):
+            if bot.click_text(
+                query,
+                region=area,
+                mouse_button="double left" if double else button,
+                occurrence=occurrence,
+                confidence_threshold=confidence_threshold,
+            ):
                 return {"clicked": True, "method": "ocr", "tried": tried}
         elif method == "coordinates":
             if coordinates is None:

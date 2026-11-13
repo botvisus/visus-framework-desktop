@@ -295,6 +295,34 @@ class TestRpaFailures:
         assert reason in event["error"]
 
 
+    def test_smart_click_in_rpa_falls_through_to_ocr(self, tmp_path, monkeypatch):
+        """A imagem não acha: dentro do rpa() isso NÃO para a execução -- o OCR acha
+        e o relatório tem UM passo, OK, 'via ocr'."""
+        calls = []
+        monkeypatch.setattr(vd.VisusBot, "click_image", lambda self, *a, **k: calls.append(("image", k)) or False)
+        monkeypatch.setattr(vd.VisusBot, "click_text", lambda self, *a, **k: calls.append(("ocr", k)) or True)
+        out = tmp_path / "run"
+        with vd.rpa(outdir=out, config=QUIET, summary=False) as bot:
+            result = bot.smart_click("Salvar", image="salvar.png", occurrence=2, double=True)
+        assert result["method"] == "ocr"
+        (event,) = _events(out)
+        assert event["type"] == "smart_click" and event["success"]
+        assert event["output"] == "via ocr"
+        assert calls[0][1]["occurrence"] == 2 and calls[0][1]["mouse_button"] == "double left"
+        assert calls[1][1]["occurrence"] == 2
+
+    def test_smart_click_failure_names_what_it_tried(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(vd.VisusBot, "click_image", lambda self, *a, **k: False)
+        monkeypatch.setattr(vd.VisusBot, "click_text", lambda self, *a, **k: False)
+        out = tmp_path / "run"
+        with pytest.raises(SystemExit):
+            with vd.rpa(outdir=out, config=QUIET, summary=False) as bot:
+                bot.smart_click("Salvar", image="salvar.png")
+        (event,) = _events(out)
+        assert event["type"] == "smart_click" and not event["success"]
+        assert "not found by image nor by ocr text 'Salvar'" in event["error"]
+
+
 class _FakeReporter:
     """Stands in for ``runpilot.Orchestrator``: keeps every streamed step."""
 

@@ -354,7 +354,7 @@ from .utils.retry import retry
 from .utils.text_filters import clean_text, limpar_texto, matches_filter
 
 # Library version
-__version__ = "0.4.4"
+__version__ = "0.4.5"
 __author__ = "Matheus Pereira"
 __email__ = "matheuszwilkdev@gmail.com"
 __license__ = "MIT"
@@ -366,6 +366,17 @@ logger = logging.getLogger(__name__)
 # Each public action records itself as one step of the run report while a task
 # session is open (``rpa()`` opens one) -- see ``core/recording.py``.
 _records_in_session = records_step
+
+
+def _smart_outcome(result, params):
+    """``smart_click``: OK com o método que achou; senão o que cada um tentou."""
+    result = result or {}
+    if result.get("clicked"):
+        return True, None, f"via {result.get('method')}"
+    tried = result.get("tried") or []
+    what = f" text '{params.get('query')}'" if params.get("query") else ""
+    how = " nor by ".join(tried) if tried else "any method"
+    return False, f"not found by {how}{what}", None
 
 
 def _use_app_outcome(result, params):
@@ -2464,6 +2475,47 @@ class VisusBot(CapabilitiesMixin, KeyboardMixin):
         from .core.process import open_app
 
         return open_app(target, wait_window=wait_window, timeout=timeout)
+
+    @_records_in_session("smart_click", check=_smart_outcome)
+    def smart_click(
+        self,
+        query=None,
+        *,
+        image=None,
+        search_region=None,
+        order=("image", "ocr"),
+        occurrence=1,
+        button="left",
+        double=False,
+        confidence=0.9,
+        confidence_threshold=75.0,
+        timeout=5.0,
+    ):
+        """
+        Click an element by cascading the ways to find it -- ``order`` among
+        ``"image"`` (``image``), ``"ocr"`` (``query``), ``"native"``, ``"coordinates"``
+        -- inside ``search_region`` (screen ``[x, y, w, h]``; ``AppWindow.region()``
+        for a program's whole window). ONE step of the report: the attempts inside
+        don't stop the run; it fails only when every method failed.
+
+        Returns:
+            dict: ``{clicked, method, tried}``
+        """
+        from .core.smart import smart_click as _smart
+
+        return _smart(
+            query,
+            image=image,
+            search_region=list(search_region) if search_region else None,
+            order=list(order) if order else None,
+            occurrence=occurrence,
+            button=button,
+            double=double,
+            confidence=confidence,
+            confidence_threshold=confidence_threshold,
+            timeout=timeout,
+            bot=self,
+        )
 
     @_records_in_session("use_app", check=_use_app_outcome)
     def use_app(self, app=None, window=None, file=None, timeout=30.0):

@@ -73,7 +73,7 @@ Full per-parameter detail is in the sections below. A `?` marks an optional para
 | `get_window` | title_substring | Resolve a window by title substring; no focus required. |
 | `capture_element` | label, auto?, text?, native?, region?, window?, search_region?, click?, mouse_button?, padding?, confidence_threshold?, native_timeout?, elements_dir? | Locate a UI element, save a reusable template + annotated shot, click. |
 | `smart_find` | query?, image?, coordinates?, window?, pid?, control_type?, auto_id?, search_region?, confidence?, confidence_threshold?, order?, timeout? | Locate a target by cascading native -> image -> ocr -> coordinates. |
-| `smart_click` | query?, image?, coordinates?, window?, pid?, control_type?, auto_id?, search_region?, button?, confidence?, confidence_threshold?, order?, timeout?, retries?, delay? | Click a target by cascading native -> image -> ocr -> coordinates. |
+| `smart_click` | query?, image?, coordinates?, window?, pid?, control_type?, auto_id?, search_region?, button?, confidence?, confidence_threshold?, order?, timeout?, retries?, delay?, occurrence?, double? | Click a target by cascading native -> image -> ocr -> coordinates. |
 | `native_dump_tree` | window?, pid?, max_depth?, timeout?, backend? | Return the accessibility control tree of a window (no pixel). |
 | `native_snapshot` | window?, pid?, max_depth?, max_items?, timeout?, backend? | The window's ACTIONABLE controls, numbered, deep enough for the Office ribbon. |
 | `native_click` | window?, pid?, title?, control_type?, auto_id?, found_index?, button?, double?, method?, timeout?, retries?, delay?, backend?, at? | Click a control by selector -- no coordinates, no image (UIA); `at=[x, y]` clicks that point inside it (a canvas). |
@@ -261,7 +261,7 @@ overrides the cascade (e.g. `["native"]` to force one, `["ocr","image"]` to
 reorder; default `["native","image","ocr","coordinates"]`). Returns `{found,
 box, method, tried}`.
 
-### `smart_click(query=None, image=None, coordinates=None, window=None, pid=None, control_type=None, auto_id=None, search_region=None, button="left", confidence=0.9, confidence_threshold=75.0, order=None, timeout=5.0, retries=0, delay=0.3) -> dict`
+### `smart_click(query=None, image=None, coordinates=None, window=None, pid=None, control_type=None, auto_id=None, search_region=None, button="left", confidence=0.9, confidence_threshold=75.0, order=None, timeout=5.0, retries=0, delay=0.3, occurrence=1, double=False) -> dict`
 Same inputs; each layer uses its own click action. Returns `{clicked, method,
 tried}`.
 

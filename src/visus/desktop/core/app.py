@@ -54,6 +54,43 @@ class AppWindow(str):
             f"opened={self.opened})"
         )
 
+    def region(
+        self, x: int = 0, y: int = 0, width: int | None = None, height: int | None = None
+    ) -> list:
+        """A região NA TELA de ``(x, y, width, height)`` relativos ao canto superior
+        esquerdo da janela, lida AGORA (a janela pode ter andado). Sem ``width`` /
+        ``height``: até a borda da janela -- ``region()`` é a janela inteira."""
+        left, top, right, bottom = _window_rect(self.hwnd)
+        w = (right - left - x) if width is None else width
+        h = (bottom - top - y) if height is None else height
+        return [left + int(x), top + int(y), int(w), int(h)]
+
+    def point(self, x: int, y: int) -> tuple:
+        """O ponto NA TELA de ``(x, y)`` relativos ao canto da janela, lido agora."""
+        left, top, _right, _bottom = _window_rect(self.hwnd)
+        return (left + int(x), top + int(y))
+
+
+def _window_rect(hwnd: int) -> tuple:
+    """(left, top, right, bottom) da janela, agora."""
+    import win32gui
+
+    return tuple(int(v) for v in win32gui.GetWindowRect(int(hwnd)))
+
+
+def _set_maximized(hwnd: int, maximized: bool | None) -> None:
+    """Deixa a janela maximizada (True) ou restaurada (False); None não mexe."""
+    if maximized is None:
+        return
+    import win32con
+    import win32gui
+
+    is_max = bool(win32gui.GetWindowPlacement(int(hwnd))[1] == win32con.SW_SHOWMAXIMIZED)
+    if maximized and not is_max:
+        win32gui.ShowWindow(int(hwnd), win32con.SW_MAXIMIZE)
+    elif not maximized and is_max:
+        win32gui.ShowWindow(int(hwnd), win32con.SW_RESTORE)
+
 
 def _is_app_id(app: str) -> bool:
     """Id de app empacotado (AUMID): ``Família_hash!App`` -- tem ``!``, não é caminho."""
@@ -149,6 +186,7 @@ def use_app(
     window: str | None = None,
     file: str | None = None,
     timeout: float = 30.0,
+    maximized: bool | None = None,
 ) -> AppWindow:
     """Traz o programa para a frente; se estiver fechado, abre e espera ficar pronto.
 
@@ -161,6 +199,9 @@ def use_app(
             nenhuma com ele, serve qualquer janela do programa.
         file: documento a abrir quando o programa estiver fechado.
         timeout: segundos para a janela aparecer depois de abrir.
+        maximized: ``True`` maximiza, ``False`` restaura, ``None`` (padrão) deixa o
+            tamanho como está -- passos gravados relativos à janela precisam do mesmo
+            estado da captura.
 
     Returns:
         AppWindow: a janela (título vivo, ``hwnd``, ``pid``, ``opened``).
@@ -176,8 +217,11 @@ def use_app(
         hwnd, title, pid = hit
         if not _front(hwnd):
             raise UseAppError(f"'{title}' was found but did not come to the front")
+        _set_maximized(hwnd, maximized)
         return AppWindow(title, hwnd=hwnd, pid=pid, opened=False)
     if app is None:
         raise UseAppError(f"'{window}' is not open - open it before running")
     _open(app, file)
-    return _wait_ready(app, window, timeout, window or _exe_name(app))
+    ready = _wait_ready(app, window, timeout, window or _exe_name(app))
+    _set_maximized(ready.hwnd, maximized)
+    return ready

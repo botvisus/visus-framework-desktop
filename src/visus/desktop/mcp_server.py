@@ -1368,6 +1368,8 @@ def smart_click(
     timeout: float = 5.0,
     retries: int = 0,
     delay: float = 0.3,
+    occurrence: int = 1,
+    double: bool = False,
 ) -> dict:
     """Click a target by cascading native -> image -> ocr -> coordinates.
 
@@ -1389,6 +1391,7 @@ def smart_click(
         search_region=_coerce_region(search_region), button=button,
         confidence=confidence, confidence_threshold=confidence_threshold,
         order=order, timeout=timeout, retries=retries, delay=delay,
+        occurrence=occurrence, double=double,
         bot=get_bot(),
     )
 

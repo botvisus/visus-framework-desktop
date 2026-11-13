@@ -210,3 +210,41 @@ def test_app_window_is_a_str_with_handle() -> None:
     assert win == "Pasta1 - Excel"
     assert isinstance(win, str)
     assert (win.hwnd, win.pid, win.opened) == (10, 20, True)
+
+
+# -- região/ponto relativos à janela e o estado de maximizado -------------------------
+def test_region_reads_the_window_where_it_is_now(monkeypatch: pytest.MonkeyPatch) -> None:
+    rects = iter([(100, 50, 900, 650), (300, 80, 1100, 680)])
+    monkeypatch.setattr(app_mod, "_window_rect", lambda hwnd: next(rects))
+    win = AppWindow("Pasta1 - Excel", hwnd=5, pid=50, opened=False)
+    assert win.region(10, 20, 30, 40) == [110, 70, 30, 40]
+    assert win.region(10, 20, 30, 40) == [310, 100, 30, 40]  # a janela andou
+
+
+def test_region_without_size_goes_to_the_window_edge(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(app_mod, "_window_rect", lambda hwnd: (100, 50, 900, 650))
+    win = AppWindow("x", hwnd=5, pid=50, opened=False)
+    assert win.region() == [100, 50, 800, 600]
+    assert win.region(200, 100) == [300, 150, 600, 500]
+
+
+def test_point_is_relative_to_the_corner(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(app_mod, "_window_rect", lambda hwnd: (100, 50, 900, 650))
+    assert AppWindow("x", hwnd=5, pid=50, opened=False).point(7, 9) == (107, 59)
+
+
+def test_use_app_maximizes_or_restores_when_asked(desk: FakeDesktop, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[int, object]] = []
+    monkeypatch.setattr(app_mod, "_set_maximized", lambda hwnd, m: calls.append((hwnd, m)))
+    desk.add(1, "Pasta1 - Excel", 10, "EXCEL.EXE")
+    use_app("EXCEL.EXE", maximized=True)
+    use_app("EXCEL.EXE", maximized=False)
+    assert calls == [(1, True), (1, False)]
+
+
+def test_use_app_leaves_the_size_alone_by_default(desk: FakeDesktop, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[int, object]] = []
+    monkeypatch.setattr(app_mod, "_set_maximized", lambda hwnd, m: calls.append((hwnd, m)))
+    desk.add(1, "Pasta1 - Excel", 10, "EXCEL.EXE")
+    use_app("EXCEL.EXE")
+    assert calls == [(1, None)]  # None = não mexe (o _set_maximized ignora)

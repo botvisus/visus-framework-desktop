@@ -596,6 +596,7 @@ _TYPE_TITLES = {
     "extract_text": "Read text",
     "open_app": "Open",
     "use_app": "Use app",
+    "smart_click": "Smart click",
     "scroll": "Scroll",
     "drag": "Drag",
     "triple_click": "Triple-click",

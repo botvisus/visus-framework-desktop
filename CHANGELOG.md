@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-11-13
+
+### Added
+- `AppWindow.region(x=0, y=0, width=None, height=None)` / `AppWindow.point(x, y)` — a
+  region / point ON SCREEN from coordinates relative to the window's top-left corner,
+  read at call time (the window may have moved since `use_app`). `region()` is the
+  whole window.
+- `use_app(..., maximized=True/False)` — leave the window maximized / restored, as it
+  was when the steps were recorded (`None`, the default, leaves it alone).
+- `bot.smart_click(...)` — ONE step of the report: the cascade (image → OCR by
+  default) runs inside, so a failed first attempt no longer stops the run before the
+  next one; it fails only when every method failed, saying what it tried. `smart_click`
+  (function and MCP tool) gains `occurrence` and `double`.
+
 ## [0.4.4] - 2026-11-13
 
 ### Added

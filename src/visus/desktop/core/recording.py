@@ -47,6 +47,7 @@ RECORDED_KWARGS = (
     "wait_window",
     "app",
     "file",
+    "query",
     "amount",
     "start_x",
     "start_y",
