@@ -281,17 +281,96 @@ def _collect_windows(title=None, process=None) -> list:
             continue
         out.append((hwnd, wtitle, pid))
     if title:
-
-        def _rank(entry) -> int:
-            wl = entry[1].lower()
-            if wl == needle_t:
-                return 0
-            if wl.startswith(needle_t):
-                return 1
-            return 2
-
-        out.sort(key=_rank)  # estável: preserva o Z-order dentro de cada rank
+        # estável: preserva o Z-order dentro de cada rank
+        out.sort(key=lambda entry: _title_rank(entry[1], needle_t))
     return out
+
+
+def _title_rank(window_title: str, needle: str) -> int:
+    """Quão bem ``window_title`` casa ``needle`` (sem caixa): 0 = exato, 1 = prefixo,
+    2 = substring, 3 = não casa. Menor = melhor."""
+    wl, nl = window_title.lower(), needle.lower()
+    if wl == nl:
+        return 0
+    if wl.startswith(nl):
+        return 1
+    if nl in wl:
+        return 2
+    return 3
+
+
+# -- id do app empacotado (AUMID) -------------------------------------------------
+_FRAME_CLASS = "ApplicationFrameWindow"  # moldura dos apps da loja (UWP)
+_CORE_CLASS = "Windows.UI.Core.CoreWindow"  # a janela do app, filha da moldura
+_PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+_APPMODEL_ERROR_NO_APPLICATION = 15703  # o processo não é de um app empacotado
+
+
+def _window_pid(hwnd) -> int:
+    import win32process
+
+    return int(win32process.GetWindowThreadProcessId(hwnd)[1])
+
+
+def _frame_child_pid(hwnd) -> int | None:
+    """Pid do app hospedado numa moldura UWP: a ``CoreWindow`` filha roda no processo
+    do app (``CalculatorApp.exe``), a moldura no ``ApplicationFrameHost.exe``. ``None``
+    quando ``hwnd`` não é moldura (ou o app está suspenso, sem a filha)."""
+    import win32gui
+
+    if win32gui.GetClassName(hwnd) != _FRAME_CLASS:
+        return None
+    host = _window_pid(hwnd)
+    found: list = []
+
+    def _cb(child, _extra) -> bool:
+        if win32gui.GetClassName(child) == _CORE_CLASS:
+            pid = _window_pid(child)
+            if pid != host:
+                found.append(pid)
+        return True
+
+    win32gui.EnumChildWindows(hwnd, _cb, None)
+    return found[0] if found else None
+
+
+def _process_app_id(pid: int) -> str:
+    """``GetApplicationUserModelId`` do processo -- ``""`` se não for empacotado."""
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    get_id = kernel32.GetApplicationUserModelId
+    get_id.restype = wintypes.LONG
+    get_id.argtypes = [wintypes.HANDLE, ctypes.POINTER(ctypes.c_uint32), wintypes.LPWSTR]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    handle = kernel32.OpenProcess(_PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
+    if not handle:
+        return ""
+    try:
+        length = ctypes.c_uint32(0)
+        rc = get_id(handle, ctypes.byref(length), None)  # 1ª: só o tamanho
+        if rc == _APPMODEL_ERROR_NO_APPLICATION or not length.value:
+            return ""
+        buf = ctypes.create_unicode_buffer(length.value)
+        rc = get_id(handle, ctypes.byref(length), buf)
+        return buf.value if rc == 0 else ""
+    finally:
+        kernel32.CloseHandle(handle)
+
+
+def window_app_id(hwnd) -> str:
+    """O id (AUMID) do app empacotado dono da janela, ex.:
+    ``Microsoft.WindowsCalculator_8wekyb3d8bbwe!App`` -- é o que abre o app por
+    ``shell:AppsFolder\\<id>``. ``""`` se o app não é empacotado, fora do Windows ou
+    se não deu para ler. Nunca levanta."""
+    try:
+        pid = _frame_child_pid(hwnd) or _window_pid(hwnd)
+        return _process_app_id(pid) or ""
+    except Exception:  # noqa: BLE001 -- identificação best-effort
+        return ""
 
 
 def list_windows(title: str | None = None, process: str | None = None) -> list:
