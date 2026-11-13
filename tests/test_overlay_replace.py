@@ -118,6 +118,7 @@ def test_highlight_window_is_excluded_from_screen_captures(monkeypatch) -> None:
         ow, "user32", type("U", (), {"SetWindowDisplayAffinity": staticmethod(
             lambda hwnd, flag: calls.append((hwnd, flag)) or 1
         )})(),
+        raising=False,  # fora do Windows o módulo não tem user32
     )
     assert ow._exclude_from_capture(1234) is True
     assert calls == [(1234, 0x11)]
