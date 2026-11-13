@@ -94,6 +94,16 @@ def _selector_kwargs(
     return kwargs
 
 
+def _is_window(hwnd) -> bool:
+    """A janela ``hwnd`` ainda existe?"""
+    try:
+        import win32gui
+
+        return bool(win32gui.IsWindow(int(hwnd)))
+    except Exception:
+        return False
+
+
 def _connect_top(window, pid, connect_timeout: float, backend="uia"):
     """Connect to the target app and return its top window, or None.
 
@@ -123,9 +133,14 @@ def _connect_top(window, pid, connect_timeout: float, backend="uia"):
     from pywinauto import Application, Desktop
 
     if window is not None and pid is None:
-        from .locators import find_window_handle
+        # a AppWindow do use_app traz o handle: vale mesmo que o título seja outro
+        # ("Pasta1 - Excel" no lugar do "vendas.xlsx - Excel" da captura); handle
+        # morto (a janela fechou) cai para o título, como uma janela por texto
+        hwnd = getattr(window, "hwnd", None)
+        if not (hwnd and _is_window(hwnd)):
+            from .locators import find_window_handle
 
-        hwnd = find_window_handle(window)
+            hwnd = find_window_handle(str(window))
         if not hwnd:
             return None
         spec = Desktop(backend=backend).window(handle=hwnd)
