@@ -76,7 +76,9 @@ Full per-parameter detail is in the sections below. A `?` marks an optional para
 | `smart_click` | query?, image?, coordinates?, window?, pid?, control_type?, auto_id?, search_region?, button?, confidence?, confidence_threshold?, order?, timeout?, retries?, delay? | Click a target by cascading native -> image -> ocr -> coordinates. |
 | `native_dump_tree` | window?, pid?, max_depth?, timeout?, backend? | Return the accessibility control tree of a window (no pixel). |
 | `native_snapshot` | window?, pid?, max_depth?, max_items?, timeout?, backend? | The window's ACTIONABLE controls, numbered, deep enough for the Office ribbon. |
-| `native_click` | window?, pid?, title?, control_type?, auto_id?, found_index?, button?, double?, method?, timeout?, retries?, delay?, backend? | Click a control by selector -- no coordinates, no image (UIA). |
+| `native_click` | window?, pid?, title?, control_type?, auto_id?, found_index?, button?, double?, method?, timeout?, retries?, delay?, backend?, at? | Click a control by selector -- no coordinates, no image (UIA); `at=[x, y]` clicks that point inside it (a canvas). |
+| `native_drag` | start, end, window?, pid?, title?, control_type?, auto_id?, found_index?, button?, duration?, timeout?, retries?, backend? | Drag inside a control: offsets from its top-left corner (draw on a canvas, move a slider). |
+| `native_scroll` | amount, window?, pid?, title?, control_type?, auto_id?, found_index?, at?, timeout?, retries?, backend? | Turn the mouse wheel over a control (+ up, - down), at a point inside it or its center. |
 | `native_set_text` | text, window?, pid?, title?, control_type?, auto_id?, found_index?, timeout?, retries?, delay?, backend?, secret? | Set the text of an editable control by selector (UIA value pattern). |
 | `native_get_text` | window?, pid?, title?, control_type?, auto_id?, found_index?, timeout?, backend? | Read a control's text/value by selector. Returns the string or None. |
 | `native_get_state` | window?, pid?, title?, control_type?, auto_id?, found_index?, timeout?, backend? | Snapshot a control's state by selector. |
@@ -300,7 +302,7 @@ ribbon's buttons (which `native_dump_tree`'s 3 levels miss). Each item is
 `native_set_text` / `native_get_text` to act on exactly that control. Returns
 `{window, items, more}` (`more` = items past `max_items`).
 
-### `native_click(window=None, pid=None, title=None, control_type=None, auto_id=None, found_index=None, button="left", double=False, method="auto", timeout=5.0, retries=0, delay=0.3, backend="uia") -> bool`
+### `native_click(window=None, pid=None, title=None, control_type=None, auto_id=None, found_index=None, button="left", double=False, method="auto", timeout=5.0, retries=0, delay=0.3, backend="uia", at=None) -> bool`
 `method`: `invoke` (UIA, no mouse) | `click` (real mouse) | `auto` (invoke then
 click). `button`: left|right|middle.
 
@@ -415,6 +417,19 @@ until its window is in front with a steady title (it never opens a second copy).
 among the program's windows; with no `app` it only brings that window to the front.
 Returns `{title, hwnd, pid, opened}` -- pass `title` as `window=` to the `native_*`
 tools -- or `{error}`. While recording it is a step of the report.
+
+### `native_drag(start, end, window=None, pid=None, title=None, control_type=None, auto_id=None, found_index=None, button="left", duration=0.4, timeout=5.0, retries=0, backend="uia") -> bool`
+Drag INSIDE a control located by selector -- draw on Paint's canvas, move a
+slider, select a range. `start` / `end` are `[x, y]` offsets in pixels from the
+control's top-left corner (read its `rect` with `native_get_state`), so the drag
+follows the control wherever the window is. Real mouse: press, move over
+`duration` s, release. While recording it is a step of the report.
+
+### `native_scroll(amount, window=None, pid=None, title=None, control_type=None, auto_id=None, found_index=None, at=None, timeout=5.0, retries=0, backend="uia") -> bool`
+Turn the mouse wheel over a control located by selector: `amount` notches
+(positive up, negative down), at `at=[x, y]` inside it (offset from its top-left
+corner) or its center -- a list, a document, a canvas. While recording it is a
+step of the report.
 
 ### `launch(command, args=None) -> dict`
 Start a process. Returns `{pid, command}`.

@@ -41,7 +41,7 @@ follow the ladder, don't overthink, don't dump screenshots to "look around".
 ►►► METHOD LADDER — for EVERY target, try in this order, stop at the first hit:
   1. NATIVE (no pixels) — `native_dump_tree(window=...)`. If the control is in
      the tree, do EVERYTHING you can here: `native_click` / `native_set_text` /
-     `native_get_text` / `native_wait`. Instant, exact, immune to
+     `native_get_text` / `native_wait` / `native_drag`. Instant, exact, immune to
      theme/DPI/resolution/language. This is the preferred path — use it for as
      much of the flow as the app exposes.
   2. OCR TEXT — only when native can't reach it (tree empty / element absent).
@@ -59,6 +59,11 @@ follow the ladder, don't overthink, don't dump screenshots to "look around".
   4. COORDINATES — `click_at` only if the user gave them. Last resort.
   Unsure which fits? `smart_click` / `smart_find` run all four in order and
   report the winner.
+
+SURFACES (a canvas like Paint's, a map, a chart): where you click or drag matters --
+`native_click(..., at=[x, y])` clicks that point inside the control and
+`native_drag(start=[x, y], end=[x, y], ...)` drags inside it (offsets from the
+control's top-left corner: read its `rect` with `native_get_state`).
 
 RULE OF THUMB: do natively whatever the app exposes; for everything else use
 images. NEVER read a raw `take_screenshot` to find things — that's the slow,
@@ -1535,6 +1540,7 @@ def native_click(
     retries: int = 0,
     delay: float = 0.3,
     backend: str = "uia",
+    at: list[int] | None = None,
 ) -> bool:
     """Click a control by selector -- no coordinates, no image (UIA).
 
@@ -1544,7 +1550,9 @@ def native_click(
     ``retries`` + ``delay`` re-attempt a flaky control (backtrack-style).
     ``backend`` is ``"uia"`` (default) or ``"win32"`` for classic Win32 apps
     (where ``control_type`` matches the class name, e.g. ``Edit``).
-    Most robust automation when the app is accessible.
+    Most robust automation when the app is accessible. ``at=[x, y]`` clicks THAT
+    point inside the control (offset from its top-left corner) -- a spot on a
+    canvas such as Paint's.
     """
     from .core.native_rpa import native_click as _fn
 
@@ -1552,7 +1560,70 @@ def native_click(
         window=window, pid=pid, title=title, control_type=control_type,
         auto_id=auto_id, found_index=found_index, button=button,
         double=double, method=method, timeout=timeout, retries=retries,
-        delay=delay, backend=backend,
+        delay=delay, backend=backend, at=tuple(at) if at else None,
+    )
+
+
+@mcp.tool()
+def native_drag(
+    start: list[int],
+    end: list[int],
+    window: str | None = None,
+    pid: int | None = None,
+    title: str | None = None,
+    control_type: str | None = None,
+    auto_id: str | None = None,
+    found_index: int | None = None,
+    button: str = "left",
+    duration: float = 0.4,
+    timeout: float = 5.0,
+    retries: int = 0,
+    backend: str = "uia",
+) -> bool:
+    """Drag INSIDE a control located by selector (no screen coordinates).
+
+    USE WHEN: drawing on a canvas (Paint: select the ellipse tool, then drag on
+    the canvas), moving a slider, selecting a range. ``start`` / ``end`` are
+    ``[x, y]`` offsets in pixels from the control's top-left corner -- read the
+    control's ``rect`` with ``native_get_state`` to plan them. Real mouse: press,
+    move over ``duration`` s, release. While recording it is a step of the report.
+    """
+    from .core.native_rpa import native_drag as _fn
+
+    return _fn(
+        window=window, pid=pid, start=tuple(start), end=tuple(end), title=title,
+        control_type=control_type, auto_id=auto_id, found_index=found_index,
+        button=button, duration=duration, timeout=timeout, retries=retries,
+        backend=backend,
+    )
+
+
+@mcp.tool()
+def native_scroll(
+    amount: int,
+    window: str | None = None,
+    pid: int | None = None,
+    title: str | None = None,
+    control_type: str | None = None,
+    auto_id: str | None = None,
+    found_index: int | None = None,
+    at: list[int] | None = None,
+    timeout: float = 5.0,
+    retries: int = 0,
+    backend: str = "uia",
+) -> bool:
+    """Turn the mouse wheel over a control located by selector (no screen coordinates).
+
+    USE WHEN: scrolling a list, a document or a canvas. ``amount`` = notches
+    (positive up, negative down); ``at=[x, y]`` = where inside the control (offset
+    from its top-left corner), default its center. While recording it is a step.
+    """
+    from .core.native_rpa import native_scroll as _fn
+
+    return _fn(
+        window=window, pid=pid, amount=amount, at=tuple(at) if at else None, title=title,
+        control_type=control_type, auto_id=auto_id, found_index=found_index,
+        timeout=timeout, retries=retries, backend=backend,
     )
 
 
@@ -2307,7 +2378,8 @@ for _name, _obj in list(globals().items()):
             "click_at", "hybrid_find", "type_text", "keyboard_command",
             "take_screenshot", "save_screenshot", "capture_element",
             "get_window", "get_monitors", "wait_for_stable_screen",
-            "native_dump_tree", "native_snapshot", "native_click", "native_set_text",
+            "native_dump_tree", "native_snapshot", "native_click", "native_drag", "native_scroll",
+            "native_set_text",
             "native_get_text", "native_get_state", "native_wait", "open_app",
             "use_app",
             "smart_find", "smart_click",

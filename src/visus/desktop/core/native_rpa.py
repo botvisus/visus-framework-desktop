@@ -386,6 +386,7 @@ def native_click(
     delay: float = 0.3,
     backend: str = "uia",
     title_re=None,
+    at=None,
 ) -> bool:
     """Click a control located by selector -- no coordinates, no image.
 
@@ -393,6 +394,9 @@ def native_click(
     most robust); ``"click"`` uses ``click_input`` (real mouse on the
     control center); ``"auto"`` (default) tries invoke then falls back to
     click_input. ``retries`` + ``delay`` re-attempt a flaky control.
+    ``at=(x, y)``: click THAT point inside the control (offset in pixels from its
+    top-left corner) with the real mouse -- where it matters on a surface, like
+    Paint's canvas (fill, pick a color, place a point).
     Returns True on success.
     """
     if not _ensure_pywinauto():
@@ -409,8 +413,17 @@ def native_click(
             if not ctrl.exists(timeout=timeout):
                 return False
             _on_target(ctrl)
+            if at is not None:  # um ponto da superfície: o mouse de verdade, ali
+                rect = ctrl.rectangle()
+                point, _ = _drag_points((rect.left, rect.top), at, at)
+                if button == "left":
+                    _activate_if_needed(rect, point)
+                _mouse_click(point, button, 2 if double else 1)
+                _mouse_on(rect)
+                return True
             if double:
                 ctrl.double_click_input()
+                _mouse_on(ctrl.rectangle())
                 return True
             if method in ("invoke", "auto"):
                 try:
@@ -420,6 +433,166 @@ def native_click(
                     if method == "invoke":
                         return False
             ctrl.click_input(button=button)
+            _mouse_on(ctrl.rectangle())
+            return True
+
+        return _run_with_timeout(_job, timeout + connect_timeout) is True
+
+    return bool(_with_retries(_attempt, retries, delay))
+
+
+def _drag_points(origin, start, end):
+    """Os pontos de tela do arrasto: ``start``/``end`` são deslocamentos (px) a partir
+    do canto superior esquerdo do controle."""
+    left, top = int(origin[0]), int(origin[1])
+    return (
+        (left + int(start[0]), top + int(start[1])),
+        (left + int(end[0]), top + int(end[1])),
+    )
+
+
+# O controle em que o MOUSE de verdade agiu por último (o retângulo dele). Uma superfície
+# WinUI 3 -- a tela de desenho do Paint do Windows 11 -- gasta o 1º aperto que chega
+# depois de o mouse agir em outro controle (a faixa de ferramentas): ele só a ativa.
+# Medido: Paint novo, clique na Oval, arrasto na tela = 0 px de tinta; com um clique de
+# ativação no ponto de início antes = a elipse. Arrastos seguidos no mesmo controle
+# não precisam (e não ganham) o clique extra.
+_last_mouse_target = {"rect": None}
+
+
+def _rect_key(rect):
+    return (int(rect.left), int(rect.top), int(rect.right), int(rect.bottom))
+
+
+def _mouse_on(rect) -> None:
+    """O mouse de verdade agiu neste controle."""
+    _last_mouse_target["rect"] = _rect_key(rect)
+
+
+def _activate_if_needed(rect, point) -> None:
+    """Antes de apertar numa superfície: se o mouse agiu por último em OUTRO controle,
+    um clique no próprio ponto de início ativa a superfície (o aperto que ela gasta)."""
+    if _last_mouse_target["rect"] != _rect_key(rect):
+        _mouse_click(point, "left", 1)
+        time.sleep(0.3)
+    _mouse_on(rect)
+
+
+def _mouse_click(point, button: str, clicks: int) -> None:
+    import pyautogui
+
+    pyautogui.click(point[0], point[1], clicks=clicks, interval=0.08, button=button)
+
+
+def _mouse_drag(src, dst, button: str, duration: float) -> None:
+    """Aperta em ``src``, arrasta até ``dst`` em ``duration`` s e solta -- com os
+    movimentos no meio, como uma pessoa (o Paint desenha seguindo o mouse)."""
+    import pyautogui
+
+    pyautogui.moveTo(src[0], src[1])
+    pyautogui.dragTo(dst[0], dst[1], duration=duration, button=button)
+
+
+@records_native("native_drag")
+def native_drag(
+    window=None,
+    pid=None,
+    *,
+    start,
+    end,
+    title=None,
+    control_type=None,
+    auto_id=None,
+    found_index=None,
+    button: str = "left",
+    duration: float = 0.4,
+    timeout: float = 5.0,
+    connect_timeout: float = 2.0,
+    retries: int = 0,
+    delay: float = 0.3,
+    backend: str = "uia",
+    title_re=None,
+) -> bool:
+    """Drag INSIDE a control located by selector -- draw a shape on Paint's canvas,
+    move a slider, select a range. ``start`` / ``end`` are ``(x, y)`` offsets in
+    pixels from the control's top-left corner, so the drag follows the control
+    wherever the window is. Real mouse: press at ``start``, move to ``end`` over
+    ``duration`` seconds, release. Returns True on success."""
+    if not _ensure_pywinauto():
+        return False
+
+    def _attempt():
+        def _job():
+            top = _connect_top(window, pid, connect_timeout, backend)
+            if top is None:
+                return False
+            ctrl = top.child_window(
+                **_selector_kwargs(title, control_type, auto_id, found_index, backend, title_re)
+            )
+            if not ctrl.exists(timeout=timeout):
+                return False
+            _on_target(ctrl)
+            rect = ctrl.rectangle()
+            src, dst = _drag_points((rect.left, rect.top), start, end)
+            if button == "left":
+                _activate_if_needed(rect, src)
+            _mouse_drag(src, dst, button, duration)
+            _mouse_on(rect)
+            return True
+
+        return _run_with_timeout(_job, timeout + connect_timeout + duration) is True
+
+    return bool(_with_retries(_attempt, retries, delay))
+
+
+def _wheel(point, amount: int) -> None:
+    from .mouse_extra import scroll
+
+    scroll(int(amount), int(point[0]), int(point[1]))
+
+
+@records_native("native_scroll")
+def native_scroll(
+    window=None,
+    pid=None,
+    *,
+    amount: int,
+    at=None,
+    title=None,
+    control_type=None,
+    auto_id=None,
+    found_index=None,
+    timeout: float = 5.0,
+    connect_timeout: float = 2.0,
+    retries: int = 0,
+    delay: float = 0.3,
+    backend: str = "uia",
+    title_re=None,
+) -> bool:
+    """Turn the mouse wheel over a control located by selector -- ``amount`` notches,
+    positive up / negative down -- at ``at=(x, y)`` inside it (offset from its
+    top-left corner) or its center: a list, a document, a canvas. Returns True."""
+    if not _ensure_pywinauto():
+        return False
+
+    def _attempt():
+        def _job():
+            top = _connect_top(window, pid, connect_timeout, backend)
+            if top is None:
+                return False
+            ctrl = top.child_window(
+                **_selector_kwargs(title, control_type, auto_id, found_index, backend, title_re)
+            )
+            if not ctrl.exists(timeout=timeout):
+                return False
+            _on_target(ctrl)
+            rect = ctrl.rectangle()
+            if at is None:
+                point = ((rect.left + rect.right) // 2, (rect.top + rect.bottom) // 2)
+            else:
+                point, _ = _drag_points((rect.left, rect.top), at, at)
+            _wheel(point, amount)
+            _mouse_on(rect)
             return True
 
         return _run_with_timeout(_job, timeout + connect_timeout) is True

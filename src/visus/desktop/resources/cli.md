@@ -88,6 +88,8 @@ visus <group> <cmd> --help   # a command's full flag list
 | `visus process kill` | `PID --yes --json` | Terminate by PID (destructive — needs `--yes`). |
 | `visus open` | `TARGET --wait-window=<text> --timeout=<float> --json` | Open an app/document/URL as Windows Run does; `--wait-window` waits until it is ready in front. |
 | `visus use-app` | `[APP] --window=<text> --file=<path> --timeout=<float> --json` | Bring a program to the front; open it (or `--file`) only when it is closed. |
+| `visus native drag` | `[N] --start=X,Y --end=X,Y --button --duration --json` | Drag inside a control (offsets from its top-left corner): draw on a canvas, move a slider. |
+| `visus native scroll` | `[N] --amount=N --at=X,Y --json` | Turn the mouse wheel over a control (+ up, - down), at a point inside it or its center. |
 | `visus clipboard get` | `--json` | Read the clipboard text. |
 | `visus clipboard set` | `TEXT --json` | Put TEXT on the clipboard. |
 | `visus configure` | `CONFIG? --set=<text>… --dry-run --reset --json` | Show / set+persist / reset the CLI config. |

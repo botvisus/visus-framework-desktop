@@ -152,6 +152,7 @@ def dump_tree(window, pid, max_depth, timeout, backend, json_mode):
 @native_selector_options
 @click.option("--button", default="left", show_default=True)
 @click.option("--double", is_flag=True)
+@click.option("--at", "at", default=None, help="X,Y offset inside the control to click.")
 @click.option(
     "--method", default="auto", show_default=True,
     type=click.Choice(["invoke", "click", "auto"]),
@@ -163,7 +164,7 @@ def dump_tree(window, pid, max_depth, timeout, backend, json_mode):
 @json_option
 def click_cmd(
     index, window, pid, title, control_type, auto_id, found_index, backend,
-    button, double, method, timeout, retries, delay, dry_run, json_mode,
+    button, double, at, method, timeout, retries, delay, dry_run, json_mode,
 ):
     from visus.desktop.core.native_rpa import native_click, native_get_state
 
@@ -192,9 +193,89 @@ def click_cmd(
         window=window, pid=pid, title=title, control_type=control_type,
         auto_id=auto_id, found_index=found_index, button=button, double=double,
         method=method, timeout=timeout, retries=retries, delay=delay, backend=backend,
+        at=_xy(at) if at else None,
     )
     ok = bool(result)
     done(result, json_mode=json_mode, ok=ok, human=("clicked" if ok else "not clicked"))
+
+
+def _xy(value: str) -> tuple[int, int]:
+    x, _, y = value.partition(",")
+    return int(x), int(y)
+
+
+@native.command(
+    name="drag",
+    help="Drag inside a control: --start X,Y --end X,Y (offsets from its top-left corner).",
+)
+@click.argument("index", type=int, required=False)
+@native_selector_options
+@click.option("--start", "start", required=True, help="X,Y offset where the drag starts.")
+@click.option("--end", "end", required=True, help="X,Y offset where the drag ends.")
+@click.option("--button", default="left", show_default=True)
+@click.option("--duration", type=float, default=0.4, show_default=True)
+@click.option("--timeout", type=float, default=5.0, show_default=True)
+@json_option
+def drag_cmd(
+    index, window, pid, title, control_type, auto_id, found_index, backend,
+    start, end, button, duration, timeout, json_mode,
+):
+    from visus.desktop.core.native_rpa import native_drag
+
+    if index is not None:
+        sel = _selector_for_index(index, json_mode)
+        window, pid, backend = sel["window"], sel["pid"], sel["backend"]
+        title, control_type, auto_id, found_index = (
+            sel["title"], sel["control_type"], sel["auto_id"], sel["found_index"]
+        )
+    try:
+        src, dst = _xy(start), _xy(end)
+    except ValueError:
+        fail("--start/--end must be X,Y (e.g. 40,30)", json_mode=json_mode)
+        return
+    result = native_drag(
+        window=window, pid=pid, start=src, end=dst, title=title,
+        control_type=control_type, auto_id=auto_id, found_index=found_index,
+        button=button, duration=duration, timeout=timeout, backend=backend,
+    )
+    ok = bool(result)
+    done(result, json_mode=json_mode, ok=ok, human=("dragged" if ok else "not dragged"))
+
+
+@native.command(
+    name="scroll",
+    help="Turn the mouse wheel over a control: --amount N (up +, down -), --at X,Y.",
+)
+@click.argument("index", type=int, required=False)
+@native_selector_options
+@click.option("--amount", type=int, required=True, help="Wheel notches: + up, - down.")
+@click.option("--at", "at", default=None, help="X,Y offset inside the control (default: center).")
+@click.option("--timeout", type=float, default=5.0, show_default=True)
+@json_option
+def scroll_cmd(
+    index, window, pid, title, control_type, auto_id, found_index, backend,
+    amount, at, timeout, json_mode,
+):
+    from visus.desktop.core.native_rpa import native_scroll
+
+    if index is not None:
+        sel = _selector_for_index(index, json_mode)
+        window, pid, backend = sel["window"], sel["pid"], sel["backend"]
+        title, control_type, auto_id, found_index = (
+            sel["title"], sel["control_type"], sel["auto_id"], sel["found_index"]
+        )
+    try:
+        point = _xy(at) if at else None
+    except ValueError:
+        fail("--at must be X,Y (e.g. 40,30)", json_mode=json_mode)
+        return
+    result = native_scroll(
+        window=window, pid=pid, amount=amount, at=point, title=title,
+        control_type=control_type, auto_id=auto_id, found_index=found_index,
+        timeout=timeout, backend=backend,
+    )
+    ok = bool(result)
+    done(result, json_mode=json_mode, ok=ok, human=("scrolled" if ok else "not scrolled"))
 
 
 @native.command(name="set-text", help="Set a control's text: `set-text N TEXT` or `set-text TEXT --title …`.")

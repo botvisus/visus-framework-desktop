@@ -6,6 +6,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-11-13
+
+### Added
+- `native_drag(window=..., start=(x, y), end=(x, y), ...)` — drag INSIDE a control
+  located by selector: draw a shape on Paint's canvas, move a slider, select a
+  range. `start` / `end` are offsets in pixels from the control's top-left corner,
+  so the drag follows the control wherever the window is; a real mouse press, move
+  over `duration` (0.4 s) and release. A step of the report inside `rpa()`; also an
+  MCP tool (`native_drag`) and a CLI command (`visus native drag`).
+- `native_click(..., at=(x, y))` — click THAT point inside the control (offset from
+  its top-left corner) with the real mouse: a spot on a surface such as Paint's
+  canvas (fill, pick a color). Also `at=` in the MCP tool and `--at X,Y` in the CLI.
+- `native_scroll(window=..., amount=N, at=(x, y))` — turn the mouse wheel over a
+  control (notches: + up, - down), at a point inside it or its center. Also an MCP
+  tool (`native_scroll`) and a CLI command (`visus native scroll`).
+- A left drag / point click on a control right after the mouse acted on ANOTHER
+  control first clicks its start point: WinUI 3 surfaces (the Windows 11 Paint
+  canvas) spend that first press only to activate themselves -- measured: tool click
+  then drag drew nothing; with the activation click, the shape. Consecutive drags on
+  the same control don't get it.
+
 ## [0.4.3] - 2026-11-13
 
 One automation across several programs.

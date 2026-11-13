@@ -33,7 +33,7 @@ stop_on_failure=True, reraise=False)` → yields a `VisusBot`. Every action is a
 step of `./visus-runs/<name>-<timestamp>/report.html` (also `run.zip`), written
 even when a step fails: the bot's `click_*` / `type_text` / `keyboard_command` /
 `open_app` / `use_app` / `extract_text_from_region` / `scroll` / `drag` / `triple_click` /
-`execute_tasks` and the `native_click` / `native_set_text` / `native_get_text` /
+`execute_tasks` and the `native_click` / `native_drag` / `native_scroll` / `native_set_text` / `native_get_text` /
 `native_wait` functions (the control highlighted in the overlay style). A failed
 action stops the run (`ActionFailedError`; exit code 1 unless `reraise=True`).
 `bot.step("label")` records any other block; `type_text(..., secret=True)` /

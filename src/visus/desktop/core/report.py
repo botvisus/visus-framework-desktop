@@ -601,6 +601,8 @@ _TYPE_TITLES = {
     "triple_click": "Triple-click",
     "hybrid": "Find & click",
     "native_click": "Click",
+    "native_drag": "Drag on",
+    "native_scroll": "Scroll on",
     "native_set_text": "Set text",
     "native_get_text": "Read",
     "native_wait": "Wait for",

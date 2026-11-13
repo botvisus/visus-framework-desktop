@@ -74,6 +74,8 @@ def test_tool_registry_covers_each_capability(server):
         "open_app",
         "use_app",
         "native_click",
+        "native_drag",
+        "native_scroll",
         "native_set_text",
         "native_get_text",
         "native_get_state",

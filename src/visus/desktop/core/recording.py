@@ -60,6 +60,9 @@ RECORDED_KWARGS = (
     "found_index",
     "state",
     "timeout",
+    "start",
+    "end",
+    "at",
 )
 
 # Shown instead of what ``type_text(..., secret=True)`` typed.
