@@ -71,6 +71,15 @@ Pick the cheapest way that works, in this order:
    *may have landed* — read the state (`get-state N`, `get-text N` or a new snapshot)
    before trying again; repeating can click, submit or toggle twice.
 
+   **Look, act, check.** Before a long or hard-to-undo step (a whole text, a save),
+   look at the screen: the right window in front, nothing over it (an activation
+   or sign-in prompt, a notice, the app's help) -- close that first. Give `--window`
+   the exact title from `window list`: a word several windows share (`Excel` with
+   *Excel Help* open) is refused for `type`/`key`, listing the titles. Letter
+   shortcuts and Alt key tips follow the app's language (`Ctrl+B` is bold in an
+   English Office and *Save* in a Portuguese one): unsure, act on the button by name
+   from `native snapshot`. At the end, read the result back before saying it is done.
+
    **Wait for what a step opens** instead of sleeping: `window wait "Salvar como"`
    (the dialog after Ctrl+S; `--gone` for it to close) and
    `native wait-menu --window X` (a menu you opened; `--closed`). A snapshot that
@@ -79,8 +88,8 @@ Pick the cheapest way that works, in this order:
 
    **Guards on the real keyboard/mouse.** `key` refuses shortcuts that take the run's
    window away (`Alt+F4`, `Win+L`, `Alt+Tab`, `Win+D`, `Win+R`…; `--force` to send
-   anyway — close windows with `window close`). Input to a program running as
-   administrator is refused (Windows would drop it silently), and only one process
+   anyway — close windows with `window close "TITLE" --yes`). Input to a program
+   running as administrator is refused (Windows would drop it silently), and only one process
    drives the mouse/keyboard at a time. All are *not sent, safe to retry*.
 
 2. **OCR text / template image, with the virtual mouse.** When there is no
@@ -280,8 +289,9 @@ mtime/size.**
 ## Safety guardrails
 
 - **Destructive commands need `--yes`**: `visus process kill <pid>` and
-  `visus window close <title>` prompt for confirmation; in `--json`/non-interactive
-  mode they refuse without `--yes`. Only pass `--yes` when the user authorized it.
+  `visus window close <title>` prompt for confirmation; in `--json` mode or with no
+  one at the terminal (an agent, a script) they refuse without `--yes` and say so.
+  Only pass `--yes` when the user authorized it.
 - **Use `--dry-run`** on `smart click` / `native click` / `native set-text` /
   `capture --click` to resolve the target before committing to real input.
 - **Coordinates only when given**: resolve targets through `smart`/`native`/

@@ -63,6 +63,7 @@ def _require_front(window_title, json_mode):
     from visus.desktop.core.input_guard import UIPI_REASON
     from visus.desktop.core.window import foreground_title, front_window
 
+    _require_one_window(window_title, json_mode)
     if front_window(window_title) is None:
         fail(
             f"{window_title!r} is not the window in front (now: {foreground_title()!r}) "
@@ -71,6 +72,18 @@ def _require_front(window_title, json_mode):
         )
     if _elevated_target(window_title):
         fail(f"not sent: {UIPI_REASON}", json_mode=json_mode)
+
+
+def _require_one_window(window_title, json_mode):
+    """Várias janelas com esse texto e nenhuma com o título exato: nada sai (a tecla
+    cairia na que o Windows achasse primeiro -- a ajuda do app, um popup)."""
+    if sys.platform != "win32":
+        return
+    from visus.desktop.core.window import ambiguous_message, ambiguous_window
+
+    titles = ambiguous_window(window_title)
+    if titles:
+        fail(ambiguous_message(window_title, titles), json_mode=json_mode)
 
 
 def _elevated_target(window_title) -> bool:
@@ -94,6 +107,7 @@ def _type_virtual(text, window_title, json_mode):
     from visus.desktop.core import virtual_keyboard
     from visus.desktop.core import window as _window
 
+    _require_one_window(window_title, json_mode)
     hwnd = _window.find_window(window_title)
     if hwnd is None:
         fail(f"no visible window matches {window_title!r} -- `window list` shows the open ones", json_mode=json_mode)
@@ -139,8 +153,8 @@ def key_cmd(command, delay, backtrack, window_title, force, json_mode):
     if danger:
         fail(
             f"not sent: {danger} is blocked -- it closes/switches the window or changes the "
-            "session under the run. To close a window use `window close`; pass --force only "
-            "if you really mean it.",
+            'session under the run. To close a window use `window close "<its title>" --yes`; '
+            "pass --force only if you really mean it.",
             json_mode=json_mode,
         )
     if window_title:

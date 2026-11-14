@@ -8,7 +8,7 @@ import subprocess
 
 import click
 
-from .._common import json_option
+from .._common import interactive, json_option
 from .._output import done, fail
 
 
@@ -59,8 +59,12 @@ def find(name, json_mode):
 @json_option
 def kill(pid, yes, json_mode):
     if not yes:
-        if json_mode:
-            fail("refusing to kill without --yes in JSON mode", json_mode=True)
+        if json_mode or not interactive():
+            fail(
+                f"not killed: pass --yes to end it without asking (process kill {pid} --yes). "
+                "Nothing was killed, safe to retry.",
+                json_mode=json_mode,
+            )
             return
         if not click.confirm(f"Kill process {pid}?"):
             click.echo("Aborted.", err=True)

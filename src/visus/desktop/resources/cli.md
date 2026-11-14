@@ -30,8 +30,9 @@ visus <group> <cmd> --help   # a command's full flag list
   `capture` it resolves/locates the target and reports what it *would* do
   without sending any real mouse/keyboard input.
 - **`--yes` / `-y`** — destructive commands (`process kill`, `window close`)
-  prompt for confirmation interactively and **refuse to run in `--json` mode
-  without `--yes`**.
+  prompt for confirmation interactively and **refuse to run without `--yes`
+  in `--json` mode or with no one at the terminal** (an agent, a script): the
+  answer says to pass `--yes`.
 - **`--region X,Y,W,H`** and **`--coords X,Y`** — passed as comma-separated
   integers (no brackets, no spaces): `--region 0,0,1920,1080`.
 - **Confidence scales** — image matching uses `--confidence` `0.0–1.0`; OCR uses
@@ -281,8 +282,8 @@ visus mouse drag 100 200 400 200 --duration 0.8
 
 | Command | What it does |
 |---|---|
-| `type TEXT` | Type into the focused field, one key per character (accents included). `--interval` (`0.02`), `--delay`, `--backtrack`, `--window TITLE` (brought to the front and CHECKED first — nothing is typed while another window is in front), `--virtual` (with `--window`: type by window messages into its focused control — no focus change, clipboard untouched), `--json`. Inline tokens: `{ctrl}a {tab} {enter} {escape}`. |
-| `key TOKEN` | Press a key or ANY chord (`Ctrl+Shift+S`, `Win+Shift+S`), a key alone (`Alt`) or a comma sequence (`"Alt, H, O, I"`). `--delay`, `--backtrack`, `--window TITLE` (checked in front first, like `type`), `--force`, `--json`. Shortcuts that take the run's window away or change the session are **refused** unless `--force`: `Alt+F4`, `Win+L`, `Win+D`, `Alt+Tab`, `Win+R`, `Win+X`, `Win+E`, `Ctrl+Shift+Esc` — and any of them with extra modifiers (`Alt+Shift+Tab`). Close a window with `window close`. |
+| `type TEXT` | Type into the focused field, one key per character (accents included). `--interval` (`0.02`), `--delay`, `--backtrack`, `--window TITLE` (brought to the front and CHECKED first — nothing is typed while another window is in front; a TITLE that matches several windows and none exactly — `Excel` with *Excel Help* open — is refused, listing them: give the exact title), `--virtual` (with `--window`: type by window messages into its focused control — no focus change, clipboard untouched), `--json`. Inline tokens: `{ctrl}a {tab} {enter} {escape}`. |
+| `key TOKEN` | Press a key or ANY chord (`Ctrl+Shift+S`, `Win+Shift+S`), a key alone (`Alt`) or a comma sequence (`"Alt, H, O, I"`). `--delay`, `--backtrack`, `--window TITLE` (checked in front first, like `type`), `--force`, `--json`. Shortcuts that take the run's window away or change the session are **refused** unless `--force`: `Alt+F4`, `Win+L`, `Win+D`, `Alt+Tab`, `Win+R`, `Win+X`, `Win+E`, `Ctrl+Shift+Esc` — and any of them with extra modifiers (`Alt+Shift+Tab`). Close a window with `window close "TITLE" --yes`. |
 | `keys` | List every valid `key` token. `--json`. |
 
 ```bash

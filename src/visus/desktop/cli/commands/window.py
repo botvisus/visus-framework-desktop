@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import click
 
-from .._common import json_option
+from .._common import interactive, json_option
 from .._output import done, fail
 
 
@@ -58,8 +58,14 @@ def minimize(title, json_mode):
 @json_option
 def close(title, yes, json_mode):
     if not yes:
-        if json_mode:
-            fail("refusing to close without --yes in JSON mode", json_mode=True)
+        if json_mode or not interactive():
+            # um agente/script não tem como responder a pergunta: o "Aborted." não
+            # dizia o que fazer (medido: o agente tentou --window, --force…)
+            fail(
+                f'not closed: pass --yes to close without asking (window close "{title}" '
+                "--yes). Nothing was closed, safe to retry.",
+                json_mode=json_mode,
+            )
             return
         if not click.confirm(f"Close window matching '{title}'?"):
             click.echo("Aborted.", err=True)

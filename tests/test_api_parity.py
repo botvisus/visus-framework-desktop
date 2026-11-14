@@ -87,7 +87,7 @@ def test_use_app_exportado_e_versao_0_6_0() -> None:
     from visus.desktop.core import app
 
     assert use_app is app.use_app
-    assert visus.desktop.__version__ == "0.6.0"
+    assert visus.desktop.__version__ == "0.6.1"
 
 
 def test_mcp_use_app_devolve_a_janela() -> None:

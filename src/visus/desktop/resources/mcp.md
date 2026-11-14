@@ -336,6 +336,8 @@ password/token: typed the same, shown as `••••••` in a recording's r
 Press a key/chord — tokens **case-sensitive**: `Enter`, `Escape`, `Tab`,
 `Delete`, `F1`–`F12`, `Up`/`Down`/`Left`/`Right`, `Ctrl+S`, `Ctrl+C`, `Ctrl+V`,
 `Ctrl+A`, `Ctrl+Z`, `Shift+Tab`, `Ctrl+T`, `Ctrl+W`.
+A `window` that matches several windows and none exactly (`"Excel"` with
+*Excel Help* open) is refused (nothing sent): give the exact title.
 Refused (an error, nothing sent) unless `force=True`: shortcuts that take the run's
 window away or change the session — `Alt+F4`, `Win+L`, `Win+D`, `Alt+Tab`, `Win+R`,
 `Win+X`, `Win+E`, `Ctrl+Shift+Esc`, also with extra modifiers. Use `close_window`.

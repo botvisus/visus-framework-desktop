@@ -14,7 +14,7 @@ You have access to the visus-desktop MCP server (`visus-mcp`). It exposes **59 t
 |---|---|
 | **Find / click (text)** | `find_text`, `find_all_text` *(every occurrence, reading order — to disambiguate repeats, then `click_text(occurrence=N)`)*, `click_text` |
 | **Find / click (image)** | `find_image`, `click_image`, `find_all` *(every match of one template)*, `find_multiple` *(first match of several templates)*, `find_relative_image`, `click_relative_image` *(target near a unique anchor)*, `click_at` *(absolute coords, last resort)*, `hybrid_find` |
-| **Keyboard** | `type_text`, `keyboard_command` — pass `window=` so the window is checked in front first (nothing is sent otherwise); `type_text(secret=true)` for passwords |
+| **Keyboard** | `type_text`, `keyboard_command` — pass `window=` with the exact title so the window is checked in front first (nothing is sent otherwise; a title several windows share is refused); letter shortcuts follow the app's language; `type_text(secret=true)` for passwords |
 | **Mouse (low-level)** | `scroll`, `drag`, `triple_click`, `move_random`, `mouse_down`, `mouse_up` |
 | **Screen / monitors** | `take_screenshot` (base64), `save_screenshot` (to disk — for find_image templates), `capture_element` (locate-by-text/native/region → save template + annotated → optional click), `get_monitors`, `get_display_size`, `wait_for_stable_screen` |
 | **Files / clipboard** | `wait_for_file`, `wait_for_file_stable`, `get_clipboard`, `copy_to_clipboard`, `extract_text_from_region` *(use `return_full_data=true` for boxes + scores)* |

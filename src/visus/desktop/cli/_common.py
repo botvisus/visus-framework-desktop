@@ -10,6 +10,15 @@ from pathlib import Path
 import click
 
 
+def interactive() -> bool:
+    """Há alguém no terminal para responder uma pergunta? Um agente ou script não: o
+    ``click.confirm`` leria vazio e só diria "Aborted."."""
+    try:
+        return sys.stdin is not None and sys.stdin.isatty()
+    except (AttributeError, ValueError):
+        return False
+
+
 def config_path() -> Path:
     """Where the CLI persists / reads config — a per-user, OS-appropriate path.
 

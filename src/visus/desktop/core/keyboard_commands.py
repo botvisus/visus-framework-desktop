@@ -12,6 +12,11 @@ from typing import Callable, Dict
 import pyautogui
 
 from ..exceptions import TaskExecutionError
+from .human_typing import fix_pyautogui_keys
+
+# setas, Home, End, PgUp/PgDn e Delete com a marca de tecla estendida: sem ela, com o
+# NumLock ligado, o Windows solta o Shift (Shift+Right andava em vez de selecionar)
+fix_pyautogui_keys()
 
 # every key name pyautogui can press -- the chord parser accepts all of them
 _PYAUTOGUI_KEYS = frozenset(k.lower() for k in pyautogui.KEYBOARD_KEYS)

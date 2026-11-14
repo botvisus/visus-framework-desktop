@@ -6,6 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-14
+
+### Fixed
+- Shift+arrow, Shift+Home/End/PgUp/PgDn and Ctrl+Shift+arrow select again with
+  NumLock on: keys go with the extended-key flag and their scan code. Without the
+  flag Windows read them as the numeric keypad's and dropped the Shift, so
+  `key Shift+Right` moved the cursor instead of selecting (measured in Excel).
+- `window close` / `process kill` without `--yes` and with no one at the terminal
+  (an agent, a script) say to pass `--yes` instead of a bare `Aborted.`.
+
+### Changed
+- `type` / `key` `--window` (and MCP `type_text` / `keyboard_command` `window=`)
+  refuse a title that matches several windows when none matches exactly, listing
+  them -- `--window Excel` with *Excel Help* open typed into the help. Nothing is
+  sent; give the exact title.
+- The blocked-shortcut answer shows the whole close command:
+  `window close "TITLE" --yes`.
+
 ## [0.6.0] - 2026-11-14
 
 The rest of what Vercel Labs' agent-desktop (Apache-2.0) does on Windows and we did not.

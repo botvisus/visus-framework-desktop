@@ -51,6 +51,44 @@ def find_window(title_substring: str) -> int | None:
     return matches[0] if matches else None
 
 
+def matching_titles(title_substring: str) -> list[str]:
+    """Os títulos (sem repetir) das janelas visíveis que contêm ``title_substring``."""
+    _require_windows()
+    import win32gui
+
+    needle = title_substring.lower()
+    titles: list[str] = []
+
+    def _callback(hwnd: int, _extra: object) -> bool:
+        if win32gui.IsWindowVisible(hwnd):
+            title = win32gui.GetWindowText(hwnd) or ""
+            if needle in title.lower() and title not in titles:
+                titles.append(title)
+        return True
+
+    win32gui.EnumWindows(_callback, None)
+    return titles
+
+
+def ambiguous_window(title_substring: str, titles: list[str] | None = None) -> list[str]:
+    """Os títulos quando ``title_substring`` casa com mais de uma janela e nenhuma tem
+    esse título exato; vazio quando o alvo é claro. Medido: ``--window Excel`` com a
+    "Ajuda do Excel" aberta digitou a tabela inteira na ajuda."""
+    found = matching_titles(title_substring) if titles is None else titles
+    want = title_substring.strip().lower()
+    if len(found) < 2 or any(t.strip().lower() == want for t in found):
+        return []
+    return found
+
+
+def ambiguous_message(title_substring: str, titles: list[str]) -> str:
+    listed = ", ".join(repr(t) for t in titles[:6])
+    return (
+        f"not sent: {title_substring!r} matches {len(titles)} windows ({listed}) -- give "
+        "the exact title of the one you mean. Nothing reached the app, safe to retry."
+    )
+
+
 def window_region(title_substring: str) -> tuple[int, int, int, int] | None:
     """``(x, y, w, h)`` of the window whose title contains ``title_substring``:
     what an OCR / image search uses as its region with ``--window`` -- reading

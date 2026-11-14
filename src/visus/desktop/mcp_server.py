@@ -998,13 +998,30 @@ def type_text(
     a recording's report and in the logs.
     RETURNS: True once typed. Does NOT move focus inside the window — make sure the
     right field is focused (e.g. ``native_click`` / ``click_text`` it first).
+    A ``window`` that matches several windows and none exactly (``"Excel"`` with
+    "Excel Help" open) is refused: give the exact title.
     """
+    _one_window(window)
     return bool(
         get_bot().type_text(
             text, interval=interval, delay=delay, backtrack=backtrack, window=window,
             secret=secret,
         )
     )
+
+
+def _one_window(window: str | None) -> None:
+    """Teclas só para uma janela clara: várias com esse texto e nenhuma com o título
+    exato, nada sai (cairiam na ajuda do app ou num popup)."""
+    import sys
+
+    if not window or sys.platform != "win32":
+        return
+    from .core.window import ambiguous_message, ambiguous_window
+
+    titles = ambiguous_window(window)
+    if titles:
+        raise ValueError(ambiguous_message(window, titles))
 
 
 @mcp.tool()
@@ -1042,6 +1059,7 @@ def keyboard_command(
             f"not sent: {danger} is blocked -- it closes/switches the window or changes the "
             "session under the run; use close_window to close, or force=True if you mean it"
         )
+    _one_window(window)
     return bool(
         get_bot().keyboard_command(command, delay=delay, backtrack=backtrack, window=window)
     )

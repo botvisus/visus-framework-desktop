@@ -193,6 +193,79 @@ def _send_key(vk: int, scan: int, shift: bool) -> None:
         raise OSError(f"SendInput pressed {sent} of {len(events)} key events")
 
 
+_KEYEVENTF_EXTENDEDKEY = 0x0001
+# as teclas "estendidas": sem a marca, o Windows as lê como as do teclado numérico e,
+# com o NumLock ligado, SOLTA o Shift -- medido: o Shift+Right do pyautogui andava uma
+# célula no Excel em vez de selecionar
+_EXTENDED_VKS = frozenset(
+    {
+        0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28,  # PgUp PgDn End Home setas
+        0x2C, 0x2D, 0x2E,  # PrintScreen Insert Delete
+        0x5B, 0x5C, 0x5D,  # Win esquerdo/direito, Apps
+        0x6F, 0x90,  # / do teclado numérico, NumLock
+        0xA3, 0xA5,  # Ctrl e Alt da direita
+        *range(0xA6, 0xB8),  # navegador, volume e mídia
+    }
+)  # fmt: skip
+
+
+def key_event(vk: int, flags: int) -> tuple[int, int, int]:
+    """``(vk, scan, flags)`` de um evento de tecla: o scan code de verdade (jogos e Citrix
+    o leem) e a marca de estendida nas teclas que a têm."""
+    scan = (
+        int(_user32().MapVirtualKeyExW(vk, 0, None)) if sys.platform == "win32" else 0
+    )
+    return vk, scan, flags | (_KEYEVENTF_EXTENDEDKEY if vk in _EXTENDED_VKS else 0)
+
+
+def _keybd(vk: int, flags: int) -> None:
+    code, scan, all_flags = key_event(vk, flags)
+    ctypes.windll.user32.keybd_event(code, scan, all_flags, 0)  # type: ignore[attr-defined]
+
+
+def _pyautogui_key(key: str, *, up: bool) -> None:
+    """O ``_keyDown``/``_keyUp`` do pyautogui no Windows, com scan code e a marca de
+    estendida: o original manda setas, Home, End, PgUp/PgDn, Insert e Delete sem ela, e
+    com o NumLock ligado o Windows SOLTA o Shift -- o Shift+Right andava em vez de
+    selecionar (medido no Excel). Fora isso, igual ao original (o Shift dos caracteres
+    que pedem Shift)."""
+    import pyautogui
+    from pyautogui import _pyautogui_win as pwin  # type: ignore[attr-defined]
+
+    code = pwin.keyboardMapping.get(key)
+    if code is None:
+        return
+    needs_shift = pyautogui.isShiftCharacter(key)
+    mods, vk = divmod(code, 0x100)
+    held = [
+        m
+        for on, m in (
+            (mods & 4, 0x12),
+            (mods & 2, 0x11),
+            (mods & 1 or needs_shift, 0x10),
+        )
+        if on
+    ]
+    for mod in held:
+        _keybd(mod, 0)
+    _keybd(vk, _KEYEVENTF_KEYUP if up else 0)
+    for mod in reversed(held):
+        _keybd(mod, _KEYEVENTF_KEYUP)
+
+
+def fix_pyautogui_keys() -> None:
+    """Troca as teclas do pyautogui no Windows pelas com a marca de estendida (uma vez)."""
+    if sys.platform != "win32":
+        return
+    from pyautogui import _pyautogui_win as pwin  # type: ignore[attr-defined]
+
+    if getattr(pwin, "_visus_extended", False):
+        return
+    pwin._keyDown = lambda key: _pyautogui_key(key, up=False)
+    pwin._keyUp = lambda key: _pyautogui_key(key, up=True)
+    pwin._visus_extended = True
+
+
 def _type_chars_windows(chunk: str, interval: float) -> None:
     import pyautogui
 
