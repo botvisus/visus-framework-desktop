@@ -454,3 +454,33 @@ def test_janela_travada_nao_e_lida(monkeypatch):
     probed = []
     monkeypatch.setattr(waits, "_window_has_open_menu", lambda hwnds: probed.append(hwnds) or False)
     assert waits.menu_open(5) is False and probed == [[]]
+
+
+def test_type_com_janela_fora_do_windows_nao_quebra(monkeypatch):
+    # a checagem de administrador é só do Windows: fora dele, find_window nem existe
+    from visus.desktop.cli.commands import keyboard
+
+    monkeypatch.setattr(keyboard.sys, "platform", "linux")
+    monkeypatch.setattr(
+        "visus.desktop.core.window.find_window",
+        lambda t: (_ for _ in ()).throw(RuntimeError("Direct win32 API requires Windows.")),
+    )
+    assert keyboard._elevated_target("Bloco de notas") is False
+
+
+def test_type_para_programa_administrador_e_recusado(monkeypatch):
+    from visus.desktop.cli.commands import keyboard
+
+    monkeypatch.setattr(keyboard.sys, "platform", "win32")
+    monkeypatch.setattr("visus.desktop.core.window.find_window", lambda t: 10)
+    monkeypatch.setattr("visus.desktop.core.window._window_pid", lambda h: 4242)
+    monkeypatch.setattr(input_guard, "uipi_blocks", lambda pid: pid == 4242)
+    assert keyboard._elevated_target("Admin") is True
+
+
+def test_type_sem_janela_achada_nao_recusa(monkeypatch):
+    from visus.desktop.cli.commands import keyboard
+
+    monkeypatch.setattr(keyboard.sys, "platform", "win32")
+    monkeypatch.setattr("visus.desktop.core.window.find_window", lambda t: None)
+    assert keyboard._elevated_target("Nada") is False

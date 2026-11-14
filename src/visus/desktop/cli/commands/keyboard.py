@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import sys
 
 import click
 
@@ -59,13 +60,8 @@ def _lease(json_mode):
 
 def _require_front(window_title, json_mode):
     """Como uma pessoa olha antes de digitar: a janela certa na frente, ou nada sai."""
-    from visus.desktop.core.input_guard import UIPI_REASON, uipi_blocks
-    from visus.desktop.core.window import (
-        _window_pid,
-        find_window,
-        foreground_title,
-        front_window,
-    )
+    from visus.desktop.core.input_guard import UIPI_REASON
+    from visus.desktop.core.window import foreground_title, front_window
 
     if front_window(window_title) is None:
         fail(
@@ -73,9 +69,23 @@ def _require_front(window_title, json_mode):
             "-- nothing was typed. Is it open? `window list` shows the open ones.",
             json_mode=json_mode,
         )
-    hwnd = find_window(window_title)
-    if hwnd and uipi_blocks(_window_pid(hwnd)):
+    if _elevated_target(window_title):
         fail(f"not sent: {UIPI_REASON}", json_mode=json_mode)
+
+
+def _elevated_target(window_title) -> bool:
+    """O programa da janela roda como administrador e nós não (UIPI descartaria as
+    teclas)? Só no Windows; sem como saber, False (proteção, não portão)."""
+    if sys.platform != "win32":
+        return False
+    from visus.desktop.core.input_guard import uipi_blocks
+    from visus.desktop.core.window import _window_pid, find_window
+
+    try:
+        hwnd = find_window(window_title)
+        return bool(hwnd) and uipi_blocks(_window_pid(hwnd))
+    except Exception:
+        return False
 
 
 def _type_virtual(text, window_title, json_mode):
