@@ -54,6 +54,7 @@ KNOWN_TRANSLATIONS = {
     "height",
     "name",         # find_process / hybrid_find
     "title_substring",
+    "force",        # keyboard_command: consumed by the MCP's blocked-shortcut guard
 }
 
 

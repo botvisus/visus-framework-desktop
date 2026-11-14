@@ -128,6 +128,9 @@ def snapshot(window, pid, max_depth, max_items, timeout, backend, json_mode):
     )
 
     data = {"window": title or window, "snapshot_id": snapshot_id, "items": items}
+    partial = _partial_note(nodes)
+    if partial:
+        data["partial"] = partial
     if json_mode:
         done(data, json_mode=True, ok=True)
         return
@@ -135,7 +138,20 @@ def snapshot(window, pid, max_depth, max_items, timeout, backend, json_mode):
     lines += [_format_item(i) for i in items[:max_items]] or ["(no actionable controls)"]
     if len(items) > max_items:
         lines.append(f"… {len(items) - max_items} more (raise --max)")
+    if partial:
+        lines.append(f"! partial read: {partial}")
     done(data, json_mode=False, ok=True, human="\n".join(lines))
+
+
+def _partial_note(nodes) -> str | None:
+    """Uma leitura incompleta dita, não escondida: ramos que falharam ou o limite de nós."""
+    notes = []
+    unreadable = int(getattr(nodes, "unreadable", 0) or 0)
+    if unreadable:
+        notes.append(f"{unreadable} part(s) of the window did not answer -- controls may be missing")
+    if getattr(nodes, "truncated", False):
+        notes.append("the window is too big, the read stopped at the node limit")
+    return "; ".join(notes) or None
 
 
 @native.command(name="dump-tree", help="Print the accessibility control tree.")
@@ -489,6 +505,30 @@ def get_state(index, window, pid, title, control_type, auto_id, found_index, bac
     result = native_get_state(timeout=timeout, **sel)
     ok = bool(result and result.get("exists"))
     done(result, json_mode=json_mode, ok=ok)
+
+
+@native.command(
+    name="wait-menu",
+    help="Wait until a menu of the window's program is open (or, with --closed, closed) "
+         "-- after opening a menu, before acting on its items.",
+)
+@click.option("--window", "window_title", required=True, help="Window title substring.")
+@click.option("--closed", is_flag=True, help="Wait for the menu to close instead.")
+@click.option("--timeout", type=float, default=5.0, show_default=True)
+@json_option
+def wait_menu_cmd(window_title, closed, timeout, json_mode):
+    from visus.desktop.core.waits import wait_menu, window_pid
+
+    pid = window_pid(window_title)
+    if pid is None:
+        fail(f"no visible window matches {window_title!r} -- `window list` shows the open ones",
+             json_mode=json_mode)
+    ok = wait_menu(pid, open=not closed, timeout=timeout)
+    state = "closed" if closed else "open"
+    done(
+        ok, json_mode=json_mode, ok=ok,
+        human=(f"menu {state}" if ok else f"no menu {state} after {timeout:g}s"),
+    )
 
 
 @native.command(name="wait", help="Wait until a control reaches a state.")

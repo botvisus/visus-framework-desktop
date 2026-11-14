@@ -235,11 +235,28 @@ def _with_retries(action, retries: int, delay: float):
 def _ensure_pywinauto() -> bool:
     try:
         import pywinauto  # noqa: F401
-
-        return True
     except ImportError:
         logger.debug("pywinauto not installed; native_rpa unavailable")
         return False
+    try:
+        from .uia_batch import harden_client
+
+        harden_client()  # toda chamada UIA com prazo (o pywinauto cria o cliente sem)
+    except Exception as exc:  # pragma: no cover - defensivo
+        logger.debug("UIA client hardening skipped: %s", exc)
+    return True
+
+
+class NodeList(list):
+    """Os nós de um walk, dizendo se a leitura ficou incompleta: ``unreadable`` ramos que
+    deram erro ao ler, ``truncated`` quando o limite de nós cortou."""
+
+    unreadable: int = 0
+    truncated: bool = False
+
+    @property
+    def partial(self) -> bool:
+        return bool(self.unreadable or self.truncated)
 
 
 # ---------------------------------------------------------------------------
@@ -300,32 +317,70 @@ def _is_web_wrapper(node: dict) -> bool:
     )
 
 
-def _walk_tree(top, max_depth: int, max_nodes: int = 5000) -> list[dict]:
+def _with_extras(control_type: str) -> bool:
+    return control_type in ACTIONABLE_CONTROL_TYPES or control_type in _CANDIDATE_CONTROL_TYPES
+
+
+def _walk_tree(top, max_depth: int, max_nodes: int = 5000) -> NodeList:
     """Pre-order walk of ``children()`` — the same order pywinauto's
     ``descendants()`` uses, so a ``found_index`` counted here selects the same
     control later. ``max_nodes`` stops a runaway walk on huge trees.
 
-    Each actionable-looking node also carries its states and announced actions
-    (``native_patterns.read_node_extras``). Under a Chromium/Electron window an
-    anonymous wrapper group does not count as a level of ``max_depth`` (its raw
-    nesting is still capped), so web content is reachable at the usual depth."""
-    from .native_patterns import read_node_extras
+    Each actionable-looking node also carries its states and announced actions. Under a
+    Chromium/Electron window an anonymous wrapper group does not count as a level of
+    ``max_depth`` (its raw nesting is still capped), so web content is reachable at the
+    usual depth.
 
-    nodes: list[dict] = []
+    UIA: read in batch (``uia_batch.walk`` -- one cross-process round trip per node, every
+    property cached); a branch that failed to read counts in ``unreadable`` instead of
+    vanishing. Win32 backend (or no cache support): the per-property walk."""
     try:
         chromium = (getattr(top.element_info, "class_name", "") or "") == _CHROMIUM_CLASS
     except Exception:
         chromium = False
 
+    def skip(node):
+        return chromium and _is_web_wrapper(node)
+
+    import ctypes
+
+    element = getattr(getattr(top, "element_info", None), "element", None)
+    # só um ponteiro COM de verdade (IUIAutomationElement) vai pelo lote
+    if isinstance(element, ctypes._Pointer) and hasattr(element, "FindAllBuildCache"):
+        try:
+            from .uia_batch import walk
+
+            read = walk(
+                element, max_depth=max_depth, max_nodes=max_nodes,
+                max_raw_depth=_MAX_RAW_DEPTH, with_extras=_with_extras, skip_level=skip,
+            )
+            nodes = NodeList(read.nodes)
+            nodes.unreadable, nodes.truncated = read.unreadable, read.truncated
+            return nodes
+        except Exception as exc:
+            logger.debug("batch walk failed, falling back: %s", exc)
+    return _walk_tree_slow(top, max_depth, max_nodes, skip)
+
+
+def _walk_tree_slow(top, max_depth: int, max_nodes: int, skip) -> NodeList:
+    from .native_patterns import read_node_extras
+
+    nodes = NodeList()
+
     def _walk(element, depth, raw_depth):
-        if depth > max_depth or raw_depth > _MAX_RAW_DEPTH or len(nodes) >= max_nodes:
+        if depth > max_depth or raw_depth > _MAX_RAW_DEPTH:
+            return
+        if len(nodes) >= max_nodes:
+            nodes.truncated = True
             return
         try:
             children = element.children()
         except Exception:
+            nodes.unreadable += 1
             return
         for child in children:
             if len(nodes) >= max_nodes:
+                nodes.truncated = True
                 return
             try:
                 info = child.element_info
@@ -336,16 +391,13 @@ def _walk_tree(top, max_depth: int, max_nodes: int = 5000) -> list[dict]:
                     "auto_id": getattr(info, "automation_id", "") or "",
                     "rect": _rect_to_box(child),
                 }
-                if (
-                    node["control_type"] in ACTIONABLE_CONTROL_TYPES
-                    or node["control_type"] in _CANDIDATE_CONTROL_TYPES
-                ):
+                if _with_extras(node["control_type"]):
                     node.update(read_node_extras(info))
                 nodes.append(node)
             except Exception:
+                nodes.unreadable += 1
                 continue
-            step = 0 if chromium and _is_web_wrapper(node) else 1
-            _walk(child, depth + step, raw_depth + 1)
+            _walk(child, depth + (0 if skip(node) else 1), raw_depth + 1)
 
     _walk(top, 1, 1)
     return nodes
@@ -413,6 +465,11 @@ def select_actionable(nodes: list[dict]) -> list[dict]:
             "match_count": len(same),
             "rect": node.get("rect"),
         }
+        # identidade estável além do seletor (nunca valor nem posição): a conferência
+        # antes de agir recusa um controle trocado por outro de mesmo nome
+        for key in ("class_name", "help"):
+            if node.get(key):
+                item[key] = node[key]
         states = states_of(node)
         if states:
             item["states"] = states
@@ -448,8 +505,12 @@ def verify_snapshot_item(snap: dict, item: dict, *, timeout: float = 10.0) -> st
     Devolve ``None`` quando confere, ou o motivo. Snapshots antigos sem
     ``match_count`` passam sem conferir.
 
+    Também confere a identidade estável do controle naquele número: a classe e a
+    descrição (``HelpText``) -- nunca valor nem posição, que mudam sozinhos.
+
     Ideia do agent-desktop (Vercel Labs, Apache-2.0): a ref só resolve quando a
-    contagem na janela inteira confere (``refs/resolve_saved_ref.rs``)."""
+    contagem na janela inteira confere e a identidade (papel, id, nome, descrição)
+    bate (``refs/resolve_saved_ref.rs``)."""
     expected = item.get("match_count")
     if expected is None:
         return None
@@ -462,20 +523,30 @@ def verify_snapshot_item(snap: dict, item: dict, *, timeout: float = 10.0) -> st
     )
     if title is None:
         return "the window is gone or not responding"
-    now = sum(
-        1
+    matches = [
+        node
         for node in nodes
         if _same_selector(
             node, item.get("control_type") or "", item.get("title") or "", item.get("auto_id") or ""
         )
-    )
+    ]
+    now = len(matches)
     if now == 0:
+        if getattr(nodes, "partial", False):
+            return "part of the window could not be read -- snapshot again"
         return "this control is gone from the window"
     if now != expected:
         return (
             f"the window changed since the snapshot ({now} controls like this now, "
             f"{expected} then) -- the number may point to another control"
         )
+    target = matches[min(int(item.get("found_index") or 0), now - 1)]
+    for key, label in (("class_name", "kind"), ("help", "description")):
+        if item.get(key) and (target.get(key) or "") != item[key]:
+            return (
+                f"the control at this number has another {label} now -- "
+                "the window changed since the snapshot"
+            )
     return None
 
 
@@ -606,6 +677,70 @@ def _retrying(run, retries: int, delay: float) -> ActionOutcome:
     return outcome
 
 
+def _top_handle(ctrl) -> int:
+    """O hwnd da janela-raiz do controle (pela cadeia de pais), ou 0."""
+    import sys
+
+    element = ctrl
+    for _ in range(30):
+        info = getattr(element, "element_info", None)
+        handle = int(getattr(info, "handle", 0) or 0)
+        if handle:
+            if sys.platform == "win32":
+                try:
+                    import win32gui
+
+                    return int(win32gui.GetAncestor(handle, 2) or handle)  # GA_ROOT
+                except Exception:
+                    return handle
+            return handle
+        try:
+            element = element.parent()
+        except Exception:
+            return 0
+        if element is None:
+            return 0
+    return 0
+
+
+def _physical_check(ctrl, point=None) -> ActionOutcome | None:
+    """Antes do mouse de verdade: o Windows vai entregar (UIPI) e o ponto é do controle
+    (nenhuma janela de outro programa por cima)? Coberto, traz a janela para a frente uma
+    vez e confere de novo. Devolve a recusa (nada enviado) ou None para seguir."""
+    from .input_guard import UIPI_REASON, covering_window, uipi_blocks
+
+    try:
+        pid = getattr(ctrl.element_info, "process_id", None)
+    except Exception:
+        pid = None
+    if uipi_blocks(pid):
+        return ActionOutcome.not_sent(UIPI_REASON, kind="elevated")
+    try:
+        if point is None:
+            r = ctrl.rectangle()
+            point = ((r.left + r.right) // 2, (r.top + r.bottom) // 2)
+        hwnd = _top_handle(ctrl)
+    except Exception:
+        return None
+    cover = covering_window(hwnd, *point)
+    if cover:
+        from .window import _bring_to_front
+
+        try:
+            _bring_to_front(hwnd)
+            time.sleep(0.15)
+        except Exception:
+            pass
+        cover = covering_window(hwnd, *point)
+    if cover:
+        return ActionOutcome.not_sent(
+            f"{cover!r} is over the control -- the mouse would click it instead; close or "
+            "move it, or act without the mouse (Invoke / by number)",
+            kind="occluded",
+        )
+    return None
+
+
 def native_click_ex(
     window=None,
     pid=None,
@@ -632,18 +767,28 @@ def native_click_ex(
     the mouse; ``"click"`` goes straight to it."""
 
     def act(ctrl, sent):
+        from .input_guard import input_lease
+
         if at is not None:  # um ponto da superfície: o mouse de verdade, ali
             rect = ctrl.rectangle()
             point, _ = _drag_points((rect.left, rect.top), at, at)
-            sent["sent"] = True
-            if button == "left":
-                _activate_if_needed(rect, point)
-            _mouse_click(point, button, 2 if double else 1)
+            refusal = _physical_check(ctrl, point)
+            if refusal is not None:
+                return refusal
+            with input_lease():
+                sent["sent"] = True
+                if button == "left":
+                    _activate_if_needed(rect, point)
+                _mouse_click(point, button, 2 if double else 1)
             _mouse_on(rect)
             return ActionOutcome.sent("mouse")
         if double:
-            sent["sent"] = True
-            ctrl.double_click_input()
+            refusal = _physical_check(ctrl)
+            if refusal is not None:
+                return refusal
+            with input_lease():
+                sent["sent"] = True
+                ctrl.double_click_input()
             _mouse_on(ctrl.rectangle())
             return ActionOutcome.sent("mouse double-click")
         if method in ("invoke", "auto"):
@@ -663,8 +808,12 @@ def native_click_ex(
                 return ActionOutcome.not_sent(
                     "this control has no Invoke or default action -- use method 'click' (mouse)"
                 )
-        sent["sent"] = True
-        ctrl.click_input(button=button)
+        refusal = _physical_check(ctrl)
+        if refusal is not None:
+            return refusal
+        with input_lease():
+            sent["sent"] = True
+            ctrl.click_input(button=button)
         _mouse_on(ctrl.rectangle())
         return ActionOutcome.sent("mouse click")
 
@@ -893,9 +1042,15 @@ def native_set_text_ex(
     ``verified`` when the field reads back exactly ``text``."""
 
     def act(ctrl, sent):
+        from .input_guard import UIPI_REASON, input_lease, uipi_blocks
+
         wrapper = ctrl.wrapper_object()
-        sent["sent"] = True  # o foco/as teclas podem chegar mesmo se algo falhar depois
-        if _type_into(wrapper, text):
+        if uipi_blocks(getattr(getattr(wrapper, "element_info", None), "process_id", None)):
+            return ActionOutcome.not_sent(UIPI_REASON, kind="elevated")
+        with input_lease():
+            sent["sent"] = True  # o foco/as teclas podem chegar mesmo se algo falhar depois
+            typed = _type_into(wrapper, text)
+        if typed:
             value = _control_value(wrapper)
             return ActionOutcome.sent("keyboard", verified=None if value is None else True)
         try:

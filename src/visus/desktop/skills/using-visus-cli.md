@@ -71,6 +71,18 @@ Pick the cheapest way that works, in this order:
    *may have landed* — read the state (`get-state N`, `get-text N` or a new snapshot)
    before trying again; repeating can click, submit or toggle twice.
 
+   **Wait for what a step opens** instead of sleeping: `window wait "Salvar como"`
+   (the dialog after Ctrl+S; `--gone` for it to close) and
+   `native wait-menu --window X` (a menu you opened; `--closed`). A snapshot that
+   ends with `! partial read` may be missing controls — snapshot again before
+   concluding something is not there.
+
+   **Guards on the real keyboard/mouse.** `key` refuses shortcuts that take the run's
+   window away (`Alt+F4`, `Win+L`, `Alt+Tab`, `Win+D`, `Win+R`…; `--force` to send
+   anyway — close windows with `window close`). Input to a program running as
+   administrator is refused (Windows would drop it silently), and only one process
+   drives the mouse/keyboard at a time. All are *not sent, safe to retry*.
+
 2. **OCR text / template image, with the virtual mouse.** When there is no
    accessibility tree (canvas, games, remote desktops, custom-drawn UIs):
 
@@ -124,7 +136,7 @@ reference: `docs/cli.md`.
 | `visus mouse` | `click`, `scroll`, `drag`, `triple-click`, `move`, `down`, `up` — coordinate gestures |
 | `visus type` / `key` / `keys` | type text into the focused field / press a key chord / list valid tokens |
 | `visus capture` | coordinate-free capture by `--auto`/`--text`/`--native`/`--region` → saves template + annotated, optional `--click` |
-| `visus window` | `ensure` (★ call first), `list`, `get`, `focus`, `maximize`, `minimize`, `close` |
+| `visus window` | `ensure` (★ call first), `list`, `get`, `wait`, `focus`, `maximize`, `minimize`, `close` |
 | `visus process` | `launch`, `find`, `is-running`, `kill` |
 | `visus clipboard` | `get`, `set` |
 | `visus` (root) | `open` (an app/document/URL like Windows Run, `--wait-window`), `screenshot` (`--base64`), `monitors`, `display-size`, `configure`, `doctor`, `new`, `run`, `report`, `repl` |
@@ -173,7 +185,7 @@ click-through window, so it never blocks a subsequent click.
 | `visus image find-all` | `IMAGE_PATH --region=<text> --window=<text> --confidence=<float> --json` | Find EVERY occurrence of a template PNG (no click). |
 | `visus image find-multiple` | `IMAGE_PATHS… --region=<text> --confidence=<float> --json` | Find the first match of SEVERAL template PNGs. |
 | `visus image relative` | `ANCHOR_IMAGE TARGET_IMAGE --max-distance=<int> --confidence=<float> --target-region=<text> --click --button=<choice> --delay=<float> --sendtext=<text> --backtrack --max-attempts=<int> --wait-until-found --wait-until-disappears --wait-timeout=<int> --virtual --json` | Find/click a target template NEAR a unique anchor. |
-| `visus key` | `COMMAND --delay=<float> --backtrack --window=<text> --json` | Press a key or chord (token is CASE-SENSITIVE). |
+| `visus key` | `COMMAND --delay=<float> --backtrack --window=<text> --force --json` | Press a key or chord (token is CASE-SENSITIVE); Alt+F4/Win+L/Alt+Tab… need `--force`. |
 | `visus keys` | `--json` | List the valid keyboard_command tokens (case-sensitive). |
 | `visus monitors` | `--json` | List connected monitors (for the --monitor index). |
 | `visus mouse click` | `X Y --width=<int> --height=<int> --button=<choice> --delay=<float> --virtual --json` | Click at absolute coordinates (X,Y). Last resort. |
@@ -190,6 +202,7 @@ click-through window, so it never blocks a subsequent click.
 | `visus native set-text` | `ARGS… --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --retries=<int> --delay=<float> --dry-run --json` | Set the text of an editable control. |
 | `visus native snapshot` | `--window=<text> --pid=<int> --max-depth=<int> --max=<int> --timeout=<float> --backend=<choice> --json` | Number the window's actionable controls (deep enough for the Office ribbon); act by number. |
 | `visus native wait` | `--window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --state=<choice> --timeout=<float> --poll-interval=<float> --json` | Wait until a control reaches a state. |
+| `visus native wait-menu` | `--window=<text> --closed --timeout=<float> --json` | Wait until a menu of the window's program is open (or closed). |
 | `visus native check` | `INDEX? --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --json` | Check a checkbox/toggle (no mouse; nothing sent if already checked). |
 | `visus native uncheck` | `INDEX? --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --json` | Uncheck a checkbox/toggle (no mouse). |
 | `visus native toggle` | `INDEX? --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --json` | Flip a checkbox/toggle/switch (no mouse). |
@@ -220,6 +233,7 @@ click-through window, so it never blocks a subsequent click.
 | `visus window get` | `TITLE --json` | Resolve a window's rect/pid/hwnd (no focus). |
 | `visus window list` | `--title=<text> --process=<text> --json` | List visible windows (read-only). |
 | `visus window maximize` | `TITLE --json` | Maximize a window. |
+| `visus window wait` | `TITLE --gone --timeout=<float> --json` | Wait until a window shows up (or closes). |
 | `visus window minimize` | `TITLE --json` | Minimize a window. |
 
 ## Mental model (same as the MCP skill)

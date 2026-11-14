@@ -2,15 +2,39 @@
 
 from __future__ import annotations
 
+import contextlib
+
 import click
 
 from .._common import json_option, virtual_option
-from .._output import done
+from .._output import done, fail
 
 # Negative numbers are values here, not options: scrolling DOWN is `scroll -3`, and a
 # monitor left of the primary one has negative X. Without this Click reads `-3` as an
 # unknown option and the command fails ("No such option '-3'").
 _NUMBERS = {"ignore_unknown_options": True}
+
+
+@contextlib.contextmanager
+def _physical(points, json_mode):
+    """Antes do mouse de verdade: o Windows entrega para a janela sob o ponto (UIPI)? E
+    um processo por vez no mouse/teclado."""
+    from visus.desktop.core.input_guard import (
+        UIPI_REASON,
+        InputBusy,
+        input_lease,
+        pid_at,
+        uipi_blocks,
+    )
+
+    for x, y in points:
+        if x is not None and y is not None and uipi_blocks(pid_at(x, y)):
+            fail(f"not sent: {UIPI_REASON}", json_mode=json_mode)
+    try:
+        with input_lease():
+            yield
+    except InputBusy as exc:
+        fail(f"not sent: {exc} (safe to retry)", json_mode=json_mode)
 
 
 @click.group(help="Low-level mouse gestures (coordinate-based).")
@@ -44,7 +68,8 @@ def scroll_cmd(amount, x, y, json_mode):
 def drag_cmd(x1, y1, x2, y2, duration, button, json_mode):
     from visus.desktop import drag as _drag
 
-    _drag(x1, y1, x2, y2, duration=duration, button=button)
+    with _physical([(x1, y1), (x2, y2)], json_mode):
+        _drag(x1, y1, x2, y2, duration=duration, button=button)
     done(True, json_mode=json_mode, ok=True, human=f"dragged ({x1},{y1}) -> ({x2},{y2})")
 
 
@@ -56,7 +81,8 @@ def drag_cmd(x1, y1, x2, y2, duration, button, json_mode):
 def triple_click_cmd(x, y, interval, json_mode):
     from visus.desktop import triple_click as _triple
 
-    _triple(x=x, y=y, interval=interval)
+    with _physical([(x, y)], json_mode):
+        _triple(x=x, y=y, interval=interval)
     done(True, json_mode=json_mode, ok=True, human="triple-clicked")
 
 
@@ -76,7 +102,12 @@ def click_cmd(x, y, width, height, mouse_button, delay, virtual, json_mode):
     from .._common import build_bot, click_human, virtual_overrides
 
     bot = build_bot(**virtual_overrides(virtual))
-    ok = bool(bot.click_at((x, y, width, height), mouse_button=mouse_button, delay=delay))
+    if virtual:  # mouse virtual: mensagens para a janela, sem tocar no mouse da pessoa
+        ok = bool(bot.click_at((x, y, width, height), mouse_button=mouse_button, delay=delay))
+    else:
+        center = (x + width // 2, y + height // 2)
+        with _physical([center], json_mode):
+            ok = bool(bot.click_at((x, y, width, height), mouse_button=mouse_button, delay=delay))
     done(
         ok, json_mode=json_mode, ok=ok,
         human=click_human(bot, ok, f"clicked ({x}, {y})", f"click at ({x}, {y}) failed"),

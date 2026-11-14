@@ -144,3 +144,28 @@ def get(title, json_mode):
         else "window not found"
     )
     done(result, json_mode=json_mode, ok=ok, human=human)
+
+
+@window.command(
+    name="wait",
+    help="Wait until a window whose title contains TITLE shows up (or, with --gone, "
+         "closes) -- e.g. the Save As dialog after Ctrl+S, before typing into it.",
+)
+@click.argument("title")
+@click.option("--gone", is_flag=True, help="Wait for the window to close instead.")
+@click.option("--timeout", type=float, default=10.0, show_default=True)
+@json_option
+def wait_cmd(title, gone, timeout, json_mode):
+    from visus.desktop.core.waits import wait_window
+
+    result = wait_window(title, gone=gone, timeout=timeout)
+    if gone:
+        ok = bool(result)
+        human = f"{title!r} closed" if ok else f"{title!r} is still open after {timeout:g}s"
+        done(ok, json_mode=json_mode, ok=ok, human=human)
+        return
+    ok = result is not None
+    done(
+        {"window": result}, json_mode=json_mode, ok=ok,
+        human=(f"window: {result}" if ok else f"no window {title!r} after {timeout:g}s"),
+    )

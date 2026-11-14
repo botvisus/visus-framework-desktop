@@ -61,7 +61,7 @@ Full per-parameter detail is in the sections below. A `?` marks an optional para
 | `find_all` | image_path, region?, confidence? | Find EVERY occurrence of one template PNG on screen (no click). |
 | `find_multiple` | images, region?, confidence? | Locate the first match of SEVERAL template PNGs in one call (no click). |
 | `type_text` | text, interval?, delay?, backtrack?, window?, secret? | Type `text` into the CURRENTLY FOCUSED field (click/focus it first). |
-| `keyboard_command` | command, delay?, backtrack?, window? | Press a named key or shortcut. Tokens are CASE-SENSITIVE. |
+| `keyboard_command` | command, delay?, backtrack?, window?, force? | Press a named key or shortcut. Tokens are CASE-SENSITIVE. Alt+F4, Win+L, Alt+Tab… refused unless `force`. |
 | `scroll` | amount, x?, y? | Scroll the mouse wheel. Positive = up, negative = down. |
 | `drag` | start_x, start_y, end_x, end_y, duration?, button? | Drag from `(start_x, start_y)` to `(end_x, end_y)` holding `button`. |
 | `triple_click` | x?, y?, interval? | Triple-click at `(x, y)` (or the current cursor position). |
@@ -83,6 +83,8 @@ Full per-parameter detail is in the sections below. A `?` marks an optional para
 | `native_get_text` | window?, pid?, title?, control_type?, auto_id?, found_index?, timeout?, backend? | Read a control's text/value by selector. Returns the string or None. |
 | `native_get_state` | window?, pid?, title?, control_type?, auto_id?, found_index?, timeout?, backend? | Snapshot a control's state by selector. |
 | `native_wait` | window?, pid?, title?, control_type?, auto_id?, found_index?, state?, timeout?, poll_interval?, backend? | Wait until a control reaches `state` by selector. |
+| `wait_window` | title, gone?, timeout? | Wait until a window shows up (or, `gone`, closes) — the dialog after Ctrl+S. |
+| `wait_menu` | window, closed?, timeout? | Wait until a menu of that window's program is open (or closed). |
 | `get_monitors` | — | List connected monitors so you can target one in a multi-screen setup. |
 | `get_display_size` | — | Return the primary display size as `{width, height}` (pixels). |
 | `wait_for_stable_screen` | region?, stable_for?, timeout?, poll_interval? | Block until the screen stops changing -- use INSTEAD of sleeping. |
@@ -330,10 +332,21 @@ expand: `{ctrl}a`, `{tab}`, `{enter}`, `{escape}`. `interval` = per-char delay.
 another window in front nothing is typed (returns `false`). `secret: true` for a
 password/token: typed the same, shown as `••••••` in a recording's report.
 
-### `keyboard_command(command, delay=0, backtrack=False, window=None) -> bool`
+### `keyboard_command(command, delay=0, backtrack=False, window=None, force=False) -> bool`
 Press a key/chord — tokens **case-sensitive**: `Enter`, `Escape`, `Tab`,
 `Delete`, `F1`–`F12`, `Up`/`Down`/`Left`/`Right`, `Ctrl+S`, `Ctrl+C`, `Ctrl+V`,
-`Ctrl+A`, `Ctrl+Z`, `Alt+F4`, `Alt+Tab`, `Shift+Tab`, `Ctrl+T`, `Ctrl+W`.
+`Ctrl+A`, `Ctrl+Z`, `Shift+Tab`, `Ctrl+T`, `Ctrl+W`.
+Refused (an error, nothing sent) unless `force=True`: shortcuts that take the run's
+window away or change the session — `Alt+F4`, `Win+L`, `Win+D`, `Alt+Tab`, `Win+R`,
+`Win+X`, `Win+E`, `Ctrl+Shift+Esc`, also with extra modifiers. Use `close_window`.
+
+### `wait_window(title, gone=False, timeout=10.0) -> dict`
+Wait until a window whose title contains `title` shows up — or, `gone=True`, closes.
+Returns `{ok, window}`.
+
+### `wait_menu(window, closed=False, timeout=5.0) -> dict`
+Wait until a menu of the program of `window` is open — or, `closed=True`, closed.
+Classic Win32, WPF/WinUI flyouts and Chromium menus. Returns `{ok}`.
 
 ---
 

@@ -6,6 +6,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-14
+
+The rest of what Vercel Labs' agent-desktop (Apache-2.0) does on Windows and we did not.
+
+### Added
+- `window wait TITLE [--gone]` / MCP `wait_window` — wait for a dialog to show up or
+  close; `native wait-menu --window X [--closed]` / MCP `wait_menu` — wait for a menu
+  (classic Win32, WPF/WinUI flyouts such as Windows 11 Notepad's, Chromium).
+- Guards before real keyboard/mouse input: a program running as administrator is
+  refused (UIPI would drop the input silently); a cross-process lock lets one process
+  drive the mouse/keyboard at a time; a native click by the real mouse checks no other
+  program's window covers the control (brings the window to the front once, else
+  refuses). All of them are `not_delivered` (safe to retry).
+- `key` / `keyboard_command` refuse shortcuts that take the run's window away or change
+  the session — Alt+F4, Win+L, Win+D, Alt+Tab, Win+R, Win+X, Win+E, Ctrl+Shift+Esc, and
+  the same with extra modifiers — unless `--force` / `force=True`.
+- `native snapshot` says when the read is incomplete (`! partial read`, JSON `partial`;
+  MCP `unreadable` / `truncated`) instead of silently dropping a branch that failed.
+
+### Changed
+- The snapshot is read in batch: one cross-process round trip per node (a UIA cache
+  request with every property) instead of one per property — same output, measured
+  2.7x faster on File Explorer.
+- Every UI Automation call has a deadline (`CUIAutomation8`: 2 s to connect, 20 s per
+  call): a stuck provider fails instead of leaving a thread blocked in Windows.
+- Acting by number also checks the control's class and description (help text), so a
+  control replaced by another with the same name is refused.
+
 ## [0.5.0] - 2026-11-14
 
 Safer native automation for AI agents, with ideas from Vercel Labs' agent-desktop

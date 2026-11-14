@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 import click
 
 from .._common import json_option
@@ -38,13 +40,32 @@ def type_cmd(text, interval, delay, backtrack, virtual, window_title, json_mode)
         return
     if window_title:
         _require_front(window_title, json_mode)
-    ok = bool(build_bot().type_text(text, interval=interval, delay=delay, backtrack=backtrack))
+    with _lease(json_mode):
+        ok = bool(build_bot().type_text(text, interval=interval, delay=delay, backtrack=backtrack))
     done(ok, json_mode=json_mode, ok=ok, human=("typed" if ok else "type failed"))
+
+
+@contextlib.contextmanager
+def _lease(json_mode):
+    """Um processo por vez no mouse/teclado: dois agentes digitando juntos misturam as teclas."""
+    from visus.desktop.core.input_guard import InputBusy, input_lease
+
+    try:
+        with input_lease():
+            yield
+    except InputBusy as exc:
+        fail(f"not sent: {exc} (safe to retry)", json_mode=json_mode)
 
 
 def _require_front(window_title, json_mode):
     """Como uma pessoa olha antes de digitar: a janela certa na frente, ou nada sai."""
-    from visus.desktop.core.window import foreground_title, front_window
+    from visus.desktop.core.input_guard import UIPI_REASON, uipi_blocks
+    from visus.desktop.core.window import (
+        _window_pid,
+        find_window,
+        foreground_title,
+        front_window,
+    )
 
     if front_window(window_title) is None:
         fail(
@@ -52,6 +73,9 @@ def _require_front(window_title, json_mode):
             "-- nothing was typed. Is it open? `window list` shows the open ones.",
             json_mode=json_mode,
         )
+    hwnd = find_window(window_title)
+    if hwnd and uipi_blocks(_window_pid(hwnd)):
+        fail(f"not sent: {UIPI_REASON}", json_mode=json_mode)
 
 
 def _type_virtual(text, window_title, json_mode):
@@ -87,16 +111,33 @@ def _type_virtual(text, window_title, json_mode):
     help="The window (title substring) that gets the key: brought to the front and "
          "checked first -- nothing is pressed while another window is in front.",
 )
+@click.option(
+    "--force", is_flag=True,
+    help="Send a shortcut that is blocked by default because it takes the run's window "
+         "away or changes the session (Alt+F4, Win+L, Win+D, Alt+Tab, Win+R, Win+X, Win+E, "
+         "Ctrl+Shift+Esc).",
+)
 @json_option
-def key_cmd(command, delay, backtrack, window_title, json_mode):
-    """COMMAND examples: Enter, Escape, Tab, F5, Ctrl+S, Alt+F4, Shift+Tab, Alt,
+def key_cmd(command, delay, backtrack, window_title, force, json_mode):
+    """COMMAND examples: Enter, Escape, Tab, F5, Ctrl+S, Shift+Tab, Alt,
     "Alt, H, O, I"."""
+    from visus.desktop.core.input_guard import blocked_combo
+
     from .._common import build_bot
 
+    danger = None if force else blocked_combo(command)
+    if danger:
+        fail(
+            f"not sent: {danger} is blocked -- it closes/switches the window or changes the "
+            "session under the run. To close a window use `window close`; pass --force only "
+            "if you really mean it.",
+            json_mode=json_mode,
+        )
     if window_title:
         _require_front(window_title, json_mode)
 
-    ok = bool(build_bot().keyboard_command(command, delay=delay, backtrack=backtrack))
+    with _lease(json_mode):
+        ok = bool(build_bot().keyboard_command(command, delay=delay, backtrack=backtrack))
     done(
         ok, json_mode=json_mode, ok=ok,
         human=(

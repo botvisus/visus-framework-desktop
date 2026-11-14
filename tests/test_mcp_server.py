@@ -84,6 +84,8 @@ def test_tool_registry_covers_each_capability(server):
         "native_get_text",
         "native_get_state",
         "native_wait",
+        "wait_window",
+        "wait_menu",
         "smart_find",
         "smart_click",
         "wait_for_file",

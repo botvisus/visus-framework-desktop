@@ -1009,7 +1009,11 @@ def type_text(
 
 @mcp.tool()
 def keyboard_command(
-    command: str, delay: float = 0, backtrack: bool = False, window: str | None = None
+    command: str,
+    delay: float = 0,
+    backtrack: bool = False,
+    window: str | None = None,
+    force: bool = False,
 ) -> bool:
     """Press a named key or shortcut — this is the visus way; never pyautogui.
 
@@ -1025,8 +1029,19 @@ def keyboard_command(
     another (``"Alt, H, O, I"`` -- Office key tips: Home > Format > AutoFit Column
     Width) work too. ``window`` brings that window to the front and checks it first,
     like ``type_text``.
+    BLOCKED unless ``force=True``: shortcuts that take the run's window away or change
+    the session -- Alt+F4, Win+L, Win+D, Alt+Tab, Win+R, Win+X, Win+E, Ctrl+Shift+Esc
+    (and the same with extra modifiers). To close a window use ``close_window``.
     RETURNS: True if recognized and sent; False otherwise.
     """
+    from .core.input_guard import blocked_combo
+
+    danger = None if force else blocked_combo(command)
+    if danger:
+        raise ValueError(
+            f"not sent: {danger} is blocked -- it closes/switches the window or changes the "
+            "session under the run; use close_window to close, or force=True if you mean it"
+        )
     return bool(
         get_bot().keyboard_command(command, delay=delay, backtrack=backtrack, window=window)
     )
@@ -1455,7 +1470,9 @@ def native_snapshot(
     / ``native_set_text`` / ``native_get_text`` to act on exactly that control (two
     "Close" buttons get found_index 0 and 1). The name is the accessibility name,
     which may differ from the label on screen (Excel's "Fill Color" is "Shading").
-    RETURNS: ``{window, items, more}`` -- ``more`` counts the items past ``max_items``.
+    RETURNS: ``{window, items, more}`` -- ``more`` counts the items past ``max_items``;
+    ``unreadable`` (branches that did not answer) / ``truncated`` when the read is
+    incomplete -- controls may be missing, snapshot again before concluding "not there".
     """
     from .core.native_rpa import native_snapshot_nodes, select_actionable
 
@@ -1463,11 +1480,52 @@ def native_snapshot(
         window=window, pid=pid, max_depth=max_depth, timeout=timeout, backend=backend
     )
     items = select_actionable(nodes) if title is not None else []
-    return {
+    result = {
         "window": title,
         "items": items[:max_items],
         "more": max(0, len(items) - max_items),
     }
+    # leitura incompleta dita: ramos que não responderam / o limite de nós cortou
+    if getattr(nodes, "unreadable", 0):
+        result["unreadable"] = nodes.unreadable
+    if getattr(nodes, "truncated", False):
+        result["truncated"] = True
+    return result
+
+
+@mcp.tool()
+def wait_window(title: str, gone: bool = False, timeout: float = 10.0) -> dict:
+    """Wait until a window whose title contains ``title`` shows up -- or, with
+    ``gone=True``, closes.
+
+    USE WHEN: a step opens or closes a window -- the Save As dialog after Ctrl+S, a
+    confirmation box -- before acting on it (acting earlier clicks into nothing).
+    RETURNS: ``{ok, window}`` -- the title of the window that showed up (or None).
+    """
+    from .core.waits import wait_window as _wait
+
+    result = _wait(title, gone=gone, timeout=timeout)
+    if gone:
+        return {"ok": bool(result), "window": None}
+    return {"ok": result is not None, "window": result}
+
+
+@mcp.tool()
+def wait_menu(window: str, closed: bool = False, timeout: float = 5.0) -> dict:
+    """Wait until a menu of the program of ``window`` (title substring) is open -- or,
+    with ``closed=True``, closed. Classic Win32 menus, WPF/WinUI and Chromium menus.
+
+    USE WHEN: you opened a menu (Alt, a menu button, right-click) and want its items
+    before acting on them.
+    RETURNS: ``{ok}`` -- False when the window is not open or the menu did not change.
+    """
+    from .core.waits import wait_menu as _wait
+    from .core.waits import window_pid
+
+    pid = window_pid(window)
+    if pid is None:
+        return {"ok": False, "error": f"no visible window matches {window!r}"}
+    return {"ok": _wait(pid, open=not closed, timeout=timeout)}
 
 
 @mcp.tool()
@@ -2482,7 +2540,8 @@ for _name, _obj in list(globals().items()):
             "native_dump_tree", "native_snapshot", "native_click", "native_drag", "native_scroll",
             "native_set_text", "native_toggle", "native_select", "native_expand",
             "native_scroll_into_view",
-            "native_get_text", "native_get_state", "native_wait", "open_app",
+            "native_get_text", "native_get_state", "native_wait", "wait_window", "wait_menu",
+            "open_app",
             "use_app",
             "smart_find", "smart_click",
             "wait_for_file", "wait_for_file_stable", "get_clipboard",

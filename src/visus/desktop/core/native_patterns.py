@@ -44,15 +44,7 @@ POLL = 0.025
 MAX_SELECT_NODES = 2048
 MAX_REALIZE_SCROLLS = 16
 
-# nome da ação (como o snapshot mostra) -> nome da propriedade Is*PatternAvailable
-_PATTERN_FLAGS = {
-    "invoke": "UIA_IsInvokePatternAvailablePropertyId",
-    "toggle": "UIA_IsTogglePatternAvailablePropertyId",
-    "expand": "UIA_IsExpandCollapsePatternAvailablePropertyId",
-    "select": "UIA_IsSelectionItemPatternAvailablePropertyId",
-    "value": "UIA_IsValuePatternAvailablePropertyId",
-    "scroll": "UIA_IsScrollPatternAvailablePropertyId",
-}
+from .uia_batch import PATTERN_FLAGS as _PATTERN_FLAGS  # noqa: E402 - uma tabela só
 
 
 def _uia():
@@ -71,7 +63,8 @@ def _prop(element, name: str):
 
 def read_node_extras(element_info) -> dict[str, Any]:
     """Estados e ações de um nó do walk, para o snapshot: ``actions`` (os padrões
-    anunciados), ``enabled``, ``offscreen``, ``password``, ``toggle``, ``expand``.
+    anunciados), ``enabled``, ``offscreen``, ``password``, ``toggle``, ``expand``, e a
+    identidade estável ``class_name`` / ``help`` (descrição).
     ``{}`` quando o elemento não é UIA (backend win32) ou a leitura falha."""
     element = getattr(element_info, "element", None)
     if element is None:
@@ -83,6 +76,8 @@ def read_node_extras(element_info) -> dict[str, Any]:
             "enabled": bool(_prop(element, "UIA_IsEnabledPropertyId")),
             "offscreen": bool(_prop(element, "UIA_IsOffscreenPropertyId")),
             "password": bool(_prop(element, "UIA_IsPasswordPropertyId")),
+            "class_name": str(_prop(element, "UIA_ClassNamePropertyId") or ""),
+            "help": str(_prop(element, "UIA_HelpTextPropertyId") or ""),
         }
         if "toggle" in actions:
             extras["toggle"] = int(_prop(element, "UIA_ToggleToggleStatePropertyId"))

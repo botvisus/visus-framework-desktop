@@ -282,7 +282,7 @@ visus mouse drag 100 200 400 200 --duration 0.8
 | Command | What it does |
 |---|---|
 | `type TEXT` | Type into the focused field, one key per character (accents included). `--interval` (`0.02`), `--delay`, `--backtrack`, `--window TITLE` (brought to the front and CHECKED first — nothing is typed while another window is in front), `--virtual` (with `--window`: type by window messages into its focused control — no focus change, clipboard untouched), `--json`. Inline tokens: `{ctrl}a {tab} {enter} {escape}`. |
-| `key TOKEN` | Press a key or ANY chord (`Ctrl+Shift+S`, `Win+Shift+S`), a key alone (`Alt`) or a comma sequence (`"Alt, H, O, I"`). `--delay`, `--backtrack`, `--window TITLE` (checked in front first, like `type`), `--json`. |
+| `key TOKEN` | Press a key or ANY chord (`Ctrl+Shift+S`, `Win+Shift+S`), a key alone (`Alt`) or a comma sequence (`"Alt, H, O, I"`). `--delay`, `--backtrack`, `--window TITLE` (checked in front first, like `type`), `--force`, `--json`. Shortcuts that take the run's window away or change the session are **refused** unless `--force`: `Alt+F4`, `Win+L`, `Win+D`, `Alt+Tab`, `Win+R`, `Win+X`, `Win+E`, `Ctrl+Shift+Esc` — and any of them with extra modifiers (`Alt+Shift+Tab`). Close a window with `window close`. |
 | `keys` | List every valid `key` token. `--json`. |
 
 ```bash
@@ -290,6 +290,19 @@ visus type "admin" --window "Login"
 visus key "Ctrl+S" --window "Bloco de notas"
 visus keys --json
 ```
+
+Before the real keyboard or mouse (`type`, `key`, `mouse click|drag|triple-click`,
+and a native click/set-text that falls back to them):
+
+- **a program running as administrator** (when visus is not) is refused — Windows
+  (UIPI) silently drops input sent up that boundary, so it would "succeed" and do
+  nothing: `not sent: the program runs as administrator…`;
+- **one process at a time** drives the mouse/keyboard (a lock next to the config,
+  `input.lock`): two agents, or an agent and a bot, typing at once mix their keys.
+  The other waits up to 15 s, then `not sent: … (safe to retry)`;
+- a native click by the real mouse checks that **no other program's window covers
+  the control**: covered, the window is brought to the front once and checked again;
+  still covered, `not sent: 'X' is over the control`.
 
 ---
 
@@ -349,6 +362,14 @@ below answer `{"ok", "delivery", "retry_safe", "method", "reason"}`; `delivery` 
 nothing to read back), `verified` (sent and the state reads back as asked) or
 `uncertain` (it may have landed — read the state before trying again).
 
+The snapshot is read in batch (one round trip per node, every property cached) and
+every UI Automation call has its own deadline (2 s to connect, 20 s per call), so a
+stuck provider fails instead of hanging. A read that came back incomplete says so —
+`! partial read: …` (`--json`: `"partial"`) when a branch of the window did not answer
+or the node limit cut the read: controls may be missing, snapshot again before
+concluding "it is not there". Before acting by number, the control's kind and
+description (help text) are checked too, not only its name and count.
+
 ### `visus native check|uncheck|toggle [N]` — checkboxes without the mouse
 UIA Toggle pattern; the state is read back. `check`/`uncheck` send nothing when the
 box is already so; a tri-state box takes two toggles; a toggle that changes nothing
@@ -388,6 +409,11 @@ enabled, checked, value, control_type, rect}`.
 ### `visus native wait`
 Selector options + `--state exists|visible|enabled|ready` (default `exists`),
 `--timeout` (`10.0`), `--poll-interval` (`0.3`), `--json`.
+
+### `visus native wait-menu --window TITLE [--closed]`
+Wait until a menu of that window's program is open (or, with `--closed`, closed) —
+after opening a menu, before acting on its items. Classic Win32 menus, WPF/WinUI
+flyouts (Windows 11 Notepad) and Chromium menus. `--timeout` (`5.0`), `--json`.
 
 ```bash
 visus native dump-tree --window "Notepad" --json
@@ -506,6 +532,7 @@ visus use-app --window Calculadora --json
 | `ensure` | — | `--title`, `--process`, `--no-show`, `--no-foreground`, `--json` | state dict |
 | `list` | — | `--title`, `--process`, `--json` | list of windows |
 | `get TITLE` | title | `--json` | `{title, pid, hwnd, x, y, width, height}` |
+| `wait TITLE` | title | `--gone`, `--timeout` (`10`), `--json` | `{window}` once it shows up (or closed) |
 
 `ensure` is the **fast targeting call** — answers "is the app open / minimized /
 where?" and brings it to the front in one go. Prefer `--process` over `--title`
@@ -515,6 +542,7 @@ to avoid false-positives. `--no-show` makes it a read-only probe.
 visus window ensure --process notepad.exe --json
 visus window list --process chrome.exe --json
 visus window close "Untitled - Notepad" --yes
+visus key "Ctrl+S" --window "Bloco de notas" && visus window wait "Salvar como"
 ```
 
 ---
