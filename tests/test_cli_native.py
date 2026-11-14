@@ -8,6 +8,7 @@ from unittest.mock import patch
 from click.testing import CliRunner
 
 from visus.desktop.cli import cli
+from visus.desktop.core.outcome import ActionOutcome
 
 runner = CliRunner()
 
@@ -42,24 +43,32 @@ class TestDumpTree:
 
 class TestNativeClick:
     def test_click_success(self):
-        with patch("visus.desktop.core.native_rpa.native_click", return_value=True) as m:
+        with patch(
+            "visus.desktop.core.native_rpa.native_click_ex",
+            return_value=ActionOutcome.sent("Invoke"),
+        ) as m:
             result = runner.invoke(
                 cli, ["native", "click", "--title", "OK", "--control-type", "Button"]
             )
         assert result.exit_code == 0
+        assert "clicked (Invoke)" in result.output
         assert m.call_args.kwargs["title"] == "OK"
         assert m.call_args.kwargs["control_type"] == "Button"
 
     def test_click_failure(self):
-        with patch("visus.desktop.core.native_rpa.native_click", return_value=False):
+        with patch(
+            "visus.desktop.core.native_rpa.native_click_ex",
+            return_value=ActionOutcome.not_sent("control not found in the window"),
+        ):
             result = runner.invoke(cli, ["native", "click", "--title", "OK"])
         assert result.exit_code == 1
+        assert "safe to retry" in result.output
 
     def test_dry_run_uses_get_state(self):
         state = {"exists": True, "rect": [1, 2, 3, 4]}
         with patch(
             "visus.desktop.core.native_rpa.native_get_state", return_value=state
-        ) as gs, patch("visus.desktop.core.native_rpa.native_click") as click_fn:
+        ) as gs, patch("visus.desktop.core.native_rpa.native_click_ex") as click_fn:
             result = runner.invoke(
                 cli, ["native", "click", "--title", "OK", "--dry-run"]
             )
@@ -71,12 +80,15 @@ class TestNativeClick:
 
 class TestNativeText:
     def test_set_text(self):
-        with patch("visus.desktop.core.native_rpa.native_set_text", return_value=True) as m:
+        with patch(
+            "visus.desktop.core.native_rpa.native_set_text_ex",
+            return_value=ActionOutcome.sent("keyboard", verified=True),
+        ) as m:
             result = runner.invoke(
                 cli, ["native", "set-text", "hello", "--auto-id", "edit1"]
             )
         assert result.exit_code == 0
-        # `text` is keyword-only in native_set_text: the CLI always passes it by name
+        # `text` is keyword-only in native_set_text_ex: the CLI always passes it by name
         assert m.call_args.kwargs["text"] == "hello"
         assert m.call_args.kwargs["auto_id"] == "edit1"
 

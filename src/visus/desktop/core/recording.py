@@ -236,7 +236,12 @@ def _default_check(result: Any, params: dict[str, Any]):
 
 
 def _native_check(result: Any, params: dict[str, Any]):
-    """``native_*`` report failure with ``False`` (click/set/wait) or ``None`` (get)."""
+    """``native_*`` report failure with ``False`` (click/set/wait) or ``None`` (get);
+    the semantic actions (toggle/select/expand) with a falsy ``ActionOutcome``."""
+    from .outcome import ActionOutcome
+
+    if isinstance(result, ActionOutcome):
+        return (result.ok, None if result.ok else result.human(""), None)
     if result is False or result is None:
         from . import native_rpa  # lazy: native_rpa imports this module
 

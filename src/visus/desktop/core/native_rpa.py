@@ -36,11 +36,44 @@ import logging
 import threading
 import time
 
+from .outcome import ActionOutcome
 from .recording import native_target, records_native
 
 logger = logging.getLogger(__name__)
 
 _TIMEOUT_SENTINEL = object()
+
+
+class NativeAppUnresponsive(Exception):
+    """A janela alvo não está atendendo mensagens (o programa travou)."""
+
+
+def _run_capturing(fn, timeout: float):
+    """Como ``_run_with_timeout``, mas devolve ``(valor, exceção, estourou_o_tempo)``
+    para quem precisa dizer POR QUE falhou (o ``ActionOutcome``)."""
+    box: dict = {"value": None, "error": None}
+
+    def _work():
+        try:
+            box["value"] = fn()
+        except Exception as exc:  # o chamador classifica
+            box["error"] = exc
+
+    worker = threading.Thread(target=_work, daemon=True)
+    worker.start()
+    worker.join(timeout)
+    if worker.is_alive():
+        return None, None, True
+    return box["value"], box["error"], False
+
+
+def _ensure_pumping(hwnd) -> None:
+    from .win_health import window_is_pumping
+
+    if hwnd and not window_is_pumping(int(hwnd)):
+        raise NativeAppUnresponsive(
+            "the program is not responding (its window does not answer) -- wait for it, then retry"
+        )
 
 
 def _run_with_timeout(fn, timeout: float):
@@ -143,6 +176,8 @@ def _connect_top(window, pid, connect_timeout: float, backend="uia"):
             hwnd = find_window_handle(str(window))
         if not hwnd:
             return None
+        # app travado: ElementFromHandle (WM_GETOBJECT) bloquearia sem prazo -- pergunte antes
+        _ensure_pumping(hwnd)
         spec = Desktop(backend=backend).window(handle=hwnd)
         return spec if spec.exists(timeout=connect_timeout) else None
 
@@ -155,6 +190,8 @@ def _connect_top(window, pid, connect_timeout: float, backend="uia"):
         fw = get_foreground_window()
         if not fw:
             return None
+        if fw.get("hwnd"):
+            _ensure_pumping(fw["hwnd"])
         app.connect(process=fw["pid"], timeout=connect_timeout)
     return app.top_window()
 
@@ -240,14 +277,48 @@ def native_dump_tree(
     return [] if result is _TIMEOUT_SENTINEL or result is None else result
 
 
+# Tipos que só viram item do snapshot quando ANUNCIAM uma ação (um Custom/Group
+# clicável do WPF ou do Chromium sumia da lista fixa de tipos).
+_CANDIDATE_CONTROL_TYPES = frozenset({"Custom", "Group", "Pane", "Image"})
+# Ações que fazem um nó merecer número: rolar sozinho não conta (o Chromium anuncia
+# rolagem em quase todo nó).
+_PRIMARY_ACTIONS = frozenset({"invoke", "toggle", "expand", "select", "value"})
+_WRAPPER_TYPES = frozenset({"Group", "Custom", "Pane"})
+_CHROMIUM_CLASS = "Chrome_WidgetWin_1"
+_MAX_RAW_DEPTH = 50
+
+
+def _is_web_wrapper(node: dict) -> bool:
+    """Um grupo anônimo do Chromium (sem nome, sem id, sem ação): o Chromium empilha
+    dezenas deles sobre o conteúdo, e contando-os o snapshot não chegava aos botões.
+    Medido no agent-desktop (A16-8): 54 de 81 grupos de uma janela Electron são assim."""
+    return (
+        node.get("control_type") in _WRAPPER_TYPES
+        and not node.get("title")
+        and not node.get("auto_id")
+        and not (set(node.get("actions") or ()) & _PRIMARY_ACTIONS)
+    )
+
+
 def _walk_tree(top, max_depth: int, max_nodes: int = 5000) -> list[dict]:
     """Pre-order walk of ``children()`` — the same order pywinauto's
     ``descendants()`` uses, so a ``found_index`` counted here selects the same
-    control later. ``max_nodes`` stops a runaway walk on huge trees."""
-    nodes: list[dict] = []
+    control later. ``max_nodes`` stops a runaway walk on huge trees.
 
-    def _walk(element, depth):
-        if depth > max_depth or len(nodes) >= max_nodes:
+    Each actionable-looking node also carries its states and announced actions
+    (``native_patterns.read_node_extras``). Under a Chromium/Electron window an
+    anonymous wrapper group does not count as a level of ``max_depth`` (its raw
+    nesting is still capped), so web content is reachable at the usual depth."""
+    from .native_patterns import read_node_extras
+
+    nodes: list[dict] = []
+    try:
+        chromium = (getattr(top.element_info, "class_name", "") or "") == _CHROMIUM_CLASS
+    except Exception:
+        chromium = False
+
+    def _walk(element, depth, raw_depth):
+        if depth > max_depth or raw_depth > _MAX_RAW_DEPTH or len(nodes) >= max_nodes:
             return
         try:
             children = element.children()
@@ -258,20 +329,25 @@ def _walk_tree(top, max_depth: int, max_nodes: int = 5000) -> list[dict]:
                 return
             try:
                 info = child.element_info
-                nodes.append(
-                    {
-                        "depth": depth,
-                        "control_type": getattr(info, "control_type", "") or "",
-                        "title": (info.name or ""),
-                        "auto_id": getattr(info, "automation_id", "") or "",
-                        "rect": _rect_to_box(child),
-                    }
-                )
+                node = {
+                    "depth": depth,
+                    "control_type": getattr(info, "control_type", "") or "",
+                    "title": (info.name or ""),
+                    "auto_id": getattr(info, "automation_id", "") or "",
+                    "rect": _rect_to_box(child),
+                }
+                if (
+                    node["control_type"] in ACTIONABLE_CONTROL_TYPES
+                    or node["control_type"] in _CANDIDATE_CONTROL_TYPES
+                ):
+                    node.update(read_node_extras(info))
+                nodes.append(node)
             except Exception:
                 continue
-            _walk(child, depth + 1)
+            step = 0 if chromium and _is_web_wrapper(node) else 1
+            _walk(child, depth + step, raw_depth + 1)
 
-    _walk(top, 1)
+    _walk(top, 1, 1)
     return nodes
 
 
@@ -306,31 +382,101 @@ def select_actionable(nodes: list[dict]) -> list[dict]:
     criteria that selector will use (an empty auto_id is not a criterion), so two
     "Close" buttons become found_index 0 and 1 and never get swapped.
     """
+    import bisect
+
+    from .native_patterns import states_of
+
+    by_name: dict = {}
+    by_id: dict = {}
+    for pos, node in enumerate(nodes):
+        key = (node.get("control_type") or "", node.get("title") or "")
+        by_name.setdefault(key, []).append(pos)
+        by_id.setdefault(key + (node.get("auto_id") or "",), []).append(pos)
+
     items: list[dict] = []
     for pos, node in enumerate(nodes):
-        ctype = node.get("control_type") or ""
-        if ctype not in ACTIONABLE_CONTROL_TYPES:
+        if not is_actionable(node):
             continue
+        ctype = node.get("control_type") or ""
         title = node.get("title") or ""
         auto_id = node.get("auto_id") or ""
-        found_index = sum(
-            1
-            for prev in nodes[:pos]
-            if (prev.get("control_type") or "") == ctype
-            and (prev.get("title") or "") == title
-            and (not auto_id or (prev.get("auto_id") or "") == auto_id)
-        )
-        items.append(
-            {
-                "index": len(items),
-                "control_type": ctype,
-                "title": title,
-                "auto_id": auto_id,
-                "found_index": found_index,
-                "rect": node.get("rect"),
-            }
-        )
+        # o critério do seletor guardado: tipo + nome (+ auto_id quando houver)
+        same = by_id[(ctype, title, auto_id)] if auto_id else by_name[(ctype, title)]
+        item = {
+            "index": len(items),
+            "control_type": ctype,
+            "title": title,
+            "auto_id": auto_id,
+            "found_index": bisect.bisect_left(same, pos),
+            # quantos controles casam este seletor AGORA: na hora de agir, um número
+            # diferente quer dizer que a janela mudou e o found_index aponta outro controle
+            "match_count": len(same),
+            "rect": node.get("rect"),
+        }
+        states = states_of(node)
+        if states:
+            item["states"] = states
+        if node.get("actions"):
+            item["actions"] = list(node["actions"])
+        items.append(item)
     return items
+
+
+def is_actionable(node: dict) -> bool:
+    """Um tipo acionável, ou qualquer nó que anuncie uma ação de verdade."""
+    ctype = node.get("control_type") or ""
+    return ctype in ACTIONABLE_CONTROL_TYPES or bool(
+        set(node.get("actions") or ()) & _PRIMARY_ACTIONS
+    )
+
+
+def _same_selector(node: dict, ctype: str, title: str, auto_id: str) -> bool:
+    """O critério do seletor guardado: tipo + nome (+ auto_id quando houver)."""
+    return (
+        (node.get("control_type") or "") == ctype
+        and (node.get("title") or "") == title
+        and (not auto_id or (node.get("auto_id") or "") == auto_id)
+    )
+
+
+def verify_snapshot_item(snap: dict, item: dict, *, timeout: float = 10.0) -> str | None:
+    """Antes de agir por número: o controle do snapshot ainda é o mesmo?
+
+    Relê a janela e conta quantos controles casam o seletor guardado. Se a contagem
+    mudou (apareceu ou sumiu um igual), o ``found_index`` pode apontar OUTRO controle --
+    o "segundo Excluir" virou o terceiro -- e a ação é recusada antes de enviar.
+    Devolve ``None`` quando confere, ou o motivo. Snapshots antigos sem
+    ``match_count`` passam sem conferir.
+
+    Ideia do agent-desktop (Vercel Labs, Apache-2.0): a ref só resolve quando a
+    contagem na janela inteira confere (``refs/resolve_saved_ref.rs``)."""
+    expected = item.get("match_count")
+    if expected is None:
+        return None
+    title, nodes = native_snapshot_nodes(
+        window=snap.get("window"),
+        pid=snap.get("pid"),
+        max_depth=snap.get("max_depth") or 25,
+        timeout=timeout,
+        backend=snap.get("backend") or "uia",
+    )
+    if title is None:
+        return "the window is gone or not responding"
+    now = sum(
+        1
+        for node in nodes
+        if _same_selector(
+            node, item.get("control_type") or "", item.get("title") or "", item.get("auto_id") or ""
+        )
+    )
+    if now == 0:
+        return "this control is gone from the window"
+    if now != expected:
+        return (
+            f"the window changed since the snapshot ({now} controls like this now, "
+            f"{expected} then) -- the number may point to another control"
+        )
+    return None
 
 
 def native_snapshot_nodes(
@@ -397,48 +543,140 @@ def native_click(
     ``at=(x, y)``: click THAT point inside the control (offset in pixels from its
     top-left corner) with the real mouse -- where it matters on a surface, like
     Paint's canvas (fill, pick a color, place a point).
-    Returns True on success.
+    Returns True on success. ``retries`` only re-attempts what never reached the app
+    (``native_click_ex`` says which): a click that may have landed is never repeated.
     """
+    return native_click_ex(
+        window, pid, title=title, control_type=control_type, auto_id=auto_id,
+        found_index=found_index, button=button, double=double, method=method,
+        timeout=timeout, connect_timeout=connect_timeout, retries=retries, delay=delay,
+        backend=backend, title_re=title_re, at=at,
+    ).ok
+
+
+def _act_on_control(
+    window, pid, selector: dict, *, backend: str, timeout: float, connect_timeout: float, act
+) -> ActionOutcome:
+    """Acha o controle e roda ``act(ctrl, sent)``; o resultado diz se chegou ao app.
+
+    ``act`` marca ``sent["sent"] = True`` imediatamente antes de enviar algo ao app,
+    para que um tempo estourado ou um erro DEPOIS disso vire ``uncertain`` (pode ter
+    chegado) e, ANTES disso, ``not_delivered`` (seguro repetir)."""
     if not _ensure_pywinauto():
-        return False
+        return ActionOutcome.not_sent("pywinauto is not installed (pip install visus-desktop[native])")
+    sent = {"sent": False}
 
-    def _attempt():
-        def _job():
+    def _job():
+        try:
             top = _connect_top(window, pid, connect_timeout, backend)
-            if top is None:
-                return False
-            ctrl = top.child_window(
-                **_selector_kwargs(title, control_type, auto_id, found_index, backend, title_re)
-            )
-            if not ctrl.exists(timeout=timeout):
-                return False
-            _on_target(ctrl)
-            if at is not None:  # um ponto da superfície: o mouse de verdade, ali
-                rect = ctrl.rectangle()
-                point, _ = _drag_points((rect.left, rect.top), at, at)
-                if button == "left":
-                    _activate_if_needed(rect, point)
-                _mouse_click(point, button, 2 if double else 1)
-                _mouse_on(rect)
-                return True
-            if double:
-                ctrl.double_click_input()
-                _mouse_on(ctrl.rectangle())
-                return True
-            if method in ("invoke", "auto"):
-                try:
-                    ctrl.invoke()
-                    return True
-                except Exception:
-                    if method == "invoke":
-                        return False
-            ctrl.click_input(button=button)
+        except NativeAppUnresponsive as exc:
+            return ActionOutcome.not_sent(str(exc), kind="app_unresponsive")
+        if top is None:
+            return ActionOutcome.not_sent("no such window is open", kind="window_not_found")
+        ctrl = top.child_window(**selector)
+        if not ctrl.exists(timeout=timeout):
+            return ActionOutcome.not_sent("control not found in the window", kind="control_not_found")
+        _on_target(ctrl)
+        return act(ctrl, sent)
+
+    result, error, timed_out = _run_capturing(_job, timeout + connect_timeout)
+    if timed_out:
+        if sent["sent"]:
+            return ActionOutcome.maybe_sent("timed out after the action was sent")
+        return ActionOutcome.not_sent(
+            f"the window did not answer within {timeout + connect_timeout:g}s", kind="timeout"
+        )
+    if error is not None:
+        logger.debug("native action failed: %s", error)
+        if sent["sent"]:
+            return ActionOutcome.maybe_sent(f"error after the action was sent: {error}")
+        return ActionOutcome.not_sent(str(error) or type(error).__name__)
+    return result
+
+
+def _retrying(run, retries: int, delay: float) -> ActionOutcome:
+    """Repete só o que não chegou ao app."""
+    outcome = run()
+    for _ in range(max(0, retries)):
+        if outcome.ok or not outcome.retry_safe:
+            break
+        if delay > 0:
+            time.sleep(delay)
+        outcome = run()
+    return outcome
+
+
+def native_click_ex(
+    window=None,
+    pid=None,
+    *,
+    title=None,
+    control_type=None,
+    auto_id=None,
+    found_index=None,
+    button: str = "left",
+    double: bool = False,
+    method: str = "auto",
+    timeout: float = 5.0,
+    connect_timeout: float = 2.0,
+    retries: int = 0,
+    delay: float = 0.3,
+    backend: str = "uia",
+    title_re=None,
+    at=None,
+) -> ActionOutcome:
+    """``native_click`` that says how the click reached the app (``ActionOutcome``).
+
+    ``method="auto"``: UIA ``Invoke`` → ``LegacyIAccessible.DoDefaultAction`` (both
+    without the mouse) → the real mouse (``click_input``). ``"invoke"`` stops before
+    the mouse; ``"click"`` goes straight to it."""
+
+    def act(ctrl, sent):
+        if at is not None:  # um ponto da superfície: o mouse de verdade, ali
+            rect = ctrl.rectangle()
+            point, _ = _drag_points((rect.left, rect.top), at, at)
+            sent["sent"] = True
+            if button == "left":
+                _activate_if_needed(rect, point)
+            _mouse_click(point, button, 2 if double else 1)
+            _mouse_on(rect)
+            return ActionOutcome.sent("mouse")
+        if double:
+            sent["sent"] = True
+            ctrl.double_click_input()
             _mouse_on(ctrl.rectangle())
-            return True
+            return ActionOutcome.sent("mouse double-click")
+        if method in ("invoke", "auto"):
+            try:
+                ctrl.invoke()
+                return ActionOutcome.sent("Invoke")
+            except Exception:
+                pass
+            try:
+                from .native_patterns import legacy_default_action
 
-        return _run_with_timeout(_job, timeout + connect_timeout) is True
+                if legacy_default_action(ctrl.wrapper_object()):
+                    return ActionOutcome.sent("DoDefaultAction")
+            except Exception as exc:
+                logger.debug("DoDefaultAction failed: %s", exc)
+            if method == "invoke":
+                return ActionOutcome.not_sent(
+                    "this control has no Invoke or default action -- use method 'click' (mouse)"
+                )
+        sent["sent"] = True
+        ctrl.click_input(button=button)
+        _mouse_on(ctrl.rectangle())
+        return ActionOutcome.sent("mouse click")
 
-    return bool(_with_retries(_attempt, retries, delay))
+    selector = _selector_kwargs(title, control_type, auto_id, found_index, backend, title_re)
+    return _retrying(
+        lambda: _act_on_control(
+            window, pid, selector, backend=backend, timeout=timeout,
+            connect_timeout=connect_timeout, act=act,
+        ),
+        retries,
+        delay,
+    )
 
 
 def _drag_points(origin, start, end):
@@ -629,33 +867,55 @@ def native_set_text(
     ``secret=True`` (a password): typed the same, shown as ``••••••`` in the run
     report.
     """
-    if not _ensure_pywinauto():
-        return False
+    return native_set_text_ex(
+        window, pid, title=title, control_type=control_type, auto_id=auto_id,
+        found_index=found_index, text=text, timeout=timeout,
+        connect_timeout=connect_timeout, retries=retries, delay=delay, backend=backend,
+    ).ok
 
-    def _attempt():
-        def _job():
-            top = _connect_top(window, pid, connect_timeout, backend)
-            if top is None:
-                return False
-            ctrl = top.child_window(
-                **_selector_kwargs(title, control_type, auto_id, found_index, backend)
-            )
-            if not ctrl.exists(timeout=timeout):
-                return False
-            _on_target(ctrl)
-            wrapper = ctrl.wrapper_object()
-            if _type_into(wrapper, text):
-                return True
-            try:
-                wrapper.set_edit_text(text)
-            except Exception:
-                return False
+
+def native_set_text_ex(
+    window=None,
+    pid=None,
+    *,
+    title=None,
+    control_type=None,
+    auto_id=None,
+    found_index=None,
+    text: str = "",
+    timeout: float = 5.0,
+    connect_timeout: float = 2.0,
+    retries: int = 0,
+    delay: float = 0.3,
+    backend: str = "uia",
+) -> ActionOutcome:
+    """``native_set_text`` that says how the text reached the app (``ActionOutcome``):
+    ``verified`` when the field reads back exactly ``text``."""
+
+    def act(ctrl, sent):
+        wrapper = ctrl.wrapper_object()
+        sent["sent"] = True  # o foco/as teclas podem chegar mesmo se algo falhar depois
+        if _type_into(wrapper, text):
             value = _control_value(wrapper)
-            return value is None or value == text
+            return ActionOutcome.sent("keyboard", verified=None if value is None else True)
+        try:
+            wrapper.set_edit_text(text)
+        except Exception as exc:
+            return ActionOutcome.maybe_sent(f"the field did not take the text: {exc}")
+        value = _control_value(wrapper)
+        return ActionOutcome.sent(
+            "ValuePattern", verified=None if value is None else value == text
+        )
 
-        return _run_with_timeout(_job, timeout + connect_timeout) is True
-
-    return bool(_with_retries(_attempt, retries, delay))
+    selector = _selector_kwargs(title, control_type, auto_id, found_index, backend)
+    return _retrying(
+        lambda: _act_on_control(
+            window, pid, selector, backend=backend, timeout=timeout,
+            connect_timeout=connect_timeout, act=act,
+        ),
+        retries,
+        delay,
+    )
 
 
 def _control_value(wrapper):
@@ -871,3 +1131,143 @@ def native_wait(
 
     result = _run_with_timeout(_job, timeout + connect_timeout)
     return result is True
+
+
+# ---------------------------------------------------------------------------
+# Semantic actions -- no mouse, no focus, the window may be behind others
+# ---------------------------------------------------------------------------
+
+
+def _pattern_action(window, pid, selector_args: dict, run, *, timeout, connect_timeout, backend):
+    selector = _selector_kwargs(
+        selector_args.get("title"), selector_args.get("control_type"),
+        selector_args.get("auto_id"), selector_args.get("found_index"), backend,
+        selector_args.get("title_re"),
+    )
+
+    def act(ctrl, sent):
+        wrapper = ctrl.wrapper_object()
+        sent["sent"] = True  # o padrão do UIA pode agir mesmo se a releitura falhar
+        return run(wrapper)
+
+    return _act_on_control(
+        window, pid, selector, backend=backend, timeout=timeout,
+        connect_timeout=connect_timeout, act=act,
+    )
+
+
+@records_native("native_toggle")
+def native_toggle(
+    window=None,
+    pid=None,
+    *,
+    title=None,
+    control_type=None,
+    auto_id=None,
+    found_index=None,
+    checked: bool | None = None,
+    timeout: float = 5.0,
+    connect_timeout: float = 2.0,
+    backend: str = "uia",
+    title_re=None,
+) -> ActionOutcome:
+    """Check (``checked=True``), uncheck (``False``) or flip (``None``) a checkbox,
+    toggle button or switch through the UIA Toggle pattern -- no mouse -- reading the
+    state back. Already in the asked state: nothing is sent. A tri-state box takes two
+    toggles; a toggle that changes nothing is never repeated. Returns an
+    ``ActionOutcome`` (truthy on success)."""
+    from .native_patterns import set_checked
+
+    return _pattern_action(
+        window, pid,
+        {"title": title, "control_type": control_type, "auto_id": auto_id,
+         "found_index": found_index, "title_re": title_re},
+        lambda wrapper: set_checked(wrapper, checked),
+        timeout=timeout, connect_timeout=connect_timeout, backend=backend,
+    )
+
+
+@records_native("native_select")
+def native_select(
+    window=None,
+    pid=None,
+    *,
+    value: str,
+    title=None,
+    control_type=None,
+    auto_id=None,
+    found_index=None,
+    timeout: float = 8.0,
+    connect_timeout: float = 2.0,
+    backend: str = "uia",
+    title_re=None,
+) -> ActionOutcome:
+    """Pick the option called ``value`` (case-insensitive) in a combo box, list or tab
+    strip through the UIA SelectionItem pattern -- no mouse. Expands a collapsed combo,
+    scrolls lists that only load items as you scroll, and refuses (nothing sent) when
+    two different options share the name. Returns an ``ActionOutcome``."""
+    from .native_patterns import select_option
+
+    return _pattern_action(
+        window, pid,
+        {"title": title, "control_type": control_type, "auto_id": auto_id,
+         "found_index": found_index, "title_re": title_re},
+        lambda wrapper: select_option(wrapper, value),
+        timeout=timeout, connect_timeout=connect_timeout, backend=backend,
+    )
+
+
+@records_native("native_expand")
+def native_expand(
+    window=None,
+    pid=None,
+    *,
+    expand: bool = True,
+    title=None,
+    control_type=None,
+    auto_id=None,
+    found_index=None,
+    timeout: float = 5.0,
+    connect_timeout: float = 2.0,
+    backend: str = "uia",
+    title_re=None,
+) -> ActionOutcome:
+    """Expand (``expand=True``) or collapse a tree node, combo box, menu button or
+    group through the UIA ExpandCollapse pattern -- no mouse -- reading the state back.
+    Returns an ``ActionOutcome``."""
+    from .native_patterns import set_expanded
+
+    return _pattern_action(
+        window, pid,
+        {"title": title, "control_type": control_type, "auto_id": auto_id,
+         "found_index": found_index, "title_re": title_re},
+        lambda wrapper: set_expanded(wrapper, expand),
+        timeout=timeout, connect_timeout=connect_timeout, backend=backend,
+    )
+
+
+@records_native("native_scroll_into_view")
+def native_scroll_into_view(
+    window=None,
+    pid=None,
+    *,
+    title=None,
+    control_type=None,
+    auto_id=None,
+    found_index=None,
+    timeout: float = 5.0,
+    connect_timeout: float = 2.0,
+    backend: str = "uia",
+    title_re=None,
+) -> ActionOutcome:
+    """Scroll a list/grid until the control is visible, through the UIA ScrollItem
+    pattern -- no mouse wheel. Returns an ``ActionOutcome``."""
+    from .native_patterns import scroll_into_view
+
+    return _pattern_action(
+        window, pid,
+        {"title": title, "control_type": control_type, "auto_id": auto_id,
+         "found_index": found_index, "title_re": title_re},
+        scroll_into_view,
+        timeout=timeout, connect_timeout=connect_timeout, backend=backend,
+    )

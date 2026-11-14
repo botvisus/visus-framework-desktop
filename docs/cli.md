@@ -71,6 +71,13 @@ visus <group> <cmd> --help   # a command's full flag list
 | `visus native get-text` | `INDEX? --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --json` | Read a control's text/value. |
 | `visus native get-state` | `INDEX? --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --json` | Snapshot exists/visible/enabled/checked/value/rect. |
 | `visus native wait` | `--window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --state=<choice> --timeout=<float> --poll-interval=<float> --json` | Wait until a control reaches a state. |
+| `visus native check` | `INDEX? --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --json` | Check a checkbox/toggle (no mouse; nothing sent if already checked). |
+| `visus native uncheck` | `INDEX? --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --json` | Uncheck a checkbox/toggle (no mouse). |
+| `visus native toggle` | `INDEX? --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --json` | Flip a checkbox/toggle/switch (no mouse). |
+| `visus native select` | `ARGS… --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --json` | Pick a combo/list/tab option by name: `select N VALUE` (no mouse). |
+| `visus native expand` | `INDEX? --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --json` | Expand a tree node / combo / menu button (no mouse). |
+| `visus native collapse` | `INDEX? --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --json` | Collapse a tree node / combo / menu button (no mouse). |
+| `visus native scroll-into-view` | `INDEX? --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --json` | Scroll a list/grid until the control is visible (no mouse). |
 | `visus capture` | `LABEL --auto=<text> --text=<text> --native=<text> --region=<text> --window=<text> --search-region=<text> --click --mouse-button=<text> --padding=<int> --confidence-threshold=<float> --native-timeout=<float> --elements-dir=<text> --dry-run --json` | Locate an element → save template + annotated → optional click. |
 | `visus screenshot` | `PATH? --region=<text> --monitor=<int> --base64 --jpeg --quality=<text> --max-width=<text> --json` | Capture the screen to a PNG (or base64 with `--base64`). |
 | `visus monitors` | `--json` | List connected monitors (the `--monitor` index). |
@@ -306,7 +313,7 @@ Bridge, some Electron); fall back to OCR/image there.
 | `--backend` | choice | `uia` (default; modern WPF/WinUI/Electron/browsers) or `win32` (classic Win32 controls like Notepad's Edit — use it when `uia` returns nothing or stalls on a legacy app). |
 
 ### `visus native snapshot` — the window numbered, for agents
-`--window`, `--pid`, `--max-depth` (`8`), `--max` (`200` printed), `--timeout`
+`--window`, `--pid`, `--max-depth` (`25`), `--max` (`400` printed), `--timeout`
 (`10.0`), `--backend uia|win32`, `--json`. One line per control you can act on
 (buttons, edits, check/radio boxes, combo boxes, menu/list/tab/tree items,
 links…), numbered:
@@ -319,11 +326,42 @@ visus native snapshot --window Calculadora
 visus native click 1            # set-text N TEXT, get-text N, get-state N too
 ```
 
-Each number is stored (next to `$VISUS_CONFIG`, else `~/.visus/desktop/`) with
-the selector that finds that control again — title, type, auto_id and a
-`found_index` counted over the same criteria, so two "Close" buttons never
-swap. It stays valid until the next `snapshot`. A window that does not exist is
-an error (exit 1), never an empty list.
+Each line ends with the control's state in brackets when it has one —
+`[disabled]`, `[checked]`/`[unchecked]`/`[mixed]`, `[expanded]`/`[collapsed]`,
+`[offscreen]`, `[password]`. Besides the usual control types, any element that
+announces an action (a clickable `Custom`/`Group` in WPF or Chromium) gets a number.
+
+Each snapshot gets an id (`s1a2b3`, printed in the header) and is stored per
+session — `snapshots/<VISUS_DESKTOP_SESSION or default>/` next to `$VISUS_CONFIG`,
+else under `~/.visus/desktop/` — with the selector that finds each control again
+(title, type, auto_id and a `found_index` counted over the same criteria, so two
+"Close" buttons never swap). `N` is the latest snapshot's item; `s1a2b3:N` pins one.
+
+**Before an action by number, the control is checked** against the live window:
+if it is gone, or another control like it appeared (so `found_index` could point to
+a different one), the action is refused with nothing sent (exit 1) — take a new
+snapshot. A window that does not exist or a program that is not responding is an
+error (exit 1), never an empty list. `get-text N` never prints a `[password]` field.
+
+**Actions report delivery.** With `--json`, `click`, `set-text` and the actions
+below answer `{"ok", "delivery", "retry_safe", "method", "reason"}`; `delivery` is
+`not_delivered` (nothing reached the app — `retry_safe: true`), `delivered` (sent,
+nothing to read back), `verified` (sent and the state reads back as asked) or
+`uncertain` (it may have landed — read the state before trying again).
+
+### `visus native check|uncheck|toggle [N]` — checkboxes without the mouse
+UIA Toggle pattern; the state is read back. `check`/`uncheck` send nothing when the
+box is already so; a tri-state box takes two toggles; a toggle that changes nothing
+is never repeated. Selector options + `--timeout` (`8.0`), `--json`.
+
+### `visus native select N VALUE` / `select VALUE` — combo/list/tab options
+Picks the option named `VALUE` (case-insensitive) through UIA SelectionItem:
+expands a closed combo, scrolls lists that load as you scroll, and refuses (nothing
+sent) when two options share the name. A classic Win32 combo whose list only exists
+while open is set through its writable Value instead, checked the same way.
+
+### `visus native expand|collapse [N]` and `scroll-into-view [N]`
+UIA ExpandCollapse (tree nodes, combos, menu buttons) and ScrollItem, read back.
 
 ### `visus native dump-tree`
 Print the control tree. Options: `--window`, `--pid`, `--max-depth` (int, `3`),
@@ -332,7 +370,8 @@ node: `{depth, control_type, title, auto_id, rect}`.
 
 ### `visus native click [N]`
 `N` = a `snapshot` number, or the selector options + `--button` (str, `left`), `--double` (flag),
-`--method invoke|click|auto` (default `auto`), `--timeout` (`5.0`),
+`--method invoke|click|auto` (default `auto`: Invoke, then the control's default
+action — both without the mouse — then the real mouse; `invoke` never uses the mouse), `--timeout` (`5.0`),
 `--retries` (`0`), `--delay` (`0.3`), `--dry-run`, `--json`.
 
 ### `visus native set-text N TEXT` / `set-text TEXT`

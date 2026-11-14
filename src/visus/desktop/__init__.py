@@ -124,6 +124,14 @@ smart cascade try them in order. Everything is also exposed as an MCP server
       native_set_text(text, ...selector...) ; native_get_text(...) -> str|None
       native_get_state(...) -> {exists,visible,enabled,checked,value,rect}
       native_wait(..., state="ready", timeout=10)
+      native_toggle(..., checked=True|False|None)   # checkbox, no mouse
+      native_select(..., value="Azul")              # combo/list/tab option
+      native_expand(..., expand=True|False) ; native_scroll_into_view(...)
+      native_click_ex / native_set_text_ex(...)     # -> ActionOutcome
+    The semantic actions and the *_ex variants return an ActionOutcome (truthy
+    on success): .delivery is not_delivered / delivered / verified / uncertain
+    and .retry_safe is True only when nothing reached the app -- never repeat an
+    action that may have landed. native_click retries only what never arrived.
     Immune to theme/DPI/resolution/language; empty on non-accessible UIs
     (Java Swing without Access Bridge) — fall back to OCR/image there.
     Inside rpa(): native_click / native_set_text / native_get_text /
@@ -226,7 +234,9 @@ smart cascade try them in order. Everything is also exposed as an MCP server
                      click_image, click_at, hybrid_find
       • Smart/capture: smart_find, smart_click, capture_element
       • Native RPA:  native_dump_tree, native_click, native_set_text,
-                     native_get_text, native_get_state, native_wait
+                     native_get_text, native_get_state, native_wait,
+                     native_toggle, native_select, native_expand,
+                     native_scroll_into_view
       • Keyboard:    type_text, keyboard_command
       • Screen:      take_screenshot, save_screenshot, get_monitors,
                      wait_for_stable_screen

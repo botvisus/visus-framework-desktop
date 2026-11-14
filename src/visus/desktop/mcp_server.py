@@ -129,7 +129,11 @@ WORKFLOW — follow in order:
    and pass its `title` as `window=` to the `native_*` tools. Pass `window=` to
    `type_text` / `keyboard_command` so the keys never land in another window.
    If it returns controls, the app is ACCESSIBLE — act by control (`native_click` / `native_set_text` /
-   `native_get_text` / `native_wait`). This is the most robust path (no pixels,
+   `native_get_text` / `native_wait`; a checkbox is `native_toggle(checked=True)`, a
+   combo/list option `native_select(value=...)`, a tree node `native_expand` -- all
+   without the mouse; items show their state, e.g. `[disabled]`, `[checked]`).
+   The semantic tools answer `{ok, delivery, retry_safe}`: repeat a failed one only
+   when `retry_safe` is true; otherwise it may have landed -- read the state first. This is the most robust path (no pixels,
    immune to theme/DPI/resolution/language) and needs NO templates. Native
    targeting by `control_type`/`auto_id`/`found_index` is EXACT — act and trust
    it; do NOT re-check it with OCR/`show_text_occurrences`. (The OCR-occurrence
@@ -1710,6 +1714,100 @@ def native_get_state(
 
 
 @mcp.tool()
+def native_toggle(
+    window: str | None = None,
+    pid: int | None = None,
+    title: str | None = None,
+    control_type: str | None = None,
+    auto_id: str | None = None,
+    found_index: int | None = None,
+    checked: bool | None = None,
+    timeout: float = 5.0,
+    backend: str = "uia",
+) -> dict:
+    """Check (``checked=True``), uncheck (``False``) or flip (None) a checkbox/toggle
+    by selector -- UIA Toggle pattern, no mouse, the window may be behind others; the
+    state is read back. Already in that state: nothing is sent.
+    RETURNS: ``{ok, delivery, retry_safe, method, reason}`` -- repeat a failed action
+    only when ``retry_safe`` is true (nothing reached the app); otherwise read the state
+    first (``native_get_state``), it may have landed."""
+    from .core.native_rpa import native_toggle as _fn
+
+    return _fn(
+        window=window, pid=pid, title=title, control_type=control_type, auto_id=auto_id,
+        found_index=found_index, checked=checked, timeout=timeout, backend=backend,
+    ).to_dict()
+
+
+@mcp.tool()
+def native_select(
+    value: str,
+    window: str | None = None,
+    pid: int | None = None,
+    title: str | None = None,
+    control_type: str | None = None,
+    auto_id: str | None = None,
+    found_index: int | None = None,
+    timeout: float = 8.0,
+    backend: str = "uia",
+) -> dict:
+    """Pick the option named ``value`` in a combo box / list / tab strip (the selector
+    names the CONTAINER) -- UIA SelectionItem, no mouse. Expands a closed combo, scrolls
+    lists that load as you scroll; two options with the same name are refused.
+    RETURNS: ``{ok, delivery, retry_safe, method, reason}`` (see ``native_toggle``)."""
+    from .core.native_rpa import native_select as _fn
+
+    return _fn(
+        window=window, pid=pid, value=value, title=title, control_type=control_type,
+        auto_id=auto_id, found_index=found_index, timeout=timeout, backend=backend,
+    ).to_dict()
+
+
+@mcp.tool()
+def native_expand(
+    window: str | None = None,
+    pid: int | None = None,
+    title: str | None = None,
+    control_type: str | None = None,
+    auto_id: str | None = None,
+    found_index: int | None = None,
+    expand: bool = True,
+    timeout: float = 5.0,
+    backend: str = "uia",
+) -> dict:
+    """Expand (``expand=True``) or collapse a tree node / combo box / menu button by
+    selector -- UIA ExpandCollapse, no mouse; the state is read back.
+    RETURNS: ``{ok, delivery, retry_safe, method, reason}`` (see ``native_toggle``)."""
+    from .core.native_rpa import native_expand as _fn
+
+    return _fn(
+        window=window, pid=pid, title=title, control_type=control_type, auto_id=auto_id,
+        found_index=found_index, expand=expand, timeout=timeout, backend=backend,
+    ).to_dict()
+
+
+@mcp.tool()
+def native_scroll_into_view(
+    window: str | None = None,
+    pid: int | None = None,
+    title: str | None = None,
+    control_type: str | None = None,
+    auto_id: str | None = None,
+    found_index: int | None = None,
+    timeout: float = 5.0,
+    backend: str = "uia",
+) -> dict:
+    """Scroll a list/grid until the control is visible -- UIA ScrollItem, no wheel.
+    RETURNS: ``{ok, delivery, retry_safe, method, reason}`` (see ``native_toggle``)."""
+    from .core.native_rpa import native_scroll_into_view as _fn
+
+    return _fn(
+        window=window, pid=pid, title=title, control_type=control_type, auto_id=auto_id,
+        found_index=found_index, timeout=timeout, backend=backend,
+    ).to_dict()
+
+
+@mcp.tool()
 def native_wait(
     window: str | None = None,
     pid: int | None = None,
@@ -2382,7 +2480,8 @@ for _name, _obj in list(globals().items()):
             "take_screenshot", "save_screenshot", "capture_element",
             "get_window", "get_monitors", "wait_for_stable_screen",
             "native_dump_tree", "native_snapshot", "native_click", "native_drag", "native_scroll",
-            "native_set_text",
+            "native_set_text", "native_toggle", "native_select", "native_expand",
+            "native_scroll_into_view",
             "native_get_text", "native_get_state", "native_wait", "open_app",
             "use_app",
             "smart_find", "smart_click",

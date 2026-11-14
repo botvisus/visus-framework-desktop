@@ -6,6 +6,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Safer native automation for AI agents, with ideas from Vercel Labs' agent-desktop
+(Apache-2.0) and its measured Windows findings.
+
+### Added
+- No-mouse UIA actions in the API, CLI and MCP: `native_toggle` / `native check|uncheck|toggle`
+  (Toggle pattern, read back; nothing sent when already so; a toggle that changes nothing is
+  never repeated), `native_select` / `native select N VALUE` (SelectionItem: expands a closed
+  combo, scrolls lists that load as you scroll, refuses two options with the same name; a
+  classic Win32 combo is set through its writable Value), `native_expand` /
+  `native expand|collapse` and `native_scroll_into_view` / `native scroll-into-view`.
+- Every native action reports delivery (`ActionOutcome`): `not_delivered` (safe to retry),
+  `delivered`, `verified` (read back) or `uncertain` (may have landed — read the state first).
+  `native_click_ex` / `native_set_text_ex`; the CLI prints it and `--json` returns
+  `{ok, delivery, retry_safe, method, reason}`.
+- `native snapshot` shows each control's state (`[disabled]`, `[checked]`, `[expanded]`,
+  `[offscreen]`, `[password]`…) and numbers any element that announces an action (a clickable
+  `Custom`/`Group` in WPF or Chromium). Under Chromium/Electron, anonymous wrapper groups no
+  longer count as depth, so web content is reachable.
+
+### Changed
+- `native snapshot` numbers are per session (`VISUS_DESKTOP_SESSION`) and carry a snapshot id
+  (`s1a2b3:3` pins one): two agents, or an agent and a bot, no longer overwrite each other's
+  numbers and click the wrong window.
+- An action by number first checks the control against the live window: when it is gone or
+  another control like it appeared (so `found_index` could point elsewhere), the action is
+  refused with nothing sent.
+- `native_click` (`method="auto"`) tries the control's `LegacyIAccessible` default action after
+  Invoke and before the real mouse; `retries` only repeat what never reached the app.
+- A program that is not responding is detected up front (`SendMessageTimeout`) instead of
+  waiting out the timeout and answering `False` with no reason.
+- The window list (and every `--window` match) skips windows a person does not see: cloaked
+  (suspended UWP, other virtual desktop), tool windows and zero-size windows.
+- `native get-text N` never prints a password field.
+
 ## [0.4.8] - 2026-11-13
 
 ### Fixed

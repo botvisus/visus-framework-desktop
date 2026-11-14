@@ -34,15 +34,42 @@ Pick the cheapest way that works, in this order:
 
    ```bash
    visus-desktop native snapshot --window Calculadora
-   # Window: Calculadora
+   # Window: Calculadora  (snapshot s1a2b3)
    #   0  Button       Sete #num7Button
    #   1  Button       Mais #plusButton
+   #   2  Button       Limpar memória #ClearMemoryButton [disabled]
    visus-desktop native click 1          # also: set-text N "text", get-text N, get-state N
    ```
 
-   Numbers stay valid until the next `snapshot` (each is stored with the exact
-   selector that finds it again, duplicates included). A window that does not
-   exist is an error (`window list` shows the open ones), never an empty list.
+   Lines carry the control's state in brackets — `[disabled]`, `[checked]`,
+   `[unchecked]`, `[mixed]`, `[expanded]`, `[collapsed]`, `[offscreen]`,
+   `[password]` — so you never click a disabled button or re-check a checked box.
+   Act on them without the mouse:
+
+   ```bash
+   visus-desktop native check 3          # uncheck 3, toggle 3 (nothing sent if already so)
+   visus-desktop native select 4 "Azul"  # combo box / list / tab strip option, by name
+   visus-desktop native expand 5         # collapse 5; tree nodes, combos, menu buttons
+   visus-desktop native scroll-into-view 9
+   ```
+
+   `click` tries Invoke, then the control's default action — both without the
+   mouse — and only then the real mouse (`--method invoke` never uses it).
+
+   **Numbers are checked before acting.** Each is stored with the selector that
+   finds that control again; if the window changed since the snapshot (the control
+   is gone, or another one like it appeared), the action is refused with nothing
+   sent — take a new snapshot and use the new number. Snapshots are per session
+   (`VISUS_DESKTOP_SESSION`), so two agents never act on each other's numbers;
+   `s1a2b3:3` pins one snapshot. A window that does not exist, or a program that is
+   not responding, is an error (`window list` shows the open ones), never an empty
+   list. The text of a `[password]` field is never printed.
+
+   **Every action says whether it reached the app** (`--json`:
+   `{"ok", "delivery", "retry_safe"}`). Repeat a failed action only when it says
+   *nothing reached the app, safe to retry* (`retry_safe: true`). Any other failure
+   *may have landed* — read the state (`get-state N`, `get-text N` or a new snapshot)
+   before trying again; repeating can click, submit or toggle twice.
 
 2. **OCR text / template image, with the virtual mouse.** When there is no
    accessibility tree (canvas, games, remote desktops, custom-drawn UIs):
@@ -93,7 +120,7 @@ reference: `docs/cli.md`.
 | `visus smart` | `find`, `click` — cascade native → image → OCR → coordinates (`--order` to force/reorder; `--dry-run` to resolve only) |
 | `visus text` | `find`, `click`, `find-all`, `show` — OCR find/click a label, list every occurrence, or overlay them numbered (`--ocr tesseract\|rapidocr`) |
 | `visus image` | `find`, `click`, `find-all`, `find-multiple`, `relative` — template-PNG targeting |
-| `visus native` | `snapshot` (numbered — act with `click N`), `dump-tree`, `click`, `set-text`, `get-text`, `get-state`, `wait` — no-pixel RPA |
+| `visus native` | `snapshot` (numbered — act with `click N`), `dump-tree`, `click`, `set-text`, `check`/`uncheck`/`toggle`, `select`, `expand`/`collapse`, `scroll-into-view`, `get-text`, `get-state`, `wait` — no-pixel RPA |
 | `visus mouse` | `click`, `scroll`, `drag`, `triple-click`, `move`, `down`, `up` — coordinate gestures |
 | `visus type` / `key` / `keys` | type text into the focused field / press a key chord / list valid tokens |
 | `visus capture` | coordinate-free capture by `--auto`/`--text`/`--native`/`--region` → saves template + annotated, optional `--click` |
@@ -163,6 +190,13 @@ click-through window, so it never blocks a subsequent click.
 | `visus native set-text` | `ARGS… --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --retries=<int> --delay=<float> --dry-run --json` | Set the text of an editable control. |
 | `visus native snapshot` | `--window=<text> --pid=<int> --max-depth=<int> --max=<int> --timeout=<float> --backend=<choice> --json` | Number the window's actionable controls (deep enough for the Office ribbon); act by number. |
 | `visus native wait` | `--window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --state=<choice> --timeout=<float> --poll-interval=<float> --json` | Wait until a control reaches a state. |
+| `visus native check` | `INDEX? --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --json` | Check a checkbox/toggle (no mouse; nothing sent if already checked). |
+| `visus native uncheck` | `INDEX? --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --json` | Uncheck a checkbox/toggle (no mouse). |
+| `visus native toggle` | `INDEX? --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --json` | Flip a checkbox/toggle/switch (no mouse). |
+| `visus native select` | `ARGS… --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --json` | Pick a combo/list/tab option by name: `select N VALUE` (no mouse). |
+| `visus native expand` | `INDEX? --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --json` | Expand a tree node / combo / menu button (no mouse). |
+| `visus native collapse` | `INDEX? --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --json` | Collapse a tree node / combo / menu button (no mouse). |
+| `visus native scroll-into-view` | `INDEX? --window=<text> --pid=<int> --title=<text> --control-type=<text> --auto-id=<text> --found-index=<int> --backend=<choice> --timeout=<float> --json` | Scroll a list/grid until the control is visible (no mouse). |
 | `visus new` | `PATH --force` | Scaffold a new visus-desktop bot project. |
 | `visus open` | `TARGET --wait-window=<text> --timeout=<float> --json` | Open an app/document/URL as Windows Run does; `--wait-window` waits until it is ready in front. |
 | `visus process find` | `NAME --json` | Find processes whose name contains NAME. |

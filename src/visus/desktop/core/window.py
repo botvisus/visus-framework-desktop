@@ -98,8 +98,32 @@ def window_region(title_substring: str) -> tuple[int, int, int, int] | None:
 # ---------------------------------------------------------------------------
 
 
+def _is_agent_window(hwnd) -> bool:
+    """Uma janela que a pessoa VÊ: visível, com área, não escondida pelo shell (cloaked:
+    UWP suspenso, outra área de trabalho) e não janela de ferramenta. Só
+    ``IsWindowVisible`` deixava passar as fantasmas -- e ``--window "Calculadora"``
+    podia mirar uma (ver ``win_health``)."""
+    import win32gui
+
+    from .win_health import is_cloaked, is_tool_window, passes_window_filter
+
+    if not win32gui.IsWindowVisible(hwnd):
+        return False
+    try:
+        left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+    except Exception:
+        return False
+    return passes_window_filter(
+        visible=True,
+        width=right - left,
+        height=bottom - top,
+        cloaked=is_cloaked(hwnd),
+        tool=is_tool_window(hwnd),
+    )
+
+
 def _enum_visible_windows() -> list:
-    """Return ``[(hwnd, title, pid)]`` for every visible top-level window."""
+    """Return ``[(hwnd, title, pid)]`` for every top-level window a person sees."""
     _require_windows()
     import win32gui
     import win32process
@@ -107,7 +131,7 @@ def _enum_visible_windows() -> list:
     out: list = []
 
     def _cb(hwnd: int, _extra: object) -> bool:
-        if win32gui.IsWindowVisible(hwnd):
+        if _is_agent_window(hwnd):
             title = win32gui.GetWindowText(hwnd) or ""
             _, pid = win32process.GetWindowThreadProcessId(hwnd)
             out.append((hwnd, title, int(pid)))
