@@ -364,7 +364,7 @@ from .utils.retry import retry
 from .utils.text_filters import clean_text, limpar_texto, matches_filter
 
 # Library version
-__version__ = "0.4.8"
+__version__ = "0.5.0"
 __author__ = "Matheus Pereira"
 __email__ = "matheuszwilkdev@gmail.com"
 __license__ = "MIT"

@@ -6,6 +6,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-14
+
 Safer native automation for AI agents, with ideas from Vercel Labs' agent-desktop
 (Apache-2.0) and its measured Windows findings.
 
